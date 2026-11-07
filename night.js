@@ -62,7 +62,7 @@ function runPres() {
   // voters tire of one party holding the White House for long
   S.whStreak = S.whStreak || 1;
   const presCash = (S.election && S.election.presCash) || 0;
-  const score = clamp((P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 + (inc === S.side ? 1 : -1) * presCash * 0.9 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + rnd(-3.5, 3.5), -10, 10);
+  const score = clamp((P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 + (inc === S.side ? 1 : -1) * cashEff(presCash, 0.9) - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + rnd(-3.5, 3.5), -10, 10);
   const envD = inc === 'D' ? score : -score;
   const states = {};
   let evD = 0, evR = 0, popD = 0, popR = 0;

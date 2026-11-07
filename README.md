@@ -62,6 +62,9 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   The campaign trail shows your chance in every race. Deploy money in one
   click (smart deploy, defend, or go on offense), fine-tune with +/− or by
   clicking states on the map, and fund the House and presidential races too.
+  There's no cap on any race; each extra unit in the same place does a little
+  less, so spreading money usually pays. Races are uncertain enough that
+  roughly a third of them are in play every cycle.
 - **Election Night.** Results come in from east to west, with close races
   called last. You get a clickable map, President, Senate and House tabs, vote
   totals and percentages, live seat and electoral-vote tallies, a closest-races

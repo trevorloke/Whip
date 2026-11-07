@@ -1050,12 +1050,19 @@ function courtNews() {
 /* ---------------- elections ---------------- */
 function raceBase(m, retiring, P = m.party) {
   const st = ST[m.state];
-  const adv = (P === 'R' ? st.lean : P === 'D' ? -st.lean : 8) * 0.7;
+  const adv = (P === 'R' ? st.lean : P === 'D' ? -st.lean : 8) * 0.55;
   const pm = (P === S.side ? S.mood : P === 'I' ? 0 : -S.mood) * 0.5;
   const thermostat = P === 'I' ? 0 : -0.9 * (seats(P) - 50); // big majorities attract backlash
   return adv + pm + thermostat + (retiring ? 0 : 4 + m.rec * 0.7);
 }
 // the two major parties in a race: the holder's party (or, for an independent seat, the state's lean) vs the other
+// election uncertainty: a bell curve, so anything within ~15 points can go either way
+const RACE_SD = 7.5;
+function gauss() { let u = 0, v = 0; while (!u) u = Math.random(); while (!v) v = Math.random(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+function normCdf(z) { const t = 1 / (1 + 0.2316419 * Math.abs(z)), d = 0.3989423 * Math.exp(-z * z / 2); const p = d * t * (0.3193815 + t * (-0.3565638 + t * (1.781478 + t * (-1.821256 + t * 1.330274)))); return z > 0 ? 1 - p : p; }
+// no cap on money, but each extra unit in the same place does a little less (unit n is worth 85% of unit n-1)
+function cashEff(n, per) { return per * (1 - Math.pow(0.85, n)) / 0.15; }
+function money(n) { return n ? (n <= 4 ? '💰'.repeat(n) : `💰×${n}`) : '—'; }
 function majorParty(rc) { return rc.m.party === 'I' ? (ST[rc.m.state].lean > 0 ? 'R' : 'D') : rc.m.party; }
 function projMargin(rc) {
   // two-party margin from the major holder's perspective, including primaries, staff and your campaign cash
@@ -1064,8 +1071,8 @@ function projMargin(rc) {
   let mg = raceBase(rc.m, rc.retiring || rc.m.party === 'I' || rc.primaried, A);
   if (rc.primaried) mg += rc.electability;
   if (rc.bruised) mg -= 1;
-  if (A === S.side) mg += rc.cash * per + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
-  else mg -= rc.cash * per + (has('recruiter') ? 3 : 0);
+  if (A === S.side) mg += cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
+  else mg -= cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
   return mg + (has('pollmap') ? rc.noise : 0);
 }
 const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives', R: f => f === 'Freedom Caucus' ? 'Populists' : 'Freedom Caucus' };
@@ -1074,7 +1081,7 @@ function electionPrep() {
   const k = S.career.bills / 6;
   const year = electionYear(k), cls = classUp(k), pres = isPresYear(k);
   if (!pres) S.mood += (S.president.party === S.side ? -3 : 3); // midterms punish the White House party
-  const races = S.members.filter(m => m.cls === cls).map(m => ({ m, retiring: m.party !== 'I' && (m.retireNudge || Math.random() < 0.1), cash: 0, noise: rnd(-6, 6), ind: null }));
+  const races = S.members.filter(m => m.cls === cls).map(m => ({ m, retiring: m.party !== 'I' && (m.retireNudge || Math.random() < 0.1), cash: 0, noise: gauss() * RACE_SD, ind: null }));
   S.election = { k, year, cls, pres, races, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
   S.warchest = 0;
   const E = S.election;
@@ -1140,12 +1147,12 @@ function electionPrep() {
       <p>${presTitle()} (${S.president.party}): approval <b>${S.president.approval}%</b>${pres ? (S.president.terms >= 2 ? ' · term-limited, open race' : ' · running for re-election') : ''}. House: ${S.house.D}D–${S.house.R}R, all 435 seats up.</p>
       <p>Your party's national mood: <b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b>, built from the bills you passed and how popular they were${pres ? '' : (S.president.party === S.side ? ', minus the usual midterm penalty for holding the White House' : ', plus a midterm boost against the White House')}. Senators who voted against their state's interests are exposed.</p>
       ${E.primaryNews && E.primaryNews.length ? `<div class="primnews"><b>Primary results</b>${E.primaryNews.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
-      <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· each is +${per} for your side in a Senate race (max 3 per race)</small></div>
+      <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· the first unit in a race is worth +${per} points for your side, and each extra unit in the same race a bit less. No limit.</small></div>
         <div>Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b></div></div>
       <div class="deploy"><button class="btn" data-auto="smart">🎯 Smart deploy<small>Each unit where it adds the most</small></button><button class="btn" data-auto="defend">🛡 Defend my seats<small>Only seats your party holds</small></button><button class="btn" data-auto="offense">⚔ Go on offense<small>Only seats you could flip</small></button><button class="btn ghost" data-auto="reset">↺ Take it all back</button></div>
       <div class="national">
-        <div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. Each unit ≈ +0.8 points nationally, worth a few House seats.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${'💰'.repeat(E.houseCash) || '—'}</span><button class="btn" data-hc="1" ${E.cash < 1 || E.houseCash >= 4 ? 'disabled' : ''}>+</button></span></div>
-        ${pres ? `<div class="race"><span>🇺🇸 <b>Presidential swing states</b><br><small style="color:var(--dim)">Ads and turnout in the battlegrounds. Each unit ≈ +0.9 points for your ticket.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${'💰'.repeat(E.presCash) || '—'}</span><button class="btn" data-pc="1" ${E.cash < 1 || E.presCash >= 4 ? 'disabled' : ''}>+</button></span></div>` : ''}
+        <div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. The first unit ≈ +0.8 points nationally (a few House seats); more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${money(E.houseCash)}</span><button class="btn" data-hc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>
+        ${pres ? `<div class="race"><span>🇺🇸 <b>Presidential swing states</b><br><small style="color:var(--dim)">Ads and turnout in the battlegrounds. The first unit ≈ +0.9 points for your ticket; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>` : ''}
       </div>
       <div class="campmap">${campaignMap()}<small>Click a state to add a unit · right-click to take one back</small></div>
       <div class="ftabs">${[['close', 'Close races'], ['mine', 'My seats'], ['theirs', 'Their seats'], ['all', 'All ' + E.races.length]].map(([k, l]) => `<button class="btn ${E.filter === k ? 'on' : ''}" data-filt="${k}">${l}</button>`).join('')}</div>
@@ -1153,15 +1160,15 @@ function electionPrep() {
       <div class="choices"><button class="btn primary big" id="countballots">Close the polls and count the ballots</button></div>`);
     $('#modal-card').scrollTop = E.drawn ? sc : 0; E.drawn = true;
     const card = $('#modal-card');
-    const add = (rc, d) => { if (d > 0 && (E.cash < 1 || rc.cash >= 3)) return; if (d < 0 && rc.cash < 1) return; rc.cash += d; E.cash -= d; sfx.click(); draw(); };
+    const add = (rc, d) => { if (d > 0 && E.cash < 1) return; if (d < 0 && rc.cash < 1) return; rc.cash += d; E.cash -= d; sfx.click(); draw(); };
     card.querySelectorAll('[data-cash]').forEach(b => b.onclick = () => add(E.races[+b.dataset.cash], +b.dataset.d));
     card.querySelectorAll('.ctile').forEach(g => {
       const rc = E.races[+g.dataset.race];
       g.onclick = () => add(rc, 1);
       g.oncontextmenu = e => { e.preventDefault(); add(rc, -1); };
     });
-    card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && (E.cash < 1 || E.houseCash >= 4)) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
-    card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && (E.cash < 1 || E.presCash >= 4)) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
+    card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
+    card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-filt]').forEach(b => b.onclick = () => { E.filter = b.dataset.filt; sfx.click(); draw(); });
     card.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => { autoDeploy(b.dataset.auto); sfx.up(); draw(); });
     $("#countballots").onclick = countBallots;
@@ -1171,18 +1178,18 @@ function electionPrep() {
 // your party's chance of holding or taking a seat, as the campaign sees it
 function raceChance(rc) {
   const mg = projMargin(rc), A = majorParty(rc);
-  const pA = has('pollmap') ? (mg > 0 ? 0.97 : 0.03) : clamp((mg + 6) / 12, 0.02, 0.98);
+  const pA = has('pollmap') ? (mg > 0 ? 0.97 : 0.03) : clamp(normCdf(mg / RACE_SD), 0.01, 0.99);
   let p = A === S.side ? pA : 1 - pA;
   if (rc.ind) p *= rc.m.party === 'I' ? 0.45 : 0.85; // a strong independent muddies it
   return p;
 }
-function cashGain(rc) { if (rc.cash >= 3) return 0; const b = raceChance(rc); rc.cash++; const g = raceChance(rc) - b; rc.cash--; return g; }
+function cashGain(rc) { const b = raceChance(rc); rc.cash++; const g = raceChance(rc) - b; rc.cash--; return g; }
 function autoDeploy(mode) {
   const E = S.election;
   if (mode === 'reset') { for (const rc of E.races) { E.cash += rc.cash; rc.cash = 0; } E.cash += E.houseCash + E.presCash; E.houseCash = 0; E.presCash = 0; return; }
   const pool = E.races.filter(rc => mode === 'defend' ? rc.m.party === S.side : mode === 'offense' ? rc.m.party !== S.side : true);
   while (E.cash > 0) {
-    let best = null, gain = 0.015;
+    let best = null, gain = 0.003;
     for (const rc of pool) { const g = cashGain(rc); if (g > gain) { gain = g; best = rc; } }
     if (!best) break;
     best.cash++; E.cash--;
@@ -1198,7 +1205,7 @@ function campaignMap() {
     if (i == null) { svg += `<rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="#1c2129"/><text x="${x + sz / 2}" y="${y + 28}" text-anchor="middle" font-size="12" fill="#4b5465" font-weight="700">${code}</text>`; continue; }
     const rc = E.races[i], p = raceChance(rc), op = 0.35 + Math.abs(p - 0.5) * 1.3;
     svg += `<g class="ctile" data-race="${i}" style="cursor:pointer"><title>${ST[code].name}: your chance ${Math.round(p * 100)}%</title><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="${chanceColor(p)}" fill-opacity="${op}" style="${rc.cash ? 'stroke:#f6d27a;stroke-width:3' : ''}"/>
-      <text x="${x + sz / 2}" y="${y + 18}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">${code}</text><text x="${x + sz / 2}" y="${y + 34}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${Math.round(p * 100)}%${rc.cash ? ' ' + '$'.repeat(rc.cash) : ''}</text></g>`;
+      <text x="${x + sz / 2}" y="${y + 18}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">${code}</text><text x="${x + sz / 2}" y="${y + 34}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${Math.round(p * 100)}%${rc.cash ? ' $' + rc.cash : ''}</text></g>`;
   }
   return svg + '</svg>';
 }
@@ -1211,7 +1218,7 @@ function raceRow(rc) {
   const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ Independent ${rc.ind.name} (${rc.ind.cause[0]}), polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
   return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${rec}${ind}</span>
     <span class="cashctl"><span class="chance"><b style="color:${chanceColor(p)}">${Math.round(p * 100)}%</b><span class="mbar"><i style="width:${p * 100}%;background:${chanceColor(p)}"></i></span><small>your chance${rc.ind ? ' · 3-way' : ''}</small></span>
-      <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${'💰'.repeat(rc.cash) || '—'}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 || rc.cash >= 3 ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
+      <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${money(rc.cash)}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
 }
 function countBallots() {
   const E = S.election, c = S.career;
@@ -1252,7 +1259,7 @@ function countBallots() {
   const P = S.president;
   const apTerm = (P.approval - 50) * 0.2 * (P.party === S.side ? 1 : -1);
   const hMajBefore = houseMaj();
-  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + (E.houseCash || 0) * 0.8 + rnd(-2.5, 2.5));
+  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + rnd(-2.5, 2.5));
   const pres = E.pres ? runPres() : null;
   const after = { D: seats('D'), R: seats('R'), I: seats('I') };
   const net = after[S.side] - before[S.side];
