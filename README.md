@@ -34,8 +34,11 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **The yearly budget.** Every Fall you write the budget: pick two priorities
   to fund and one to cut while a whip count updates live. If it fails anywhere,
   the government shuts down.
-- **Factions everywhere.** Senators belong to caucuses whose bosses pull their
-  bloc along. The House votes caucus by caucus (Progressive Caucus, Freedom
+- **Factions everywhere.** Every Senate faction has a public leader 👑. Members
+  follow wherever their leader moves (30% of the way), leaders vote first in
+  the roll call, and fence-sitters follow their vote. Leaders are seasoned, so
+  they're harder to move, and the opposing whip goes after them too. The
+  Factions tab shows every bloc at a glance. The House votes caucus by caucus (Progressive Caucus, Freedom
   Caucus, Blue Dogs…), and you can work each one through its chair. The
   President comes from a faction too, which shapes their vetoes and which
   senators follow them hardest.
@@ -56,7 +59,9 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435
   House seats, and the White House every four years, decided by the Electoral
   College. Senators who voted against their state's interests are vulnerable.
-  Spend campaign cash in close races.
+  The campaign trail shows your chance in every race. Deploy money in one
+  click (smart deploy, defend, or go on offense), fine-tune with +/− or by
+  clicking states on the map, and fund the House and presidential races too.
 - **Election Night.** Results come in from east to west, with close races
   called last. You get a clickable map, President, Senate and House tabs, vote
   totals and percentages, live seat and electoral-vote tallies, a closest-races

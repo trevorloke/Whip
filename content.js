@@ -118,7 +118,7 @@ Object.assign(PERKS, {
   ironfist: ['Iron Fist', 'Arm-twisting is 20% stronger and never costs you a relationship.', 6, 'trait'],
   dealmaker: ['Dealmaker', 'Promises land 20% harder, and repaying a favor costs 1 capital.', 6, 'trait'],
   workhorse: ['Workhorse', '+1 action every day.', 8, 'trait'],
-  kingmaker: ['Kingmaker', 'Caucus bosses pull their faction 60% of the way (normally 35%).', 7, 'trait'],
+  kingmaker: ['Kingmaker', 'Faction leaders pull their members 50% of the way (normally 30%).', 7, 'trait'],
   bridge: ['Bridge-Builder', 'Everything you do to opposing and independent senators is 30% stronger.', 7, 'trait'],
   teflon: ['Teflon', 'Earmarks and dirt draw half the scrutiny.', 5, 'trait'],
   beloved: ['Beloved', 'Every senator starts each bill 4 points warmer to you.', 8, 'trait'],

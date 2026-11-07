@@ -85,7 +85,7 @@ const TRAITS = {
   ambitious: ['Eyeing the White House', 'Promised favors work 50% better.'],
   fickle: ['Fickle', 'Support drifts randomly every day.'],
   shady: ['Skeletons', 'There is dirt on them, if you dig.'],
-  leader: ['Caucus Boss', 'When they move, their faction moves with them.'],
+  leader: ['Faction Leader', 'Their stance pulls every senator in their faction, and fence-sitters follow their vote.'],
 };
 const TRAIT_POOL = ['greedy', 'principled', 'vain', 'thin', 'loyal', 'ambitious', 'fickle', 'shady'];
 
@@ -285,7 +285,19 @@ function baseSupport(m) {
   if (has('constit') && isUp(m)) s += 6;
   return s + m.b.mood;
 }
-function support(m) { return clamp(baseSupport(m) + m.b.bonus, -100, 100); }
+function rawSupport(m) { return baseSupport(m) + m.b.bonus; }
+// every faction has a leader; members are pulled toward wherever their leader stands
+function leaderOf(m) { return m.party === 'I' ? null : S.members.find(x => x !== m && x.party === m.party && x.faction === m.faction && T(x, 'leader')) || null; }
+function pullK() { return has('kingmaker') ? 0.5 : 0.3; }
+function leaderStance(L) { return clamp(rawSupport(L), -40, 40); }
+// members follow how far their leader has moved since the bill came up (where the leader started is already priced in)
+function leaderPull(m) {
+  const L = leaderOf(m);
+  if (!L || L.b.absent || L.b.start == null) return 0;
+  return pullK() * (leaderStance(L) - L.b.start) + (isLockedYes(L) ? 2 : 0);
+}
+function support(m) { return clamp(rawSupport(m) + leaderPull(m), -100, 100); }
+function factionOf(L) { return S.members.filter(x => x !== L && x.party === L.party && x.faction === L.faction); }
 function isLockedYes(m) { return m.b.pledged || m.b.blackmailed; }
 function needText() {
   const B = S.bill;
@@ -323,15 +335,17 @@ function startBill() {
     freeSound: false, goal: null, events: [],
   };
   for (const m of S.members) m.b = { bonus: 0, mood: rnd(-12, 12), intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: null, last: 0 };
+  for (const m of S.members) if (T(m, 'leader')) { m.b.intel = true; m.knownTraits = true; }
   // self-calibrate: every bill starts a few votes short
   const need = needNum();
-  let short = sup === 67 ? ri(5, 7) : landmark ? ri(3, 5) : clamp(2 + Math.floor(n / 6), 2, 5) + ri(0, 1);
+  let short = sup === 67 ? ri(6, 8) : landmark ? ri(4, 6) : clamp(3 + Math.floor(n / 6), 3, 6) + ri(0, 1);
   if (!isMajority()) short += 1;
   if (nomination) short = Math.max(1, short - (S.nominee.tries || 0));
   const target = need - short;
   const ss = S.members.map(support).sort((a, b) => b - a);
   const off = -((ss[target - 1] + ss[target]) / 2);
   for (const m of S.members) m.b.mood += off;
+  for (const m of S.members) if (T(m, 'leader')) m.b.start = leaderStance(m);
   if (has('pollster')) for (const m of S.members) m.b.fuzzy = rnd(-14, 14);
   if (S.prep.intel) shuffle(S.members.slice()).slice(0, S.prep.intel).forEach(m => { m.b.intel = true; m.knownTraits = true; });
   const shut = S.shutdown > 0, approps = S.approps > 0;
@@ -416,7 +430,7 @@ function planRival() {
   for (let i = 0; i < moves; i++) {
     const cands = pool.filter(m => !picks.includes(m)).map(m => ({ m, s: support(m) })).filter(o => o.s > -12 && o.s < 40);
     if (!cands.length) break;
-    let tot = 0; for (const o of cands) { o.wt = 1 / (1 + Math.abs(o.s - 6) / 6); tot += o.wt; }
+    let tot = 0; for (const o of cands) { o.wt = (T(o.m, 'leader') ? 1.3 : 1) / (1 + Math.abs(o.s - 6) / 6); tot += o.wt; }
     let r = Math.random() * tot, ch = cands[0];
     for (const o of cands) { r -= o.wt; if (r <= 0) { ch = o; break; } }
     picks.push(ch.m);
@@ -538,15 +552,16 @@ function runEvent() {
 
 /* ---------------- senator actions ---------------- */
 function spend(n) { S.bill.ap -= n; }
-function diminish(m) { return Math.pow(0.85, m.b.touches) * (side(m) !== 'you' && has('bridge') ? 1.3 : 1); }
+// leaders are seasoned operators: everything you try on them lands 40% weaker
+function diminish(m) { return Math.pow(0.85, m.b.touches) * (side(m) !== 'you' && has('bridge') ? 1.3 : 1) * (T(m, 'leader') && m.party !== 'I' ? 0.6 : 1); }
 function applyDelta(m, d) {
   m.b.bonus += d; m.b.last = d;
   ui.lastDelta = { id: m.id, d };
   if (T(m, 'leader') && Math.abs(d) >= 4) {
-    const mates = S.members.filter(x => x !== m && x.party === m.party && x.faction === m.faction && !isLockedYes(x));
-    const k = has('kingmaker') ? 0.6 : 0.35;
-    for (const x of mates) { x.b.bonus += d * k; x.b.last = d * k; }
-    if (mates.length) log(`The ${m.faction} follow their boss: ${mates.length} senators ${d > 0 ? 'warm' : 'cool'} (${fmt(d * k)} each).`, d > 0 ? 'good' : 'bad');
+    // the pull is live through support(); just show it
+    const mates = factionOf(m).filter(x => !isLockedYes(x)), k = pullK();
+    for (const x of mates) x.b.last = d * k;
+    if (mates.length) log(`The ${m.faction} watch their leader: ${mates.length} senators ${d > 0 ? 'warm' : 'cool'} (${fmt(d * k)} each).`, d > 0 ? 'good' : 'bad');
   }
   if (d > 0) sfx.up(); else if (d < 0) sfx.down();
 }
@@ -768,24 +783,33 @@ function previewAmend(a) {
 
 /* ---------------- the vote ---------------- */
 function castVotes() {
-  return S.members.slice().sort((a, b) => lastName(a).localeCompare(lastName(b))).map(m => {
+  const byName = (a, b) => lastName(a).localeCompare(lastName(b));
+  const leaders = S.members.filter(m => T(m, 'leader') && m.party !== 'I').sort(byName);
+  const order = leaders.concat(S.members.filter(m => !leaders.includes(m)).sort(byName));
+  const lead = {};
+  return order.map(m => {
     let v;
+    const key = m.party + '|' + m.faction;
     if (m.b.absent) v = 'abs';
     else if (isLockedYes(m)) v = 'yes';
     else {
       const s = support(m);
-      if (Math.abs(s) < 8) { const p = 0.5 + s / 16 + (has('floor') ? 0.15 : 0) + (has('closer') ? 0.12 : 0); v = Math.random() < p ? 'yes' : 'no'; }
-      else v = s > 0 ? 'yes' : 'no';
+      if (Math.abs(s) < 8) {
+        let p = 0.5 + s / 16 + (has('floor') ? 0.15 : 0) + (has('closer') ? 0.12 : 0);
+        if (!T(m, 'leader')) p += lead[key] === 'yes' ? 0.15 : lead[key] === 'no' ? -0.15 : 0;
+        v = Math.random() < p ? 'yes' : 'no';
+      } else v = s > 0 ? 'yes' : 'no';
     }
+    if (T(m, 'leader')) lead[key] = v;
     return { m, v };
   });
 }
 function callVote() {
   const B = S.bill;
   const results = castVotes();
-  showModal(`<div class="kicker">${season(B.n)} ${billYear(B.n)} · Roll call vote</div><h2>The ${B.name}</h2><p style="color:var(--dim)">The clerk calls the roll. Needed: <b style="color:var(--ink)">${needText()}</b>.</p>
+  showModal(`<div class="kicker">${season(B.n)} ${billYear(B.n)} · Roll call vote</div><h2>The ${B.name}</h2><p style="color:var(--dim)">The clerk calls the roll, faction leaders first. Needed: <b style="color:var(--ink)">${needText()}</b>.</p>
     <div class="tally"><div class="y"><span id="ty">0</span><small>YEAS</small></div><div class="n"><span id="tn">0</span><small>NAYS</small></div></div>
-    <div class="rollcall">${results.map((r, i) => `<div class="rc" id="rc${i}">${lastName(r.m)} <span style="color:${PARTY[r.m.party].color}">(${tagOf(r.m)})</span><span class="v"></span></div>`).join('')}</div><div id="vres"></div>`);
+    <div class="rollcall">${results.map((r, i) => `<div class="rc" id="rc${i}">${T(r.m, 'leader') && r.m.party !== 'I' ? '👑 ' : ''}${lastName(r.m)} <span style="color:${PARTY[r.m.party].color}">(${tagOf(r.m)})</span><span class="v"></span></div>`).join('')}</div><div id="vres"></div>`);
   sfx.gavel();
   let y = 0, n = 0, i = 0;
   const need = needNum();
@@ -1103,36 +1127,91 @@ function electionPrep() {
     $('#modal-card').querySelectorAll('[data-chal]').forEach(b => b.onclick = () => act(+b.dataset.chal, 1));
     $('#runprim').onclick = runPrimaries;
   };
+  E.houseCash = 0; E.presCash = 0; E.filter = 'close';
   const draw = () => {
-    const shown = E.races.slice().sort((a, b) => Math.abs(projMargin(a)) - Math.abs(projMargin(b)));
+    const per = has('pollmap') ? 6 : 4;
+    const notUp = S.members.filter(m => m.cls !== cls && m.party === S.side).length;
+    const exp = notUp + E.races.reduce((a, rc) => a + raceChance(rc), 0);
+    const filt = { close: rc => { const p = raceChance(rc); return p > 0.12 && p < 0.88; }, mine: rc => rc.m.party === S.side, theirs: rc => rc.m.party !== S.side, all: () => true }[E.filter];
+    const shown = E.races.filter(filt).sort((a, b) => Math.abs(raceChance(a) - 0.5) - Math.abs(raceChance(b) - 0.5));
+    const sc = $('#modal-card') ? $('#modal-card').scrollTop : 0;
     showModal(`<div class="kicker">Election Day ${year} · Class ${cls} · ${E.races.length} seats up${pres ? ' · Presidential year' : ' · Midterms'}</div><h2>The Campaign Trail</h2>
       ${balanceBar()}
       <p>${presTitle()} (${S.president.party}): approval <b>${S.president.approval}%</b>${pres ? (S.president.terms >= 2 ? ' · term-limited, open race' : ' · running for re-election') : ''}. House: ${S.house.D}D–${S.house.R}R, all 435 seats up.</p>
       <p>Your party's national mood: <b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b>, built from the bills you passed and how popular they were${pres ? '' : (S.president.party === S.side ? ', minus the usual midterm penalty for holding the White House' : ', plus a midterm boost against the White House')}. Senators who voted against their state's interests are exposed.</p>
       ${E.primaryNews && E.primaryNews.length ? `<div class="primnews"><b>Primary results</b>${E.primaryNews.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
-      <p>Campaign cash: <b style="color:var(--gold2)">${E.cash}</b> units. Each unit is worth <b>+${has('pollmap') ? 6 : 4}</b> for your side in a race (max 3 per race). Defend your seats or go on offense.</p>
-      <div class="races">${shown.map(raceRow).join('')}</div>
+      <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· each is +${per} for your side in a Senate race (max 3 per race)</small></div>
+        <div>Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b></div></div>
+      <div class="deploy"><button class="btn" data-auto="smart">🎯 Smart deploy<small>Each unit where it adds the most</small></button><button class="btn" data-auto="defend">🛡 Defend my seats<small>Only seats your party holds</small></button><button class="btn" data-auto="offense">⚔ Go on offense<small>Only seats you could flip</small></button><button class="btn ghost" data-auto="reset">↺ Take it all back</button></div>
+      <div class="national">
+        <div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. Each unit ≈ +0.8 points nationally, worth a few House seats.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${'💰'.repeat(E.houseCash) || '—'}</span><button class="btn" data-hc="1" ${E.cash < 1 || E.houseCash >= 4 ? 'disabled' : ''}>+</button></span></div>
+        ${pres ? `<div class="race"><span>🇺🇸 <b>Presidential swing states</b><br><small style="color:var(--dim)">Ads and turnout in the battlegrounds. Each unit ≈ +0.9 points for your ticket.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${'💰'.repeat(E.presCash) || '—'}</span><button class="btn" data-pc="1" ${E.cash < 1 || E.presCash >= 4 ? 'disabled' : ''}>+</button></span></div>` : ''}
+      </div>
+      <div class="campmap">${campaignMap()}<small>Click a state to add a unit · right-click to take one back</small></div>
+      <div class="ftabs">${[['close', 'Close races'], ['mine', 'My seats'], ['theirs', 'Their seats'], ['all', 'All ' + E.races.length]].map(([k, l]) => `<button class="btn ${E.filter === k ? 'on' : ''}" data-filt="${k}">${l}</button>`).join('')}</div>
+      <div class="races camp">${shown.map(raceRow).join('') || '<p style="color:var(--dim)">No races in this view.</p>'}</div>
       <div class="choices"><button class="btn primary big" id="countballots">Close the polls and count the ballots</button></div>`);
-    $('#modal-card').querySelectorAll('[data-cash]').forEach(b => b.onclick = () => {
-      const rc = E.races[+b.dataset.cash]; if (E.cash < 1 || rc.cash >= 3) return;
-      rc.cash++; E.cash--; sfx.click();
-      const sc = $('#modal-card').scrollTop; draw(); $('#modal-card').scrollTop = sc;
+    $('#modal-card').scrollTop = E.drawn ? sc : 0; E.drawn = true;
+    const card = $('#modal-card');
+    const add = (rc, d) => { if (d > 0 && (E.cash < 1 || rc.cash >= 3)) return; if (d < 0 && rc.cash < 1) return; rc.cash += d; E.cash -= d; sfx.click(); draw(); };
+    card.querySelectorAll('[data-cash]').forEach(b => b.onclick = () => add(E.races[+b.dataset.cash], +b.dataset.d));
+    card.querySelectorAll('.ctile').forEach(g => {
+      const rc = E.races[+g.dataset.race];
+      g.onclick = () => add(rc, 1);
+      g.oncontextmenu = e => { e.preventDefault(); add(rc, -1); };
     });
+    card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && (E.cash < 1 || E.houseCash >= 4)) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
+    card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && (E.cash < 1 || E.presCash >= 4)) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
+    card.querySelectorAll('[data-filt]').forEach(b => b.onclick = () => { E.filter = b.dataset.filt; sfx.click(); draw(); });
+    card.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => { autoDeploy(b.dataset.auto); sfx.up(); draw(); });
     $("#countballots").onclick = countBallots;
   };
   drawPrimaries();
 }
+// your party's chance of holding or taking a seat, as the campaign sees it
+function raceChance(rc) {
+  const mg = projMargin(rc), A = majorParty(rc);
+  const pA = has('pollmap') ? (mg > 0 ? 0.97 : 0.03) : clamp((mg + 6) / 12, 0.02, 0.98);
+  let p = A === S.side ? pA : 1 - pA;
+  if (rc.ind) p *= rc.m.party === 'I' ? 0.45 : 0.85; // a strong independent muddies it
+  return p;
+}
+function cashGain(rc) { if (rc.cash >= 3) return 0; const b = raceChance(rc); rc.cash++; const g = raceChance(rc) - b; rc.cash--; return g; }
+function autoDeploy(mode) {
+  const E = S.election;
+  if (mode === 'reset') { for (const rc of E.races) { E.cash += rc.cash; rc.cash = 0; } E.cash += E.houseCash + E.presCash; E.houseCash = 0; E.presCash = 0; return; }
+  const pool = E.races.filter(rc => mode === 'defend' ? rc.m.party === S.side : mode === 'offense' ? rc.m.party !== S.side : true);
+  while (E.cash > 0) {
+    let best = null, gain = 0.015;
+    for (const rc of pool) { const g = cashGain(rc); if (g > gain) { gain = g; best = rc; } }
+    if (!best) break;
+    best.cash++; E.cash--;
+  }
+}
+function chanceColor(p) { return p >= 0.6 ? PARTY[S.side].color : p <= 0.4 ? PARTY[other(S.side)].color : '#b8a24a'; }
+function campaignMap() {
+  const S0 = 50, G = 4, E = S.election;
+  const byState = {}; E.races.forEach((rc, i) => byState[rc.m.state] = i);
+  let svg = `<svg viewBox="-4 -4 ${11 * S0 + 4} ${8 * S0 + 4}">`;
+  for (const [code, col, row] of TILES) {
+    const x = col * S0, y = row * S0, sz = S0 - G, i = byState[code];
+    if (i == null) { svg += `<rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="#1c2129"/><text x="${x + sz / 2}" y="${y + 28}" text-anchor="middle" font-size="12" fill="#4b5465" font-weight="700">${code}</text>`; continue; }
+    const rc = E.races[i], p = raceChance(rc), op = 0.35 + Math.abs(p - 0.5) * 1.3;
+    svg += `<g class="ctile" data-race="${i}" style="cursor:pointer"><title>${ST[code].name}: your chance ${Math.round(p * 100)}%</title><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="${chanceColor(p)}" fill-opacity="${op}" style="${rc.cash ? 'stroke:#f6d27a;stroke-width:3' : ''}"/>
+      <text x="${x + sz / 2}" y="${y + 18}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">${code}</text><text x="${x + sz / 2}" y="${y + 34}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${Math.round(p * 100)}%${rc.cash ? ' ' + '$'.repeat(rc.cash) : ''}</text></g>`;
+  }
+  return svg + '</svg>';
+}
 function raceRow(rc) {
   const m = rc.m, i = S.election.races.indexOf(rc);
-  const mg = projMargin(rc), A = majorParty(rc);
+  const p = raceChance(rc), g = cashGain(rc);
   const pc = PARTY[m.party].color;
-  let label = has('pollmap') ? `${A} ${fmt(mg)}` : (Math.abs(mg) < 4 ? 'Toss-up' : mg > 0 ? (mg > 10 ? 'Safe ' : 'Lean ') + A : (mg < -10 ? 'Likely ' : 'Lean ') + other(A));
-  if (rc.ind) label = m.party === 'I' ? 'Three-way' : label + ' · 3-way';
   const rec = m.rec <= -4 ? ' · <span style="color:var(--no)">bad record at home</span>' : m.rec >= 4 ? ' · <span style="color:var(--yes)">popular record</span>' : '';
   const who = rc.retiring ? `<i>Open seat (${m.party} retiring)</i>` : rc.primaried ? `<i>${rc.nominee.name} (${rc.nominee.faction}), after beating Sen. ${lastName(m)} in the primary</i>` : sen(m);
   const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ Independent ${rc.ind.name} (${rc.ind.cause[0]}), polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
   return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${rec}${ind}</span>
-    <span style="display:flex;gap:8px;align-items:center"><span class="mg" style="color:${mg >= 0 ? pc : 'var(--gold2)'}">${label}</span><span>${'💰'.repeat(rc.cash)}</span><button class="btn" style="padding:3px 8px" data-cash="${i}" ${S.election.cash < 1 || rc.cash >= 3 ? 'disabled' : ''}>+$</button></span></div>`;
+    <span class="cashctl"><span class="chance"><b style="color:${chanceColor(p)}">${Math.round(p * 100)}%</b><span class="mbar"><i style="width:${p * 100}%;background:${chanceColor(p)}"></i></span><small>your chance${rc.ind ? ' · 3-way' : ''}</small></span>
+      <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${'💰'.repeat(rc.cash) || '—'}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 || rc.cash >= 3 ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
 }
 function countBallots() {
   const E = S.election, c = S.career;
@@ -1173,7 +1252,7 @@ function countBallots() {
   const P = S.president;
   const apTerm = (P.approval - 50) * 0.2 * (P.party === S.side ? 1 : -1);
   const hMajBefore = houseMaj();
-  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + rnd(-2.5, 2.5));
+  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + (E.houseCash || 0) * 0.8 + rnd(-2.5, 2.5));
   const pres = E.pres ? runPres() : null;
   const after = { D: seats('D'), R: seats('R'), I: seats('I') };
   const net = after[S.side] - before[S.side];
@@ -1422,7 +1501,9 @@ function render() {
 
   document.querySelectorAll('[data-view]').forEach(b => { b.classList.toggle('on', b.dataset.view === ui.view); b.onclick = () => { ui.view = b.dataset.view; render(); }; });
   const svgEl = $('#chamber');
-  if (ui.view === 'map') { svgEl.setAttribute('viewBox', `-4 -4 ${11 * 50 + 4} ${8 * 50 + 4}`); svgEl.innerHTML = mapSVG('stance'); }
+  svgEl.classList.toggle('hidden', ui.view === 'factions'); $('#facview').classList.toggle('hidden', ui.view !== 'factions');
+  if (ui.view === 'factions') renderFactions();
+  else if (ui.view === 'map') { svgEl.setAttribute('viewBox', `-4 -4 ${11 * 50 + 4} ${8 * 50 + 4}`); svgEl.innerHTML = mapSVG('stance'); }
   else { svgEl.setAttribute('viewBox', '-285 -272 570 300'); svgEl.innerHTML = chamberSVG(); }
   svgEl.querySelectorAll('[data-id]').forEach(g => g.onclick = () => { ui.sel = +g.dataset.id; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render(); });
   ui.lastDelta = null;
@@ -1464,6 +1545,24 @@ function pathToLaw() {
     <span class="step">⚖ Court ${courtLabel()}: <b style="color:${col(1 - cr.total * 2)}">${Math.round(cr.total * 100)}%</b> struck down</span></div>`;
 }
 function targeted(m) { const B = S.bill; return has('tracker') && B.plan && B.plan.includes(m.id) && !isLockedYes(m); }
+function renderFactions() {
+  const groups = [];
+  for (const p of [S.side, other(S.side)]) for (const [f] of FACTIONS[p]) {
+    const L = S.members.find(m => m.party === p && m.faction === f && T(m, 'leader'));
+    if (L) groups.push(L);
+  }
+  const card = L => {
+    const ms = factionOf(L), known = ms.filter(m => m.b.intel || isLockedYes(m));
+    const yes = known.filter(m => isLockedYes(m) || support(m) >= 12).length, no = known.filter(m => !isLockedYes(m) && support(m) <= -12).length;
+    const st = leaderStance(L), col = isLockedYes(L) || st >= 12 ? 'var(--yes)' : st > -12 ? 'var(--mid)' : 'var(--no)';
+    return `<div class="fcard" style="border-left-color:${PARTY[L.party].color}"><div class="fh"><b>${L.faction}</b><small>${ms.length + 1} senators</small></div>
+      <button class="btn fl" data-goto="${L.id}">👑 Sen. ${L.name} (${tagOf(L)})<small>Leader · <b style="color:${col}">${isLockedYes(L) ? 'committed yea' : stance(st)}</b> · pulls members ${fmt(L.b.start == null ? 0 : pullK() * (leaderStance(L) - L.b.start) + (isLockedYes(L) ? 2 : 0))}</small></button>
+      <div class="fm">${ms.map(m => `<i title="Sen. ${m.name}" data-goto="${m.id}" style="background:${seatColor(m)}"></i>`).join('')}</div>
+      <small style="color:var(--dim)">Known: <b style="color:var(--yes)">${yes} yea</b> · <b style="color:var(--no)">${no} nay</b> · ${ms.length - known.length} not sounded out</small></div>`;
+  };
+  $('#facview').innerHTML = `<p class="fhint">Every faction follows its leader. Move a leader and the whole bloc moves ${Math.round(pullK() * 100)}% as far (and when the other side's whip gets to a leader, the bloc slips too); lock a leader in and members get an extra push. In the roll call, leaders vote first and fence-sitters follow them.</p><div class="fgrid">${groups.map(card).join('')}</div>`;
+  $('#facview').querySelectorAll('[data-goto]').forEach(b => b.onclick = () => { ui.sel = +b.dataset.goto; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render(); });
+}
 function renderMember() {
   const el = $('#member');
   const m = S.members.find(x => x.id === ui.sel);
@@ -1473,6 +1572,10 @@ function renderMember() {
   const traits = m.knownTraits ? m.traits.map(t => `<span class="trait" title="${TRAITS[t][1]}">${TRAITS[t][0]}</span>`).join('') : '<span class="trait unk">Traits unknown — sound them out</span>';
   const top = TAGS.slice().sort((a, b) => Math.abs(m.w[b]) - Math.abs(m.w[a])).slice(0, 3);
   const concerns = known ? `<div class="concerns">Cares about: ${top.map(t => `<b>${TAG[t][0]} ${TAG[t][1]}</b> (${m.w[t] > 0 ? 'for' : 'against'})`).join(', ')}</div>` : '';
+  const L = leaderOf(m), pull = leaderPull(m);
+  const leadLine = T(m, 'leader') && m.party !== 'I'
+    ? `<div class="concerns lead">👑 <b>Leader of the ${m.faction}</b>: ${factionOf(m).length} senators follow their lead (${Math.round(pullK() * 100)}% of the way), and fence-sitters follow their vote. Seasoned: your moves on them land 40% weaker.</div>`
+    : L ? `<div class="concerns lead">Follows <a href="#" data-goto="${L.id}">Sen. ${L.name}</a>, leader of the ${m.faction}, who is <b>${isLockedYes(L) ? 'committed yea' : stance(leaderStance(L))}</b> (pull ${fmt(pull)}).</div>` : '';
   const fit = stateFit(m.state, B.fx);
   const home = `<div class="concerns">Back in ${st.name} (${leanLabel(st.lean)}), this bill is <b style="color:${fit > 1.5 ? 'var(--yes)' : fit < -1.5 ? 'var(--no)' : 'var(--mid)'}">${fit > 4 ? 'very popular' : fit > 1.5 ? 'popular' : fit < -4 ? 'very unpopular' : fit < -1.5 ? 'unpopular' : 'a wash'}</b>.${isUp(m) ? ` They're <b>up for re-election in ${electionYear(nextElectionK())}</b> and feel it.` : ''}</div>`;
   const delta = known && m.b.last && Math.abs(m.b.last) >= 1 ? ` <span class="delta ${m.b.last > 0 ? 'up' : 'down'}">${fmt(m.b.last)}</span>` : '';
@@ -1505,10 +1608,11 @@ function renderMember() {
   el.innerHTML = `<div class="m-head">${portrait(m)}<div><h3>Sen. ${m.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[m.party].color}">${PARTY[m.party].name}</span> · ${m.faction}</div><div class="m-sub">${st.name} · ${leanLabel(st.lean)} · Class ${m.cls}</div></div></div>
     <div class="support">${bar}</div>
     <div class="badges">${badges}</div>
-    <div class="traits">${traits}</div>${concerns}${home}
+    <div class="traits">${traits}</div>${leadLine}${concerns}${home}
     <div class="quote">${ui.lastQuote || '<span style="color:var(--dim)">…</span>'}</div>
     <div class="actions">${acts}</div>${args}`;
   el.querySelectorAll('[data-act]').forEach(b => b.onclick = () => { ACTIONS[b.dataset.act].run(m); render(); });
+  el.querySelectorAll('[data-goto]').forEach(a => a.onclick = e => { e.preventDefault(); ui.sel = +a.dataset.goto; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render(); });
   el.querySelectorAll('[data-arg]').forEach(b => b.onclick = () => { if (B.ap < 1) return; doPitch(m, b.dataset.arg); render(); });
 }
 
@@ -1526,7 +1630,7 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 <li><b>Click a seat</b> (or a state on the <b>Map</b>) to visit a senator. <b>Sound Out</b> to learn where they stand, their traits and what they care about.</li>
 <li><b>Pitch</b> with an argument they care about (a bad match backfires). Use <b>earmarks</b> on the pork-hungry and <b>photo ops</b> on the camera-hungry. <b>Promise a favor</b> and you'll owe them later. <b>Twist an arm</b> unless they're thin-skinned. Dig up <b>dirt</b> if you dare.</li>
 <li>Get a senator to a solid yea and <b>lock in</b> their commitment so the other side's whip can't steal them back overnight.</li>
-<li><b>Caucus bosses</b> pull their whole faction with them. Win the boss, win the bloc.</li>
+<li>Every faction has a <b>leader</b> 👑. Their public stance pulls every member of the faction, they vote first in the roll call, and fence-sitters follow them. Win the leader, win the bloc. See them all under <b>Factions</b>.</li>
 <li><b>Amendments</b> change what the bill does, which reshuffles who supports it.</li>
 <li><b>Elections</b> come every two years (every 6 bills), with a third of the Senate up each time and the White House every four years. Senators up for re-election vote with their home state in mind, and those who voted against it are vulnerable. Your party's national mood depends on what you passed. Spend campaign cash in the close races. Lose the majority and you lose control of the calendar.</li>
 <li>Passing the Senate is only step one. Every bill then needs the <b>House</b> (whip it to raise the odds) and the <b>President's</b> signature. An opposing President may veto, and an override needs 67 senators. A friendly President can call wavering senators for you, and their approval lifts your whole caucus. Once it's law, the <b>Supreme Court</b> may strike it down. When a justice retires, a friendly President nominates a replacement and you whip the confirmation; with an opposing President, your majority can block their pick.</li>

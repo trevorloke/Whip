@@ -234,3 +234,38 @@ hr{border:none;border-top:1px solid var(--line);margin:14px 0}
 .primnews p{margin:4px 0}
 .shop.sinks{grid-template-columns:1fr 1fr}
 @media (max-width:600px){.shop.sinks{grid-template-columns:1fr}}
+
+/* ---------- factions view ---------- */
+#facview{padding:4px 6px}
+.fhint{color:var(--dim);font-size:12px;margin:2px 4px 10px}
+.fgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:8px}
+.fcard{background:#141821;border:1px solid var(--line);border-left:4px solid;border-radius:8px;padding:8px 10px;display:flex;flex-direction:column;gap:6px}
+.fh{display:flex;justify-content:space-between;align-items:baseline}
+.fh small{color:var(--dim)}
+.fcard .fl{padding:6px 8px;font-size:13px}
+.fm{display:flex;flex-wrap:wrap;gap:3px}
+.fm i{width:13px;height:13px;border-radius:50%;cursor:pointer;border:1px solid #0006}
+.concerns.lead{background:#1d1a10;border-left:3px solid var(--gold);padding:5px 8px;border-radius:0 6px 6px 0}
+.concerns.lead a{color:var(--gold2)}
+
+/* ---------- campaign trail ---------- */
+.camp-top{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center;background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}
+.cashpill{display:inline-block;background:var(--gold);color:#1a1405;font-weight:800;border-radius:999px;padding:2px 10px}
+.deploy{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:6px;margin:8px 0}
+.deploy .btn{text-align:center;font-weight:700}
+.national{display:flex;flex-direction:column;gap:6px;margin:6px 0}
+.campmap{margin:8px 0}
+.campmap svg{width:100%;height:auto;display:block}
+.campmap small{color:var(--dim);font-size:11px}
+.ftabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.ftabs .btn{padding:4px 12px;font-size:12px}
+.races.camp{max-height:none}
+.cashctl{display:flex;gap:6px;align-items:center;flex:none}
+.cashctl .btn{padding:3px 10px;min-width:34px;text-align:center}
+.cashctl .btn small{display:inline;margin-left:3px;color:var(--yes)}
+.cashctl .dots{min-width:52px;text-align:center}
+.chance{display:flex;flex-direction:column;align-items:flex-end;min-width:74px}
+.chance b{font-size:15px}
+.chance small{font-size:10px;color:var(--dim)}
+.chance .mbar{width:70px}
+@media (max-width:600px){.race{flex-wrap:wrap}.cashctl{width:100%;justify-content:flex-end}}
