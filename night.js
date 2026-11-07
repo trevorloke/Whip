@@ -1,0 +1,295 @@
+'use strict';
+/* =====================================================================
+   ELECTION NIGHT — results show for the Senate, the House and the
+   Presidency. Real electoral votes, House apportionment and rough
+   state populations; fictional candidates.
+   ===================================================================== */
+
+// 2020-census populations (millions, rounded) and 2024 electoral votes
+const POP = { AL: 5.0, AK: 0.73, AZ: 7.2, AR: 3.0, CA: 39.5, CO: 5.8, CT: 3.6, DE: 1.0, FL: 21.5, GA: 10.7, HI: 1.46, ID: 1.8, IL: 12.8, IN: 6.8, IA: 3.2, KS: 2.9, KY: 4.5, LA: 4.7, ME: 1.36, MD: 6.2, MA: 7.0, MI: 10.1, MN: 5.7, MS: 2.96, MO: 6.15, MT: 1.08, NE: 1.96, NV: 3.1, NH: 1.38, NJ: 9.3, NM: 2.1, NY: 20.2, NC: 10.4, ND: 0.78, OH: 11.8, OK: 3.96, OR: 4.2, PA: 13.0, RI: 1.1, SC: 5.1, SD: 0.89, TN: 6.9, TX: 29.1, UT: 3.27, VT: 0.64, VA: 8.6, WA: 7.7, WV: 1.79, WI: 5.9, WY: 0.58, DC: 0.69 };
+const EV = { AL: 9, AK: 3, AZ: 11, AR: 6, CA: 54, CO: 10, CT: 7, DE: 3, FL: 30, GA: 16, HI: 4, ID: 4, IL: 19, IN: 11, IA: 6, KS: 6, KY: 8, LA: 8, ME: 4, MD: 10, MA: 11, MI: 15, MN: 10, MS: 6, MO: 10, MT: 4, NE: 5, NV: 6, NH: 4, NJ: 14, NM: 5, NY: 28, NC: 16, ND: 3, OH: 17, OK: 7, OR: 8, PA: 19, RI: 4, SC: 9, SD: 3, TN: 11, TX: 40, UT: 6, VT: 3, VA: 13, WA: 12, WV: 4, WI: 10, WY: 3, DC: 3 };
+const HSEATS = c => c === 'DC' ? 0 : EV[c] - 2; // House seats = electoral votes − 2
+const NTILES = TILES.concat([['DC', 8, 5]]);
+const stName = c => c === 'DC' ? 'District of Columbia' : ST[c].name;
+const stLean = c => c === 'DC' ? -40 : ST[c].lean;
+const turnout = c => POP[c] * 1e6 * rnd(0.44, 0.5);
+const colOf = c => NTILES.find(t => t[0] === c)[1];
+// east coast polls close first; close races are called last
+function callTime(code, margin) {
+  const m = Math.abs(margin);
+  const base = (10 - colOf(code)) / 10 * 0.42;
+  const extra = m > 15 ? 0.02 : m > 8 ? 0.1 : m > 4 ? 0.28 : 0.5 + rnd(0, 0.06);
+  return clamp(base + extra + rnd(0, 0.04), 0.01, 0.97);
+}
+const nfmt = v => Math.round(v).toLocaleString('en-US');
+const pct = v => v.toFixed(1) + '%';
+
+/* ---------------- the House, state by state ---------------- */
+function houseSeatsD(code, envD) {
+  const n = HSEATS(code);
+  if (!S.hNoise) { S.hNoise = {}; for (const [c] of STATES) S.hNoise[c] = rnd(-0.12, 0.12); }
+  const share = clamp(0.5 + (-stLean(code) + envD) / 55 + S.hNoise[code], 0, 1);
+  return Math.round(n * share);
+}
+function houseTotalD(envD) { return STATES.reduce((a, [c]) => a + houseSeatsD(c, envD), 0); }
+function runHouse(swingSide) {
+  // find the national environment that reproduces the current House, then swing it
+  let env0 = 0, best = 1e9;
+  for (let e = -30; e <= 30; e += 0.25) { const d = Math.abs(houseTotalD(e) - S.house.D); if (d < best) { best = d; env0 = e; } }
+  const envD = env0 + (S.side === 'D' ? swingSide : -swingSide);
+  const states = {};
+  let D = 0, R = 0, popD = 0, popR = 0;
+  for (const [c] of STATES) {
+    const n = HSEATS(c), d = houseSeatsD(c, envD), prevD = S.houseByState ? S.houseByState[c] : houseSeatsD(c, env0);
+    const dPct = clamp(49.2 + (-stLean(c) + envD) / 2 + rnd(-2, 2), 15, 85), rPct = 98.4 - dPct;
+    const tv = turnout(c) * 0.96;
+    states[c] = { n, d, r: n - d, prevD, dPct, rPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, call: callTime(c, dPct - rPct) };
+    D += d; R += n - d; popD += states[c].dVotes; popR += states[c].rVotes;
+  }
+  S.houseByState = Object.fromEntries(Object.entries(states).map(([c, v]) => [c, v.d]));
+  const before = { ...S.house };
+  S.house = { D, R };
+  return { states, D, R, before, popD, popR };
+}
+
+/* ---------------- the Presidency, by electoral vote ---------------- */
+function runPres() {
+  const P = S.president, inc = P.party;
+  const running = P.terms < 2;
+  const names = { D: inc === 'D' && running ? P.name : pick(FIRST) + ' ' + pick(LAST), R: inc === 'R' && running ? P.name : pick(FIRST) + ' ' + pick(LAST) };
+  const score = clamp((P.approval - 50) / 4 + (inc === S.side ? S.mood : -S.mood) * 0.3 - (running ? 0 : 2) + rnd(-3.5, 3.5), -11, 11);
+  const envD = inc === 'D' ? score : -score;
+  const states = {};
+  let evD = 0, evR = 0, popD = 0, popR = 0;
+  for (const c of Object.keys(EV)) {
+    const dm = -stLean(c) + envD + rnd(-2.5, 2.5);
+    const dPct = clamp(49.25 + dm / 2, 5, 95), rPct = 98.5 - dPct;
+    const tv = turnout(c);
+    const w = dPct > rPct ? 'D' : 'R';
+    states[c] = { dPct, rPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, ev: EV[c], w, call: callTime(c, dPct - rPct) };
+    if (w === 'D') evD += EV[c]; else evR += EV[c];
+    popD += states[c].dVotes; popR += states[c].rVotes;
+  }
+  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : inc;
+  let what;
+  if (winner === inc && running) { P.terms++; P.approval = clamp(P.approval + 4, 22, 72); what = `${presTitle()} wins a second term.`; }
+  else {
+    const oldT = presTitle();
+    S.president = { name: names[winner], party: winner, approval: ri(52, 58), terms: 1 };
+    what = winner === inc ? `${oldT} was term-limited; fellow ${PARTY[winner].name} ${names[winner]} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${names[winner]} wins the White House.`;
+    if (winner !== inc) S.vacancyBlocked = false;
+  }
+  return { states, evD, evR, popD, popR, names, winner, inc, what };
+}
+
+/* ---------------- the show ---------------- */
+let NIGHT = null;
+function openNight(data, onDone) {
+  const tabs = [data.pres && 'pres', 'senate', 'house'].filter(Boolean);
+  NIGHT = { ...data, tab: tabs[0], tabs, t: window.FF_FAST ? 1 : 0, sel: null, onDone, called: new Set(), timer: null };
+  let el = $('#night');
+  if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
+  el.classList.remove('hidden');
+  hideModal();
+  // pointerdown (not click) so taps land even while the screen refreshes live
+  el.onpointerdown = e => {
+    const N = NIGHT; if (!N) return;
+    const t = e.target.closest('[data-tab],[data-code],#nprev,#nnext,#nskip,#ndone');
+    if (!t) return;
+    if (t.dataset.tab) { N.tab = t.dataset.tab; N.sel = null; sfx.click(); }
+    else if (t.dataset.code) { if (contests(N.tab).some(c => c.code === t.dataset.code)) { N.sel = t.dataset.code; sfx.click(); } }
+    else if (t.id === 'nprev') return stepRace(-1);
+    else if (t.id === 'nnext') return stepRace(1);
+    else if (t.id === 'nskip') N.t = 1;
+    else if (t.id === 'ndone') return closeNight();
+    renderNight();
+  };
+  NIGHT.timer = setInterval(() => {
+    if (NIGHT.t >= 1) { clearInterval(NIGHT.timer); NIGHT.timer = null; renderNight(); return; }
+    NIGHT.t = Math.min(1, NIGHT.t + 0.012);
+    renderNight();
+  }, 200);
+  document.addEventListener('keydown', nightKeys);
+  renderNight();
+}
+function nightKeys(e) {
+  if (!NIGHT || $('#night').classList.contains('hidden')) return;
+  if (e.key === 'ArrowRight') { stepRace(1); e.preventDefault(); }
+  if (e.key === 'ArrowLeft') { stepRace(-1); e.preventDefault(); }
+}
+function closeNight() {
+  if (NIGHT.timer) clearInterval(NIGHT.timer);
+  document.removeEventListener('keydown', nightKeys);
+  $('#night').classList.add('hidden');
+  const done = NIGHT.onDone; NIGHT = null; done();
+}
+
+// each tab's list of contests: { code, call, margin (D minus R, or winner-perspective), ... }
+function contests(tab) {
+  const N = NIGHT;
+  if (tab === 'senate') return N.races.map(r => ({ code: r.code, call: r.call, r }));
+  if (tab === 'pres') return Object.entries(N.pres.states).map(([code, s]) => ({ code, call: s.call, s }));
+  return Object.entries(N.house.states).map(([code, s]) => ({ code, call: s.call, s }));
+}
+function isCalled(c) { return NIGHT.t >= c.call; }
+function navList() { return contests(NIGHT.tab).sort((a, b) => a.call - b.call); }
+function stepRace(d) {
+  const L = navList(); let i = L.findIndex(c => c.code === NIGHT.sel);
+  i = (i + d + L.length) % L.length; NIGHT.sel = L[i].code; sfx.click(); renderNight();
+}
+function clockText(t) {
+  const mins = 19 * 60 + Math.round(t * 7 * 60); const h = Math.floor(mins / 60) % 24, m = mins % 60;
+  return `${((h + 11) % 12) + 1}:${String(m).padStart(2, '0')} ${h >= 12 && h < 24 ? 'PM' : 'AM'} ET`;
+}
+function reporting(c) { return isCalled(c) ? 1 : clamp(NIGHT.t / c.call, 0, 0.96) * (0.6 + 0.4 * Math.min(1, NIGHT.t * 3)); }
+function shade(party, margin) { const m = Math.abs(margin); return { fill: PARTY[party].color, op: m < 3 ? 0.45 : m < 8 ? 0.7 : 1 }; }
+
+function tallies() {
+  const N = NIGHT, out = {};
+  // Senate: seats not up, plus races called so far
+  const up = new Set(N.races.map(r => r.code + ':' + r.cls));
+  const cont = { D: 0, R: 0, I: 0 };
+  for (const m of N.prevMembers) if (!up.has(m.state + ':' + m.cls)) cont[m.party]++;
+  const sen = { ...cont }, und = { n: 0 };
+  for (const r of N.races) { if (isCalled({ call: r.call })) sen[r.wParty]++; else und.n++; }
+  out.senate = { D: sen.D, R: sen.R, I: sen.I, und: und.n };
+  if (N.pres) { let d = 0, r = 0, u = 0; for (const s of Object.values(N.pres.states)) { if (NIGHT.t >= s.call) { if (s.w === 'D') d += s.ev; else r += s.ev; } else u += s.ev; } out.pres = { D: d, R: r, und: u }; }
+  { let d = 0, r = 0, u = 0; for (const s of Object.values(N.house.states)) { if (NIGHT.t >= s.call) { d += s.d; r += s.r; } else u += s.n; } out.house = { D: d, R: r, und: u }; }
+  return out;
+}
+function barChart(label, a, total, need, sub) {
+  const w = v => (v / total * 100).toFixed(2) + '%';
+  return `<div class="tcard"><div class="tl"><b>${label}</b><span>${sub || ''}</span></div>
+    <div class="tbar"><div style="width:${w(a.D)};background:${PARTY.D.color}"></div>${a.I ? `<div style="width:${w(a.I)};background:${PARTY.I.color}"></div>` : ''}<div style="width:${w(a.und)};background:#3a4250"></div><div style="width:${w(a.R)};background:${PARTY.R.color}"></div>
+    <i class="need" style="left:${w(need)}"></i><i class="need" style="left:${w(total - need)}"></i></div>
+    <div class="tl"><span style="color:${PARTY.D.color};font-weight:800">D ${a.D}${a.I ? ` <span style="color:${PARTY.I.color}">+ I ${a.I}</span>` : ''}</span><span style="color:var(--dim)">${a.und ? `${a.und} uncalled` : 'all called'} · ${need} to win</span><span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span></div></div>`;
+}
+
+function nightMap() {
+  const N = NIGHT, S0 = 50, G = 4;
+  let svg = `<svg viewBox="-4 -4 ${11 * S0 + 4} ${8 * S0 + 4}" class="nmap">`;
+  const byCode = Object.fromEntries(contests(N.tab).map(c => [c.code, c]));
+  for (const [code, col, row] of NTILES) {
+    const x = col * S0, y = row * S0, sz = S0 - G, c = byCode[code];
+    let fill = '#1c2129', op = 1, sub = '', stroke = '', txt = '#5b6577';
+    if (c) {
+      txt = '#fff';
+      if (!isCalled(c)) { fill = '#3a4250'; sub = N.t > c.call * 0.6 ? '…' : ''; }
+      else if (N.tab === 'senate') { const s = shade(c.r.wParty, c.r.margin); fill = s.fill; op = s.op; if (c.r.flip) stroke = 'stroke:#f6d27a;stroke-width:4'; sub = c.r.flip ? 'FLIP' : ''; }
+      else if (N.tab === 'pres') { const s = shade(c.s.w, c.s.dPct - c.s.rPct); fill = s.fill; op = s.op; sub = c.s.ev; }
+      else { const sh = c.s.d / c.s.n; fill = sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0'; op = 0.35 + Math.abs(sh - 0.5) * 1.3; sub = `${c.s.d}–${c.s.r}`; if (c.s.d !== c.s.prevD) stroke = 'stroke:#f6d27a;stroke-width:3'; }
+      if (N.tab === 'pres' && !isCalled(c)) sub = c.s.ev;
+    }
+    if (N.sel === code) stroke = 'stroke:#fff;stroke-width:3';
+    svg += `<g class="ntile" data-code="${code}" ${c ? 'style="cursor:pointer"' : ''}><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="${fill}" fill-opacity="${op}" style="${stroke}"/>
+      <text x="${x + sz / 2}" y="${y + 19}" text-anchor="middle" font-size="13" font-weight="800" fill="${txt}">${code}</text>
+      <text x="${x + sz / 2}" y="${y + 36}" text-anchor="middle" font-size="10" font-weight="700" fill="${txt}" opacity=".85">${sub}</text></g>`;
+  }
+  return svg + '</svg>';
+}
+
+function candRow(name, party, votes, p, win, extra = '') {
+  return `<div class="cand ${win ? 'win' : ''}"><div class="cn"><span class="dot" style="background:${PARTY[party].color}"></span><b>${name}</b> <span style="color:var(--dim)">(${party})</span>${extra}${win ? ' <span class="check">✓</span>' : ''}</div>
+    <div class="cv"><span>${nfmt(votes)}</span><b>${pct(p)}</b></div><div class="cb"><i style="width:${p}%;background:${PARTY[party].color}"></i></div></div>`;
+}
+function detailPanel() {
+  const N = NIGHT;
+  const L = navList(); if (!N.sel || !L.some(c => c.code === N.sel)) N.sel = L.slice().sort((a, b) => Math.abs(marginOf(a)) - Math.abs(marginOf(b)))[0].code;
+  const c = L.find(x => x.code === N.sel), called = isCalled(c), rep = reporting(c);
+  const i = L.indexOf(c);
+  const nav = `<div class="nnav"><button class="btn" id="nprev">◀ Prev</button><span>${i + 1} / ${L.length}</span><button class="btn" id="nnext">Next ▶</button></div>`;
+  const status = called ? `<span class="call">PROJECTED</span>` : (N.t > c.call * 0.6 && Math.abs(marginOf(c)) < 5 ? '<span class="call close">TOO CLOSE TO CALL</span>' : '<span class="call wait">TOO EARLY TO CALL</span>');
+  let body = '';
+  if (N.tab === 'senate') {
+    const r = c.r;
+    const rows = [[r.wName, r.wParty, r.wVotes, r.wPct, true, r.incumbent === r.wName ? ' <span class="inc">incumbent</span>' : ''], [r.lName, r.lParty, r.lVotes, r.lPct, false, r.incumbent === r.lName ? ' <span class="inc">incumbent</span>' : '']];
+    if (!called) rows.forEach(x => { x[2] *= rep; x[3] = x[3] + (x[4] ? -1 : 1) * (1 - rep) * 3 * Math.sin(r.call * 40); x[4] = false; });
+    rows.sort((a, b) => b[3] - a[3]);
+    body = `<h3>${stName(r.code)} · Senate (Class ${r.cls})</h3><div class="nsub">${r.open ? 'Open seat' : 'Incumbent: ' + r.incumbent} · ${leanLabel(stLean(r.code))} · ${status} ${called && r.flip ? `<span class="call flip">${r.wParty} FLIP</span>` : called ? '<span class="call hold">HOLD</span>' : ''}</div>
+      ${rows.map(x => candRow(...x)).join('')}<div class="nsub">${Math.round(rep * 100)}% of the expected vote reported${called ? ` · margin ${pct(r.margin)}` : ''}</div>`;
+  } else if (N.tab === 'pres') {
+    const s = c.s, P = N.pres;
+    const rows = [[P.names.D, 'D', s.dVotes, s.dPct], [P.names.R, 'R', s.rVotes, s.rPct]].map(x => { if (!called) { x[2] *= rep; } return [...x, called && ((x[1] === 'D') === (s.w === 'D'))]; }).sort((a, b) => b[3] - a[3]);
+    body = `<h3>${stName(c.code)} · President</h3><div class="nsub"><b>${s.ev} electoral votes</b> · ${leanLabel(stLean(c.code))} · ${status}</div>
+      ${rows.map(x => candRow(x[0], x[1], x[2], x[3], x[4])).join('')}<div class="nsub">${Math.round(rep * 100)}% reported${called ? ` · margin ${pct(Math.abs(s.dPct - s.rPct))}` : ''}</div>`;
+  } else {
+    const s = c.s, ch = s.d - s.prevD;
+    body = `<h3>${stName(c.code)} · House</h3><div class="nsub"><b>${s.n} seat${s.n > 1 ? 's' : ''}</b> · ${leanLabel(stLean(c.code))} · ${status}</div>
+      ${called ? `<div class="seatrow">${('<i style="background:' + PARTY.D.color + '"></i>').repeat(s.d)}${('<i style="background:' + PARTY.R.color + '"></i>').repeat(s.r)}</div>
+      <div class="nsub">D ${s.d} · R ${s.r} · ${ch === 0 ? 'no change' : `<b style="color:${ch > 0 ? PARTY.D.color : PARTY.R.color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>`}</div>` : '<div class="seatrow">' + '<i style="background:#3a4250"></i>'.repeat(s.n) + '</div>'}
+      ${candRow('Democrats (all districts)', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('Republicans (all districts)', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}`;
+  }
+  return nav + body;
+}
+function marginOf(c) { return c.r ? c.r.margin : c.s.dPct - c.s.rPct; }
+function raceList() {
+  const L = navList();
+  return L.map(c => {
+    const called = isCalled(c);
+    let st;
+    if (!called) st = `<span style="color:var(--dim)">${NIGHT.t > c.call * 0.6 && Math.abs(marginOf(c)) < 5 ? 'Too close' : 'Waiting'}</span>`;
+    else if (c.r) st = `<b style="color:${PARTY[c.r.wParty].color}">${c.r.wParty} +${c.r.margin.toFixed(1)}</b>${c.r.flip ? ' <span class="call flip">FLIP</span>' : ''}`;
+    else if (NIGHT.tab === 'pres') st = `<b style="color:${PARTY[c.s.w].color}">${c.s.w} +${Math.abs(c.s.dPct - c.s.rPct).toFixed(1)}</b> · ${c.s.ev} EV`;
+    else st = `<b style="color:${PARTY.D.color}">${c.s.d}</b>–<b style="color:${PARTY.R.color}">${c.s.r}</b>${c.s.d !== c.s.prevD ? ` <span class="call flip">${c.s.d > c.s.prevD ? 'D' : 'R'} +${Math.abs(c.s.d - c.s.prevD)}</span>` : ''}`;
+    return `<div class="lrow ${NIGHT.sel === c.code ? 'on' : ''}" data-code="${c.code}"><span><b>${c.code}</b> ${stName(c.code)}</span><span>${st}</span></div>`;
+  }).join('');
+}
+// diverging bar chart of the closest called contests
+function closestChart() {
+  const L = contests(NIGHT.tab).filter(isCalled).map(c => ({ code: c.code, m: NIGHT.tab === 'senate' ? (c.r.wParty === 'D' ? -1 : 1) * c.r.margin : c.s.rPct - c.s.dPct, flip: c.r && c.r.flip }))
+    .sort((a, b) => Math.abs(a.m) - Math.abs(b.m)).slice(0, 10);
+  if (!L.length) return '<div class="nsub">No races called yet.</div>';
+  const W = 420, H = L.length * 20 + 24, mx = Math.max(10, ...L.map(x => Math.abs(x.m)));
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="cchart"><line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H - 16}" stroke="#666"/>`;
+  L.forEach((x, i) => {
+    const y = i * 20 + 4, len = Math.abs(x.m) / mx * (W / 2 - 40), right = x.m > 0;
+    svg += `<g class="lrow" data-code="${x.code}" style="cursor:pointer"><rect x="${right ? W / 2 : W / 2 - len}" y="${y}" width="${Math.max(2, len)}" height="14" rx="3" fill="${right ? PARTY.R.color : PARTY.D.color}"/>
+      <text x="${right ? W / 2 - 6 : W / 2 + 6}" y="${y + 11}" font-size="11" fill="#ddd" text-anchor="${right ? 'end' : 'start'}" font-weight="700">${x.code}${x.flip ? ' ★' : ''}</text>
+      <text x="${right ? W / 2 + len + 4 : W / 2 - len - 4}" y="${y + 11}" font-size="10" fill="#9aa3b2" text-anchor="${right ? 'start' : 'end'}">${Math.abs(x.m).toFixed(1)}</text></g>`;
+  });
+  svg += `<text x="4" y="${H - 3}" font-size="10" fill="${PARTY.D.color}">◀ Democratic margin</text><text x="${W - 4}" y="${H - 3}" font-size="10" fill="${PARTY.R.color}" text-anchor="end">Republican margin ▶</text></svg>`;
+  return svg;
+}
+function popularVote() {
+  const N = NIGHT;
+  if (N.tab === 'pres') {
+    const P = N.pres; let d = 0, r = 0;
+    for (const s of Object.values(P.states)) { const rp = reporting({ call: s.call }); d += s.dVotes * rp; r += s.rVotes * rp; }
+    const tot = d + r || 1;
+    return `<b>Popular vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">${P.names.D} ${pct(d / tot * 98.5)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">${pct(r / tot * 98.5)} ${P.names.R}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)} votes</span><span>${nfmt(r)} votes</span></div>`;
+  }
+  if (N.tab === 'house') {
+    const H = N.house; let d = 0, r = 0;
+    for (const s of Object.values(H.states)) { const rp = reporting({ call: s.call }); d += s.dVotes * rp; r += s.rVotes * rp; }
+    const tot = d + r || 1;
+    return `<b>National House vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 98.4)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 98.4)}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)}</span><span>Before: D ${H.before.D} – R ${H.before.R}</span><span>${nfmt(r)}</span></div>`;
+  }
+  let d = 0, r = 0;
+  for (const x of N.races) { const rp = reporting({ call: x.call }); const dv = (x.wParty === 'D' ? x.wVotes : x.lParty === 'D' ? x.lVotes : 0) * rp, rv = (x.wParty === 'R' ? x.wVotes : x.lParty === 'R' ? x.lVotes : 0) * rp; d += dv; r += rv; }
+  const tot = d + r || 1;
+  const flips = N.races.filter(x => x.flip && isCalled({ call: x.call }));
+  return `<b>Senate vote, all races</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>
+    <div class="nsub">Flips so far: ${flips.length ? flips.map(x => `<b style="color:${PARTY[x.wParty].color}">${x.code}</b>`).join(', ') : 'none'} · Before: D ${N.before.D} – R ${N.before.R}${N.before.I ? ` – I ${N.before.I}` : ''}</div>`;
+}
+
+function renderNight() {
+  if (!NIGHT) return;
+  const N = NIGHT, T = tallies();
+  const tabName = { pres: 'President', senate: 'Senate', house: 'House' };
+  const sc = $('#night .nside') ? $('#night .nside').scrollTop : 0;
+  $('#night').innerHTML = `<div class="nwrap">
+    <div class="nhead"><div><div class="kicker">Election Night ${N.year} · ${N.t >= 1 ? 'Final results' : 'LIVE'}</div><h2>${clockText(N.t)}</h2></div>
+      <div class="ntabs">${N.tabs.map(t => `<button class="btn ${N.tab === t ? 'on' : ''}" data-tab="${t}">${tabName[t]}</button>`).join('')}</div>
+      <div>${N.t < 1 ? '<button class="btn" id="nskip">⏩ Skip to final results</button>' : '<button class="btn primary" id="ndone">Continue →</button>'}</div></div>
+    <div class="ntally">${N.pres ? barChart(`President · ${N.pres.names.D} vs ${N.pres.names.R}`, T.pres, 538, 270, 'electoral votes') : ''}
+      ${barChart('Senate', T.senate, 100, 51, `${N.races.length} seats up`)}${barChart('House', T.house, 435, 218, 'all 435 seats')}</div>
+    <div class="nbody"><div class="nmapwrap">${nightMap()}<div class="npop">${popularVote()}</div></div>
+      <div class="nside"><div class="ndetail">${detailPanel()}</div>
+        <div class="nlist"><div class="lh">All ${tabName[N.tab].toLowerCase()} results · ← → to browse</div>${raceList()}</div>
+        <div class="nchart"><div class="lh">Closest races</div>${closestChart()}</div></div></div></div>`;
+  if ($('#night .nside')) $('#night .nside').scrollTop = sc;
+  // a chime as races are called
+  const nowCalled = contests(N.tab).filter(isCalled).length;
+  if (N.lastCalled != null && nowCalled > N.lastCalled && N.t < 1) sfx.yes();
+  N.lastCalled = nowCalled;
+}
