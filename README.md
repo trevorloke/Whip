@@ -29,6 +29,20 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   twist arms, or use dirt. Lock in commitments before the opposing whip peels
   votes away overnight. Win a caucus boss and their faction moves with them.
   Amendments reshape who likes the bill.
+- **Bills.** 100 of them, plus the yearly budget: each party's agenda, bipartisan deals (more of
+  them in divided government), and landmarks that need 60 or 67 votes.
+- **The yearly budget.** Every Fall you write the budget: pick two priorities
+  to fund and one to cut while a whip count updates live. If it fails anywhere,
+  the government shuts down.
+- **Factions everywhere.** Senators belong to caucuses whose bosses pull their
+  bloc along. The House votes caucus by caucus (Progressive Caucus, Freedom
+  Caucus, Blue Dogs…), and you can work each one through its chair. The
+  President comes from a faction too, which shapes their vetoes and which
+  senators follow them hardest.
+- **Independents.** They answer to no whip: the other side can't pressure them
+  and you can't twist their arms. Each has a cause, and will cut a deal: their
+  vote for writing that cause into the bill. They also run against both parties
+  in three-way races, and sometimes for President.
 - **The path to law.** After the Senate, a bill needs the House (435 seats,
   which you can whip for better odds), then the President's signature. An
   opposing President may veto it, and you can fight an override that needs 67
@@ -36,6 +50,9 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **The Court.** Nine justices who age and retire. A friendly President's
   nominee means a confirmation fight; with an opposing President, a Senate
   majority can block their pick.
+- **Primaries.** Before each election, senators who broke with the party line
+  draw challengers from their flank. Protect them, back the challenger, or
+  meddle in the other party's primaries.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435
   House seats, and the White House every four years, decided by the Electoral
   College. Senators who voted against their state's interests are vulnerable.
@@ -44,7 +61,9 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   called last. You get a clickable map, President, Senate and House tabs, vote
   totals and percentages, live seat and electoral-vote tallies, a closest-races
   chart and the popular vote. Browse races with Prev/Next or the arrow keys.
-- **A career.** Earn political capital, hire staff, keep your caucus's
+- **A career.** Earn political capital and spend it: hire from 28 staff,
+  earn 10 personal whip traits, and buy polls, war rooms, galas, oppo
+  dossiers, committee seats, retirements and more. Keep your caucus's
   confidence. Lose it and you're done. Records are saved in your browser.
 
 ## Files
@@ -53,7 +72,8 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 |---|---|
 | `index.html` | The page shell |
 | `style.css` | All styling |
-| `game.js` | The Senate, bills, whipping, events, the House, President and Court, elections, saving |
+| `game.js` | The Senate, whipping, events, the budget, the House, President and Court, primaries, elections, saving |
+| `content.js` | Most of the bills, staff, whip traits, House caucuses and independent causes |
 | `night.js` | Election Night: the Electoral College, House results by state, and the results screen |
 
 ## Testing a shortcut

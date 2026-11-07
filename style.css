@@ -222,3 +222,15 @@ hr{border:none;border-top:1px solid var(--line);margin:14px 0}
 .lrow:hover{background:#232a35}.lrow.on{background:#2b2a20;outline:1px solid var(--gold)}
 .cchart{width:100%;height:auto}
 .nside > *{flex-shrink:0}
+
+/* ---------- budget, House caucuses, primaries, shop ---------- */
+.budget{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+@media (max-width:600px){.budget{grid-template-columns:1fr}}
+.brow{display:flex;justify-content:space-between;align-items:center;gap:6px;background:#232a35;border-radius:6px;padding:5px 8px;font-size:13px}
+.brow .btn{padding:3px 10px;font-size:12px}
+.mbar{display:inline-block;width:120px;height:6px;background:#2a303b;border-radius:3px;overflow:hidden;vertical-align:middle}
+.mbar i{display:block;height:100%}
+.primnews{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
+.primnews p{margin:4px 0}
+.shop.sinks{grid-template-columns:1fr 1fr}
+@media (max-width:600px){.shop.sinks{grid-template-columns:1fr}}
