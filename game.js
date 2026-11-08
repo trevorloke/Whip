@@ -424,7 +424,7 @@ function startDay(first) {
 // who the opposing whip will work tonight. Independents answer to no whip, so they're never targets.
 function planRival() {
   const B = S.bill;
-  const moves = clamp(1 + Math.floor(B.n / 5) + (B.landmark ? 1 : 0) + (S.president.party !== S.side ? 1 : 0) - (has('mole') ? 1 : 0), 1, 6);
+  const moves = clamp(rivalMoves(1 + Math.floor(B.n / 5) + (B.landmark ? 1 : 0) + (S.president.party !== S.side ? 1 : 0) - (has('mole') ? 1 : 0)), 1, 7);
   const pool = S.members.filter(m => !isLockedYes(m) && !m.b.absent && m.party !== 'I');
   const picks = [];
   for (let i = 0; i < moves; i++) {
@@ -444,7 +444,7 @@ function endDay() {
   for (const id of B.plan) {
     const m = S.members[id];
     if (isLockedYes(m) || m.b.absent) { log(`${S.rival} came for ${sen(m)} but found them already committed.`, 'good'); continue; }
-    const push = rnd(6, 12) * (T(m, 'loyal') && side(m) === 'you' ? 0.5 : 1) * (has('hardball') ? 0.7 : 1);
+    const push = rnd(6, 12) * (T(m, 'loyal') && side(m) === 'you' ? 0.5 : 1) * (has('hardball') ? 0.7 : 1) * rivalPush();
     m.b.bonus -= push; m.b.last = -push;
     log(m.b.intel ? `${S.rival} leaned on ${sen(m)} overnight (${fmt(-push)}).` : `${S.rival} was seen leaving ${sen(m)}'s office.`, 'rival');
   }
@@ -536,13 +536,14 @@ const EVENTS = [
 function runEvent() {
   const avail = EVENTS.filter(e => !S.bill.events.includes(e.id) && (!e.cond || e.cond()));
   if (!avail.length) return render();
-  let tot = avail.reduce((a, e) => a + e.w, 0), r = Math.random() * tot, ev = avail[0];
-  for (const e of avail) { r -= e.w; if (r <= 0) { ev = e; break; } }
+  const wt = e => e.weight ? e.weight() : e.w;
+  let tot = avail.reduce((a, e) => a + wt(e), 0), r = Math.random() * tot, ev = avail[0];
+  for (const e of avail) { r -= wt(e); if (r <= 0) { ev = e; break; } }
   const E = ev.make();
   S.bill.events.push(ev.id);
   if (!E) return render();
   render();
-  showModal(`<div class="kicker">Day ${S.bill.day} · Breaking</div><h2>${E.title}</h2><p>${E.text}</p><div class="choices">${E.choices.map((c, i) => `<button class="btn" data-ev="${i}" ${c.can && !c.can() ? 'disabled' : ''}>${c.t}<small>${typeof c.s === 'function' ? c.s() : c.s}</small></button>`).join('')}</div>`);
+  showModal(`${frontPage({ headline: E.title, sub: `Breaking · Day ${S.bill.day} of the fight over the ${S.bill.name}`, body: [E.text], mood: E.paper || pick(['night', 'dawn', 'storm']) })}<div class="choices">${E.choices.map((c, i) => `<button class="btn" data-ev="${i}" ${c.can && !c.can() ? 'disabled' : ''}>${c.t}<small>${typeof c.s === 'function' ? c.s() : c.s}</small></button>`).join('')}</div>`);
   $('#modal-card').querySelectorAll('[data-ev]').forEach(b => b.onclick = () => {
     sfx.click(); E.choices[+b.dataset.ev].f(S.bill);
     const B = S.bill; B.opinion = clamp(B.opinion, 0, 100); B.ap = Math.max(0, B.ap); B.scrutiny = Math.max(0, B.scrutiny); B.pork = Math.max(0, B.pork);
@@ -653,7 +654,7 @@ const ACTIONS = {
     label: 'Cut a Deal', desc: m => m.cause ? `They answer to no whip, but they'll trade their vote for their cause: ${m.cause[0]}. 2 capital. Writes it into the bill (${TAG[m.cause[1]][1]} +1), which shifts everyone else too.` : '', cost: () => 1,
     ok: m => m.party === 'I' && m.cause && !m.b.dealt && S.career.capital >= 2,
     run(m) {
-      spend(1); S.career.capital -= 2; m.b.dealt = true;
+      spend(1); S.career.capital -= 2; m.b.dealt = true; unlock('deal');
       const B = S.bill, t = m.cause[1];
       const before = new Map(S.members.map(x => [x.id, support(x)]));
       B.fx[t] = (B.fx[t] || 0) + 1; B.applied.push(`${m.cause[0]} (Sen. ${lastName(m)}'s deal)`);
@@ -666,13 +667,13 @@ const ACTIONS = {
   pledge: {
     label: 'Lock In a Commitment', desc: 'A public commitment. The rival can\'t move them; they vote yea.', cost: () => 1,
     ok: m => m.b.intel && support(m) >= 25 && !m.b.pledged,
-    run(m) { spend(1); m.b.pledged = true; sfx.yes(); ui.lastQuote = `“You have my word.” — Sen. ${m.name}`; log(`${sen(m)} committed publicly to vote YEA. 🔒`, 'good'); },
+    run(m) { spend(1); m.b.pledged = true; sfx.yes(); if (T(m, 'leader') && m.party !== 'I') unlock('leader'); ui.lastQuote = `“You have my word.” — Sen. ${m.name}`; log(`${sen(m)} committed publicly to vote YEA. 🔒`, 'good'); },
   },
   dirt: {
     label: 'Use the Dirt', desc: 'Guaranteed yea. Huge scrutiny. They will hate you forever.', cost: () => 0,
     ok: m => m.dirt && !m.b.blackmailed,
     run(m) {
-      m.b.blackmailed = true; m.dirt = false; m.rel -= 3; m.grudge = true;
+      m.b.blackmailed = true; m.dirt = false; m.rel -= 3; m.grudge = true; S.dirtied = true; unlock('dirt');
       S.bill.scrutiny += 35 * (has('teflon') ? 0.5 : 1); sfx.gavel();
       ui.lastQuote = `“…How did you get those photos?” — Sen. ${m.name}`;
       log(`You showed ${sen(m)} the file. They'll vote yea. They'll never forgive you.`, 'bad');
@@ -696,6 +697,7 @@ function doPitch(m, tag) {
 function checkScandal() {
   const B = S.bill;
   if (B.scrutiny >= 100) {
+    S.dirtied = true;
     B.scrutiny = 40; if (!has('ethics')) B.pork = 0; B.opinion = clamp(B.opinion - 15, 0, 100);
     for (const m of S.members) if (side(m) === 'you') m.b.bonus -= 8;
     S.mood -= 1.5;
@@ -833,8 +835,9 @@ function finishVote(results, y, n) {
   let won, vpNote = '';
   if (B.super) won = y >= B.super;
   else if (y > n) won = true;
-  else if (y === n && vpYours()) { won = true; vpNote = 'The Vice President breaks the tie! '; }
+  else if (y === n && vpYours()) { won = true; vpNote = 'The Vice President breaks the tie! '; B.tiebreak = true; }
   else won = false;
+  B.yeas = y; B.nays = n;
   const spare = B.super ? y - B.super : vpYours() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
   if (!B.override) B.spare = spare;
   // votes go on the record back home, and party-line defections feed primary challenges
@@ -938,11 +941,30 @@ function settle(won, detail, headline, isLaw) {
   else P.approval += won ? -1 : 1;
   P.approval = clamp(Math.round(P.approval + (50 - P.approval) * 0.1) + ri(-1, 1), 22, 72);
   S.calledEarly = 0;
+  // legacy and achievements
+  if (won) {
+    addLegacy(10 + (B.landmark ? 20 : 0) + (B.super === 67 ? 15 : 0) + (B.override ? 20 : 0) + (B.nomination ? 15 : 0) + (B.budget ? 5 : 0));
+    if (isLaw) unlock('first');
+    if (B.budget) unlock('budget');
+    if (B.landmark && B.super === 60) unlock('landmark');
+    if (B.super === 67 && !B.override) unlock('treaty');
+    if (headline === 'VETO OVERRIDDEN') unlock('override');
+    if (B.tiebreak) unlock('tiebreak');
+    if ((B.yeas || 0) >= 70) unlock('blowout');
+    if (B.nomination) unlock('justice');
+    if (c.streak >= 5) unlock('streak5');
+    if (c.streak >= 10) unlock('streak10');
+    if (rank() === 'Master of the Senate' || c.wins >= 30) unlock('master');
+  }
+  if (B.budget && !won) unlock('shutdown');
+  lines.push(...creditPromises(won, isLaw));
   S.history.push({ n: B.n, name: B.name, won });
   saveRecords();
   const elNext = c.bills % 6 === 0;
+  const hl = billHeadline(won, headline, B.yeas || 0, B.nays || 0);
   $('#vres').innerHTML = `<div class="verdict ${won ? 'win' : 'lose'}">${headline}</div>
     <p style="text-align:center">${detail}<br><span style="color:var(--dim)">${lines.join(' · ')}</span></p>
+    ${frontPage({ headline: hl.h, sub: hl.d, body: paperBody(won), mood: hl.mood, date: `The morning after · ${season(B.n)} ${billYear(B.n)}` })}
     <div class="choices"><button class="btn primary big" id="next">${c.confidence <= 0 ? 'Face the caucus…' : elNext ? `On to Election Day ${electionYear(c.bills / 6)} 🗳` : 'Back to the whip\'s office'}</button></div>`;
   $('#next').onclick = () => { if (c.confidence <= 0) gameOver(); else if (elNext) electionPrep(); else interlude(); };
   const card = $('#modal-card'); card.scrollTop = card.scrollHeight;
@@ -1071,8 +1093,9 @@ function projMargin(rc) {
   let mg = raceBase(rc.m, rc.retiring || rc.m.party === 'I' || rc.primaried, A);
   if (rc.primaried) mg += rc.electability;
   if (rc.bruised) mg -= 1;
-  if (A === S.side) mg += cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
-  else mg -= cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
+  const pb = S.election ? promiseBoost(rc.m.state) : 0;
+  if (A === S.side) mg += pb + cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
+  else mg -= pb + cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
   return mg + (has('pollmap') ? rc.noise : 0);
 }
 const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives', R: f => f === 'Freedom Caucus' ? 'Populists' : 'Freedom Caucus' };
@@ -1082,7 +1105,8 @@ function electionPrep() {
   const year = electionYear(k), cls = classUp(k), pres = isPresYear(k);
   if (!pres) S.mood += (S.president.party === S.side ? -3 : 3); // midterms punish the White House party
   const races = S.members.filter(m => m.cls === cls).map(m => ({ m, retiring: m.party !== 'I' && (m.retireNudge || Math.random() < 0.1), cash: 0, noise: gauss() * RACE_SD, ind: null }));
-  S.election = { k, year, cls, pres, races, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
+  const promiseReport = judgePromises();
+  S.election = { k, year, cls, pres, races, platform: [], promiseReport, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
   S.warchest = 0;
   const E = S.election;
   // primary challenges: senators who bucked the party line, and moderates in safe seats, draw challengers from the flank
@@ -1100,6 +1124,7 @@ function electionPrep() {
       const P = rc.primary, m = rc.m;
       if (Math.random() < P.odds) {
         rc.primaried = true; rc.nominee = P;
+        if (P.backed > 0) unlock('primary');
         rc.electability = holderAdv(m) > 6 ? -1 : -5; // a flank nominee is a harder sell in a swing state
         out.push(`<b style="color:var(--gold2)">${ST[m.state].name}:</b> ${P.name} (${P.faction}) <b>defeats Sen. ${m.name}</b> in the ${PARTY[m.party].name} primary.`);
       } else { rc.bruised = true; out.push(`${ST[m.state].name}: Sen. ${m.name} survives a challenge from ${P.name}.`); }
@@ -1146,6 +1171,8 @@ function electionPrep() {
       ${balanceBar()}
       <p>${presTitle()} (${S.president.party}): approval <b>${S.president.approval}%</b>${pres ? (S.president.terms >= 2 ? ' · term-limited, open race' : ' · running for re-election') : ''}. House: ${S.house.D}D–${S.house.R}R, all 435 seats up.</p>
       <p>Your party's national mood: <b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b>, built from the bills you passed and how popular they were${pres ? '' : (S.president.party === S.side ? ', minus the usual midterm penalty for holding the White House' : ', plus a midterm boost against the White House')}. Senators who voted against their state's interests are exposed.</p>
+      ${E.promiseReport || ''}
+      ${platformHTML()}
       ${E.primaryNews && E.primaryNews.length ? `<div class="primnews"><b>Primary results</b>${E.primaryNews.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
       <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· the first unit in a race is worth +${per} points for your side, and each extra unit in the same race a bit less. No limit.</small></div>
         <div>Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b></div></div>
@@ -1162,13 +1189,14 @@ function electionPrep() {
     const card = $('#modal-card');
     const add = (rc, d) => { if (d > 0 && E.cash < 1) return; if (d < 0 && rc.cash < 1) return; rc.cash += d; E.cash -= d; sfx.click(); draw(); };
     card.querySelectorAll('[data-cash]').forEach(b => b.onclick = () => add(E.races[+b.dataset.cash], +b.dataset.d));
-    card.querySelectorAll('.ctile').forEach(g => {
+    card.querySelectorAll('[data-race]').forEach(g => {
       const rc = E.races[+g.dataset.race];
       g.onclick = () => add(rc, 1);
       g.oncontextmenu = e => { e.preventDefault(); add(rc, -1); };
     });
     card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
+    card.querySelectorAll('[data-promise]').forEach(b => b.onclick = () => { const id = b.dataset.promise, P = E.platform; if (P.includes(id)) E.platform = P.filter(x => x !== id); else if (P.length < 3) P.push(id); sfx.click(); draw(); });
     card.querySelectorAll('[data-filt]').forEach(b => b.onclick = () => { E.filter = b.dataset.filt; sfx.click(); draw(); });
     card.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => { autoDeploy(b.dataset.auto); sfx.up(); draw(); });
     $("#countballots").onclick = countBallots;
@@ -1197,17 +1225,16 @@ function autoDeploy(mode) {
 }
 function chanceColor(p) { return p >= 0.6 ? PARTY[S.side].color : p <= 0.4 ? PARTY[other(S.side)].color : '#b8a24a'; }
 function campaignMap() {
-  const S0 = 50, G = 4, E = S.election;
+  const E = S.election;
   const byState = {}; E.races.forEach((rc, i) => byState[rc.m.state] = i);
-  let svg = `<svg viewBox="-4 -4 ${11 * S0 + 4} ${8 * S0 + 4}">`;
-  for (const [code, col, row] of TILES) {
-    const x = col * S0, y = row * S0, sz = S0 - G, i = byState[code];
-    if (i == null) { svg += `<rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="#1c2129"/><text x="${x + sz / 2}" y="${y + 28}" text-anchor="middle" font-size="12" fill="#4b5465" font-weight="700">${code}</text>`; continue; }
-    const rc = E.races[i], p = raceChance(rc), op = 0.35 + Math.abs(p - 0.5) * 1.3;
-    svg += `<g class="ctile" data-race="${i}" style="cursor:pointer"><title>${ST[code].name}: your chance ${Math.round(p * 100)}%</title><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="${chanceColor(p)}" fill-opacity="${op}" style="${rc.cash ? 'stroke:#f6d27a;stroke-width:3' : ''}"/>
-      <text x="${x + sz / 2}" y="${y + 18}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff">${code}</text><text x="${x + sz / 2}" y="${y + 34}" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">${Math.round(p * 100)}%${rc.cash ? ' $' + rc.cash : ''}</text></g>`;
-  }
-  return svg + '</svg>';
+  const rcOf = code => byState[code] == null ? null : E.races[byState[code]];
+  return usMap({
+    fill: code => { const rc = rcOf(code); if (!rc) return null; const p = raceChance(rc); return { c: chanceColor(p), op: 0.35 + Math.abs(p - 0.5) * 1.3 }; },
+    sub: code => { const rc = rcOf(code); return rc ? `${Math.round(raceChance(rc) * 100)}%${rc.cash ? ' $' + rc.cash : ''}` : ''; },
+    ring: code => { const rc = rcOf(code); return rc && rc.cash ? '#f6d27a' : null; },
+    attr: code => rcOf(code) ? `data-race="${byState[code]}"` : '',
+    title: code => { const rc = rcOf(code); return rc ? `${stName(code)}: your chance ${Math.round(raceChance(rc) * 100)}%` : `${stName(code)}: no Senate race this year`; },
+  });
 }
 function raceRow(rc) {
   const m = rc.m, i = S.election.races.indexOf(rc);
@@ -1277,8 +1304,17 @@ function countBallots() {
   layoutSeats();
   sfx.fanfare();
   const flips = races.filter(r => r.flip);
+  // achievements and the new term's promises
+  if (flips.filter(f => f.wParty === S.side).length >= 3) unlock('flip3');
+  if (seats(S.side) >= 60) unlock('super60');
+  if (isMajority() && houseMaj() === S.side && S.president.party === S.side) unlock('trifecta');
+  addLegacy(Math.max(0, net) * 4);
+  const promiseLine = adoptPromises(); S.dirtied = false;
+  const won = isMajority();
+  const hl = won ? `${PARTY[S.side].short.toUpperCase()} ${wasMaj ? 'HOLD' : 'TAKE'} THE SENATE` : `${PARTY[other(S.side)].short.toUpperCase()} ${wasMaj ? 'SEIZE' : 'KEEP'} THE SENATE`;
   const summary = () => {
-    showModal(`<div class="kicker">The Morning After · ${E.year}</div><h2>The New Congress</h2>${balanceBar()}
+    showModal(`${frontPage({ headline: hl, sub: `${pres ? pres.what.replace(/<[^>]+>/g, '') + ' ' : ''}Senate ${seats('D')}–${seats('R')}${seats('I') ? '–' + seats('I') : ''}; House ${S.house.D}–${S.house.R}.`, body: [`Election night ${E.year} is in the books. ${flips.length ? flips.length + ' Senate seats changed hands.' : 'Not a single Senate seat changed hands.'}`, conf.replace(/<[^>]+>/g, '')], mood: won ? 'dawn' : 'storm', date: `November ${E.year} · Special edition` })}
+      <h2>The New Congress</h2>${balanceBar()}${promiseLine}
       ${presLine}<div class="elmap">${mapSVG('party', { flips: flips.map(f => S.members.find(m => m.state === f.code && m.cls === f.cls).id), up: E.cls })}</div>
       <p>${flips.length ? `<b>${flips.length} Senate seat${flips.length > 1 ? 's' : ''} flipped:</b> ${flips.map(f => `<b style="color:${PARTY[f.wParty].color}">${stName(f.code)}</b>`).join(', ')}.` : 'No Senate seats changed hands.'}</p>
       <p>${conf}</p>
@@ -1318,7 +1354,7 @@ function interlude() {
   const draw = () => {
     const ious = S.members.filter(m => m.iou), grudges = S.members.filter(m => m.grudge);
     const left = 6 - (c.bills % 6);
-    showModal(`<div class="kicker">The Whip's Office · after bill #${c.bills}</div><h2>${rank()}</h2>
+    showModal(`<div class="kicker">The Whip's Office · after bill #${c.bills}</div><h2>${rank()} <small style="font-size:14px;color:var(--gold2)">· legacy ${c.legacy || 0}</small></h2>${S.promises && S.promises.length ? promiseStrip().replace('class="promises"', 'class="promises inoffice"') : ''}
       <p>Capital: <b style="color:var(--gold2)">${c.capital}</b> · Confidence: ${'♥'.repeat(Math.max(0, c.confidence))}${'♡'.repeat(Math.max(0, 5 - c.confidence))} · Record ${c.wins}–${c.losses} · Streak ${c.streak}<br>
       ${PARTY[S.side].short} Senate ${isMajority() ? 'majority' : 'minority'} · ${presTitle()} (${S.president.party}, ${S.president.approval}%) · House ${S.house.D}D–${S.house.R}R · Court ${courtLabel()} · Next election: ${electionYear(nextElectionK())} (${left} bill${left > 1 ? 's' : ''} away) · Mood ${fmt(S.mood)}</p>
       ${news.length ? `<hr>${news.map(t => `<p style="margin:6px 0">${t}</p>`).join('')}` : ''}
@@ -1360,14 +1396,14 @@ function gameOver() {
   saveRecords();
   localStorage.removeItem('floorfight.v4.save');
   showModal(`<div class="kicker">Caucus Room · Midnight</div><h2>You've lost the caucus.</h2><p>Your colleagues have no confidence left in their whip. You're stripped of leadership and sent to chair the Subcommittee on Federal Paperclip Procurement.</p>
-    <p><b>${c.wins}</b> bills passed of <b>${c.bills}</b> · best streak <b>${c.best}</b> · final rank <b>${rank()}</b> · served until ${billYear(Math.max(1, c.bills))}</p>
+    <p>Legacy score: <b style="color:var(--gold2)">${c.legacy || 0}</b></p><p><b>${c.wins}</b> bills passed of <b>${c.bills}</b> · best streak <b>${c.best}</b> · final rank <b>${rank()}</b> · served until ${billYear(Math.max(1, c.bills))}</p>
     <div class="choices"><button class="btn primary big" id="tomenu">Main menu</button></div>`);
   $('#tomenu').onclick = () => { hideModal(); showMenu(); };
 }
 function rank() { let r = RANKS[0][1]; for (const [w, n] of RANKS) if (S.career.wins >= w) r = n; return r; }
 
 /* ---------------- persistence ---------------- */
-function save() { try { localStorage.setItem('floorfight.v4.save', JSON.stringify({ whStreak: S.whStreak, prep: S.prep, warchest: S.warchest, approps: S.approps, shutdown: S.shutdown, houseLeaders: S.houseLeaders, side: S.side, mood: S.mood, president: S.president, house: S.house, court: S.court, laws: S.laws, nominee: S.nominee, vacancyBlocked: S.vacancyBlocked, career: S.career, rival: S.rival, history: S.history, members: S.members.map(m => ({ ...m, b: null })) })); } catch (e) { } }
+function save() { try { localStorage.setItem('floorfight.v4.save', JSON.stringify({ promises: S.promises, termBudgets: S.termBudgets, rivalStyle: S.rivalStyle, dirtied: S.dirtied, whStreak: S.whStreak, prep: S.prep, warchest: S.warchest, approps: S.approps, shutdown: S.shutdown, houseLeaders: S.houseLeaders, side: S.side, mood: S.mood, president: S.president, house: S.house, court: S.court, laws: S.laws, nominee: S.nominee, vacancyBlocked: S.vacancyBlocked, career: S.career, rival: S.rival, history: S.history, members: S.members.map(m => ({ ...m, b: null })) })); } catch (e) { } }
 function load() {
   try {
     const d = JSON.parse(localStorage.getItem('floorfight.v4.save'));
@@ -1379,32 +1415,9 @@ function load() {
 function getRecords() { try { return JSON.parse(localStorage.getItem('floorfight.us.records')) || {}; } catch (e) { return {}; } }
 function saveRecords() {
   const r = getRecords(), c = S.career;
+  r.legacy = Math.max(r.legacy || 0, c.legacy || 0);
   r.wins = Math.max(r.wins || 0, c.wins); r.streak = Math.max(r.streak || 0, c.best); r.bills = Math.max(r.bills || 0, c.bills);
   try { localStorage.setItem('floorfight.us.records', JSON.stringify(r)); } catch (e) { }
-}
-
-/* ---------------- portraits ---------------- */
-function portrait(m) {
-  let s = m.seed;
-  const R = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
-  const skins = ['#f1d0b5', '#e0b48f', '#c68e63', '#9c6a43', '#6e4a2e', '#f6dcc8'];
-  const hairs = ['#2b1d14', '#5a3a22', '#a26a32', '#d9b46a', '#bdbdbd', '#e8e8e8', '#1a1a1a', '#7b2e1e'];
-  const skin = skins[R() * skins.length | 0], hair = hairs[R() * hairs.length | 0];
-  const pc = PARTY[m.party].color;
-  const hs = R() * 4 | 0, glasses = R() < .35, stache = R() < .2, bald = R() < .15;
-  const hairPath = bald ? '' : [
-    `<path d="M22 44 Q20 18 50 16 Q80 18 78 44 Q72 28 50 28 Q30 28 22 44Z" fill="${hair}"/>`,
-    `<path d="M20 50 Q16 14 50 14 Q84 14 80 50 L80 70 Q76 40 70 34 Q50 26 30 34 Q24 40 20 70Z" fill="${hair}"/>`,
-    `<path d="M24 40 Q30 14 56 18 Q78 22 76 42 Q60 26 40 34 Q30 36 24 40Z" fill="${hair}"/>`,
-    `<circle cx="50" cy="22" r="14" fill="${hair}"/><path d="M24 42 Q24 24 50 22 Q76 24 76 42 Q60 30 50 30 Q38 30 24 42Z" fill="${hair}"/>`,
-  ][hs];
-  return `<svg viewBox="0 0 100 100"><rect width="100" height="100" fill="#2a313d"/>
-    <path d="M14 100 Q16 74 50 72 Q84 74 86 100Z" fill="#262d3c"/><path d="M44 74 L50 96 L56 74Z" fill="${pc}"/><circle cx="34" cy="84" r="3" fill="#e3b54a"/>
-    <ellipse cx="50" cy="48" rx="26" ry="29" fill="${skin}"/>${hairPath}
-    <circle cx="40" cy="48" r="3" fill="#222"/><circle cx="60" cy="48" r="3" fill="#222"/>
-    ${glasses ? '<g fill="none" stroke="#111" stroke-width="2"><circle cx="40" cy="48" r="7"/><circle cx="60" cy="48" r="7"/><path d="M47 48h6"/></g>' : ''}
-    ${stache ? `<path d="M40 62 Q50 56 60 62 Q50 60 40 62Z" fill="${hair}" stroke="${hair}" stroke-width="3"/>` : ''}
-    <path d="M42 66 Q50 ${70 + (R() * 4 - 2)} 58 66" stroke="#6b3b2b" stroke-width="2" fill="none" stroke-linecap="round"/></svg>`;
 }
 
 /* ---------------- rendering ---------------- */
@@ -1443,8 +1456,8 @@ function fxChips(fx) {
 }
 
 function chamberSVG() {
-  let svg = `<text x="0" y="-10" text-anchor="middle" fill="#9aa3b2" font-size="13" font-family="Georgia">UNITED STATES SENATE</text>`;
-  svg += `<text x="0" y="14" text-anchor="middle" fill="#e3b54a" font-size="20" font-family="Georgia">${needText()} to pass</text>`;
+  let svg = `<text x="0" y="-12" text-anchor="middle" fill="#c9d0de" font-size="9" letter-spacing="2" font-family="Inter,sans-serif" font-weight="700">UNITED STATES SENATE</text>`;
+  svg += `<text x="0" y="17" text-anchor="middle" fill="#ffe7a8" font-size="18" font-family="'Playfair Display',Georgia" font-weight="900">${needText()} to pass</text>`;
   for (const m of S.members) {
     const p = SEATPOS[m.id]; if (!p) continue;
     const cls = ['seat']; if (ui.sel === m.id) cls.push('sel');
@@ -1460,24 +1473,25 @@ function chamberSVG() {
   return svg;
 }
 
-// mode 'stance' (live whip view) or 'party' (election results)
+// mode 'stance' (live whip view) or 'party' (election results), on the real map
 function mapSVG(mode, opts = {}) {
-  const S0 = 50, G = 4;
-  let svg = mode === 'party' ? `<svg viewBox="-4 -4 ${11 * S0 + 4} ${8 * S0 + 4}">` : '';
-  for (const [code, col, row] of TILES) {
-    const ms = S.members.filter(m => m.state === code).sort((a, b) => a.cls - b.cls);
-    const x = col * S0, y = row * S0, w = (S0 - G) / 2;
-    svg += '<g class="tile">';
-    ms.forEach((m, i) => {
-      let fill, op = 1, extra = '';
-      if (mode === 'party') { fill = PARTY[m.party].color; if (opts.up && m.cls !== opts.up) op = 0.35; if (opts.flips && opts.flips.includes(m.id)) extra = 'style="stroke:#f6d27a;stroke-width:4"'; }
-      else fill = seatColor(m);
-      svg += `<rect class="half ${ui.sel === m.id && mode !== 'party' ? 'sel' : ''}" data-id="${m.id}" x="${x + i * w}" y="${y}" width="${w}" height="${S0 - G}" rx="3" fill="${fill}" opacity="${op}" ${extra}><title>${sen(m)}</title></rect>`;
-      if (mode !== 'party') svg += `<rect x="${x + i * w + 2}" y="${y + S0 - G - 6}" width="${w - 4}" height="4" fill="${PARTY[m.party].color}" pointer-events="none"/>`;
+  const pair = code => S.members.filter(m => m.state === code).sort((a, b) => a.cls - b.cls);
+  if (mode === 'party') {
+    const flipStates = new Set((opts.flips || []).map(id => S.members[id].state));
+    return usMap({
+      fill: code => { const ms = pair(code); if (!ms.length) return null; const up = ms.find(m => m.cls === opts.up) || ms[0], rest = ms.find(m => m !== up) || up; return { c: PARTY[up.party].color, c2: PARTY[rest.party].color }; },
+      ring: code => flipStates.has(code) ? '#f6d27a' : null,
+      sub: code => flipStates.has(code) ? 'FLIP' : '',
+      title: code => pair(code).map(sen).join(' · ') || stName(code),
     });
-    svg += `<text x="${x + (S0 - G) / 2}" y="${y + 18}" text-anchor="middle" font-size="12" font-weight="800" fill="#fff" style="paint-order:stroke;stroke:#0009;stroke-width:3px">${code}</text></g>`;
   }
-  return mode === 'party' ? svg + '</svg>' : svg;
+  return usMap({
+    fill: code => { const ms = pair(code); if (!ms.length) return null; return { c: seatColor(ms[0]), c2: seatColor(ms[1] || ms[0]) }; },
+    sub: code => pair(code).map(m => m.party).join(''),
+    ring: code => { const m = S.members[ui.sel]; return m && m.state === code ? '#fff' : pair(code).some(targeted) ? '#ff6b6b' : null; },
+    attr: code => pair(code).length ? `data-code="${code}"` : '',
+    title: code => pair(code).map(m => `${sen(m)}: ${m.b.intel || isLockedYes(m) ? (isLockedYes(m) ? 'committed' : stance(support(m))) : 'unknown'}`).join(' · ') || stName(code),
+  });
 }
 
 function render() {
@@ -1499,19 +1513,26 @@ function render() {
     <span class="spacer"></span>
     <div class="stat"><span class="k">${PARTY[S.side].short} ${isMajority() ? 'majority' : 'minority'} · ${c.wins}–${c.losses} · streak ${c.streak}</span><span class="v rank">${rank()}</span></div>`;
 
-  $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival} · Next election ${electionYear(nextElectionK())}</div>
+  $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival}, the <span title="${RIVAL_STYLES[rivalStyle()][1]}" style="border-bottom:1px dotted">${RIVAL_STYLES[rivalStyle()][0]}</span> · Next election ${electionYear(nextElectionK())}</div>
     <h2>${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}</h2><div class="blurb">${B.blurb}</div>
     <div class="fx">${fxChips(B.fx)}</div>
     ${B.applied.length ? `<div class="amend-list">Amended: ${B.applied.join(', ')}</div>` : ''}
     ${B.goal ? `<div class="goal">★ You promised ${B.goal.margin} votes to spare</div>` : ''}
-    ${pathToLaw()}`;
+    ${pathToLaw()}${promiseStrip()}`;
 
   document.querySelectorAll('[data-view]').forEach(b => { b.classList.toggle('on', b.dataset.view === ui.view); b.onclick = () => { ui.view = b.dataset.view; render(); }; });
   const svgEl = $('#chamber');
-  svgEl.classList.toggle('hidden', ui.view === 'factions'); $('#facview').classList.toggle('hidden', ui.view !== 'factions');
+  svgEl.classList.toggle('hidden', ui.view !== 'chamber'); $('#facview').classList.toggle('hidden', ui.view !== 'factions'); $('#mapview').classList.toggle('hidden', ui.view !== 'map');
   if (ui.view === 'factions') renderFactions();
-  else if (ui.view === 'map') { svgEl.setAttribute('viewBox', `-4 -4 ${11 * 50 + 4} ${8 * 50 + 4}`); svgEl.innerHTML = mapSVG('stance'); }
-  else { svgEl.setAttribute('viewBox', '-285 -272 570 300'); svgEl.innerHTML = chamberSVG(); }
+  else if (ui.view === 'map') {
+    $('#mapview').innerHTML = mapSVG('stance') + '<div class="maplegend">Each state shows its two senators, split corner to corner: <i style="background:#46c27a"></i>yea <i style="background:#e3b54a"></i>fence <i style="background:#5a1f2a"></i>nay <i style="background:#3a4250"></i>unknown · letters are their parties · click a state to visit one senator, click again for the other</div>';
+    $('#mapview').querySelectorAll('[data-code]').forEach(g => g.onclick = () => {
+      const ms = S.members.filter(m => m.state === g.dataset.code).sort((a, b) => a.cls - b.cls);
+      const cur = ms.findIndex(m => m.id === ui.sel);
+      ui.sel = ms[(cur + 1) % ms.length].id; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render();
+    });
+  }
+  else { svgEl.setAttribute('viewBox', '-285 -272 570 300'); svgEl.innerHTML = chamberBackdrop() + chamberSVG(); }
   svgEl.querySelectorAll('[data-id]').forEach(g => g.onclick = () => { ui.sel = +g.dataset.id; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render(); });
   ui.lastDelta = null;
 
@@ -1645,6 +1666,8 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 <li><b>Independents</b> answer to no whip. The other side can't pressure them and you can't twist their arms, but each has a cause, and they'll <b>cut a deal</b>: their vote for writing that cause into the bill.</li>
 <li>Every Fall brings the <b>budget</b>. You choose what it funds and cuts. If it fails anywhere, the government shuts down.</li>
 <li>Before each election come the <b>primaries</b>. Senators who broke with the party line draw challengers from their flank. Protect them, or back the challenger (even in the other party). Independents can enter any race against both parties.</li>
+<li>Before each election, choose a <b>platform</b> of up to three promises. They lift your candidates, but if your party wins the Senate you have six bills to keep them.</li>
+<li>Know your opponent: the opposing whip is a <b>Bulldog</b>, a <b>Schemer</b> (watch for poison-pill amendments) or a <b>Charmer</b>.</li>
 <li>Win bills to earn <b>capital</b>, then hire staff and repay your debts. Lose bills (or seats) and the caucus loses <b>confidence</b>. At zero, your career is over.</li></ul>
 <div class="choices"><button class="btn primary" id="howok">To the floor</button></div>`;
 
@@ -1652,7 +1675,9 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 function showMenu() {
   $('#game').classList.add('hidden'); $('#menu').classList.remove('hidden');
   const r = getRecords();
-  $('#records').innerHTML = `<div>— Senate Records —</div><div>Most bills passed: <b>${r.wins || 0}</b></div><div>Longest winning streak: <b>${r.streak || 0}</b></div><div>Longest career: <b>${r.bills || 0}</b> bills</div>`;
+  $('#hero').innerHTML = capitolSVG('night');
+  $('#records').innerHTML = `<div>— Senate Records —</div><div>Most bills passed: <b>${r.wins || 0}</b> · Longest winning streak: <b>${r.streak || 0}</b> · Longest career: <b>${r.bills || 0}</b> bills${r.legacy ? ` · Best legacy: <b>${r.legacy}</b>` : ''}</div>`;
+  $('#legacy').innerHTML = legacyHTML();
   $('#btn-continue').disabled = !localStorage.getItem('floorfight.v4.save');
 }
 function enterGame() { $('#menu').classList.add('hidden'); $('#game').classList.remove('hidden'); }
@@ -1666,4 +1691,4 @@ $('#btn-new-d').onclick = () => startNew('D');
 $('#btn-new-r').onclick = () => startNew('R');
 $('#btn-continue').onclick = () => { enterGame(); if (!load()) showMenu(); };
 $('#btn-how').onclick = () => { showModal(HOW); $('#howok').onclick = hideModal; };
-showMenu();
+// showMenu() runs from depth.js, once the art and achievements have loaded

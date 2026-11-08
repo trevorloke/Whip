@@ -29,7 +29,7 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   twist arms, or use dirt. Lock in commitments before the opposing whip peels
   votes away overnight. Win a caucus boss and their faction moves with them.
   Amendments reshape who likes the bill.
-- **Bills.** 100 of them, plus the yearly budget: each party's agenda, bipartisan deals (more of
+- **Bills.** 210 of them, plus the yearly budget: each party's agenda, bipartisan deals (more of
   them in divided government), and landmarks that need 60 or 67 votes.
 - **The yearly budget.** Every Fall you write the budget: pick two priorities
   to fund and one to cut while a whip count updates live. If it fails anywhere,
@@ -53,6 +53,13 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **The Court.** Nine justices who age and retire. A friendly President's
   nominee means a confirmation fight; with an opposing President, a Senate
   majority can block their pick.
+- **Campaign promises.** Before each election, run on a platform of up to
+  three promises (protect healthcare, cut taxes, no shutdowns, think big…).
+  They lift your candidates where voters care. If your party holds the Senate,
+  you have six bills to deliver: kept promises pay off, broken ones cost you.
+- **The opposing whip** has a personality: a Bulldog who works more senators,
+  a Schemer who springs poison-pill amendments, or a Charmer whose visits land
+  harder.
 - **Primaries.** Before each election, senators who broke with the party line
   draw challengers from their flank. Protect them, back the challenger, or
   meddle in the other party's primaries.
@@ -74,6 +81,15 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   dossiers, committee seats, retirements and more. Keep your caucus's
   confidence. Lose it and you're done. Records are saved in your browser.
 
+## Look and feel
+
+A real map of the United States (state outlines from US Census boundary data,
+via the us-atlas package) drives the whip view, the campaign trail and Election
+Night, with callouts for the small Northeast states. Every vote ends in a front
+page of *The Capitol Ledger*, and breaking events arrive as newspaper bulletins.
+Senators get illustrated portraits, the chamber has its desks and rostrum, and
+a Hall of Legacy tracks 21 achievements and your best legacy score.
+
 ## Files
 
 | File | What it holds |
@@ -82,6 +98,9 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 | `style.css` | All styling |
 | `game.js` | The Senate, whipping, events, the budget, the House, President and Court, primaries, elections, saving |
 | `content.js` | Most of the bills, staff, whip traits, House caucuses and independent causes |
+| `usmap.js` | State outlines (Albers USA projection), generated from us-atlas 3.0.1 |
+| `art.js` | The map renderer, the Capitol illustration, portraits, the newspaper, the chamber backdrop |
+| `depth.js` | Achievements and legacy, the opposing whip's personality and poison pills, campaign promises, headlines |
 | `night.js` | Election Night: the Electoral College, House results by state, and the results screen |
 
 ## Testing a shortcut

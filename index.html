@@ -4,24 +4,28 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Floor Fight</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=Inter:wght@400;600;800&family=Old+Standard+TT:wght@700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <div id="app">
   <!-- MENU -->
   <section id="menu" class="screen">
+    <div class="hero" id="hero"></div>
     <div class="menu-inner">
       <div class="logo">
-        <div class="logo-gavel">⚖</div>
-        <h1>FLOOR<span>FIGHT</span></h1>
-        <p class="tag">The United States Senate. 100 seats. Count the votes, twist the arms, survive the roll call and the next election.</p>
+        <div class="kick">★ The United States Senate ★</div>
+        <h1>FLOOR <span>FIGHT</span></h1>
+        <p class="tag">100 senators. 50 states. One whip. Count the votes, twist the arms, survive the roll call and the next election.</p>
       </div>
       <div class="menu-buttons">
-        <div class="side-pick"><button id="btn-new-d" class="btn big dem">Whip for the Democrats</button><button id="btn-new-r" class="btn big rep">Whip for the Republicans</button></div>
-        <button id="btn-continue" class="btn big">Continue Career</button>
-        <button id="btn-how" class="btn ghost big">How to Play</button>
+        <div class="side-pick"><button id="btn-new-d" class="btn big dem"><span class="emb">★</span> Whip for the Democrats</button><button id="btn-new-r" class="btn big rep"><span class="emb">★</span> Whip for the Republicans</button></div>
+        <div class="side-pick"><button id="btn-continue" class="btn big">Continue Career</button><button id="btn-how" class="btn ghost big">How to Play</button></div>
       </div>
       <div id="records" class="records"></div>
+      <div id="legacy" class="legacy"></div>
     </div>
   </section>
 
@@ -32,7 +36,7 @@
       <div id="left">
         <div id="bill"></div>
         <div id="chamber-wrap">
-          <div class="viewtabs"><button class="btn" data-view="chamber">Chamber</button><button class="btn" data-view="map">Map</button><button class="btn" data-view="factions">Factions</button></div><svg id="chamber" viewBox="-285 -272 570 300"></svg><div id="facview" class="hidden"></div>
+          <div class="viewtabs"><button class="btn" data-view="chamber">Chamber</button><button class="btn" data-view="map">Map</button><button class="btn" data-view="factions">Factions</button></div><svg id="chamber" viewBox="-285 -272 570 300"></svg><div id="facview" class="hidden"></div><div id="mapview" class="hidden"></div>
           <div id="count"></div>
         </div>
         <div id="floor-actions"></div>
@@ -49,6 +53,9 @@
 </div>
 <script src="game.js"></script>
 <script src="content.js"></script>
+<script src="usmap.js"></script>
+<script src="art.js"></script>
+<script src="depth.js"></script>
 <script src="night.js"></script>
 </body>
 </html>

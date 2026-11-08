@@ -173,26 +173,27 @@ function barChart(label, a, total, need, sub) {
 }
 
 function nightMap() {
-  const N = NIGHT, S0 = 50, G = 4;
-  let svg = `<svg viewBox="-4 -4 ${11 * S0 + 4} ${8 * S0 + 4}" class="nmap">`;
+  const N = NIGHT;
   const byCode = Object.fromEntries(contests(N.tab).map(c => [c.code, c]));
-  for (const [code, col, row] of NTILES) {
-    const x = col * S0, y = row * S0, sz = S0 - G, c = byCode[code];
-    let fill = '#1c2129', op = 1, sub = '', stroke = '', txt = '#5b6577';
-    if (c) {
-      txt = '#fff';
-      if (!isCalled(c)) { fill = '#3a4250'; sub = N.t > c.call * 0.6 ? '…' : ''; }
-      else if (N.tab === 'senate') { const s = shade(c.r.wParty, c.r.margin); fill = s.fill; op = s.op; if (c.r.flip) stroke = 'stroke:#f6d27a;stroke-width:4'; sub = c.r.flip ? 'FLIP' : ''; }
-      else if (N.tab === 'pres') { const s = shade(c.s.w, c.s.dPct - c.s.rPct); fill = s.fill; op = s.op; sub = c.s.ev; }
-      else { const sh = c.s.d / c.s.n; fill = sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0'; op = 0.35 + Math.abs(sh - 0.5) * 1.3; sub = `${c.s.d}–${c.s.r}`; if (c.s.d !== c.s.prevD) stroke = 'stroke:#f6d27a;stroke-width:3'; }
-      if (N.tab === 'pres' && !isCalled(c)) sub = c.s.ev;
-    }
-    if (N.sel === code) stroke = 'stroke:#fff;stroke-width:3';
-    svg += `<g class="ntile" data-code="${code}" ${c ? 'style="cursor:pointer"' : ''}><rect x="${x}" y="${y}" width="${sz}" height="${sz}" rx="5" fill="${fill}" fill-opacity="${op}" style="${stroke}"/>
-      <text x="${x + sz / 2}" y="${y + 19}" text-anchor="middle" font-size="13" font-weight="800" fill="${txt}">${code}</text>
-      <text x="${x + sz / 2}" y="${y + 36}" text-anchor="middle" font-size="10" font-weight="700" fill="${txt}" opacity=".85">${sub}</text></g>`;
-  }
-  return svg + '</svg>';
+  return usMap({
+    cls: 'nmap',
+    fill: code => {
+      const c = byCode[code]; if (!c) return null;
+      if (!isCalled(c)) return { c: '#4a5366' };
+      if (N.tab === 'senate') { const s = shade(c.r.wParty, c.r.margin); return { c: s.fill, op: s.op }; }
+      if (N.tab === 'pres') { const s = shade(c.s.w, c.s.dPct - c.s.rPct); return { c: s.fill, op: s.op }; }
+      const sh = c.s.d / c.s.n; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 };
+    },
+    sub: code => {
+      const c = byCode[code]; if (!c) return '';
+      if (N.tab === 'pres') return c.s.ev;
+      if (!isCalled(c)) return N.t > c.call * 0.6 ? '…' : '';
+      if (N.tab === 'senate') return c.r.flip ? 'FLIP' : '';
+      return `${c.s.d}–${c.s.r}`;
+    },
+    ring: code => { const c = byCode[code]; if (N.sel === code) return '#fff'; if (!c || !isCalled(c)) return null; return (N.tab === 'senate' && c.r.flip) || (N.tab === 'house' && c.s.d !== c.s.prevD) ? '#f6d27a' : null; },
+    attr: code => byCode[code] ? `data-code="${code}"` : '',
+  });
 }
 
 function candRow(name, party, votes, p, win, extra = '') {
