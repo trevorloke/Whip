@@ -56,7 +56,8 @@ function runHouse(swingSide) {
 // the presidential race, shared by the campaign trail's projection and the real count
 const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment'], FLANKS = ['Progressives', 'Freedom Caucus'];
 function presSetup() {
-  const P = S.president, inc = P.party, running = P.terms < 2, N = S.nominees || {}, E = S.election || {};
+  const P = S.president, inc = P.party, N = S.nominees || {}, E = S.election || {};
+  const running = P.terms < 2 && (!N[inc] || N[inc].name === P.name);
   const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: fullName(), R: fullName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
   const noms = { D: nom('D'), R: nom('R') };
   S.whStreak = S.whStreak || 1;

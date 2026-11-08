@@ -87,7 +87,10 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **Presidential primaries.** In each presidential year both parties hold
   primaries state by state, from Iowa through June, with delegates and
   dropouts. Senators, House members, governors, cabinet secretaries and the
-  Vice President run. Endorse a candidate to back a winner. Nominees pick
+  Vice President run. Rank up to three candidates: your endorsement goes to
+  your highest-ranked candidate still running. Watch the other party's race
+  too. You can undermine your own party's President and recruit a primary
+  challenger. Nominees pick
   running mates; in the fall, home states, running mates, candidate appeal,
   debates, wars and your battleground spending all move the Electoral College.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435

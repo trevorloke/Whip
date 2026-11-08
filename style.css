@@ -412,3 +412,9 @@ h1,h2,h3,.rank,.verdict,.tally{font-family:var(--serif)}
 .plbl{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--gold2);margin:8px 0 2px}
 .battle{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0;font-size:12px}
 .bchip{border:1px solid;border-radius:999px;padding:2px 8px;background:#1a2030}
+.ptabs{display:flex;gap:6px;margin:6px 0 10px;flex-wrap:wrap}
+.ptabs .btn{padding:6px 12px;font-size:12px}
+.rankbar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;background:#141821;border:1px solid #e3b54a55;border-radius:8px;padding:6px 10px;margin:6px 0;font-size:12px}
+.rk{border:1px solid;border-radius:999px;padding:2px 9px;background:#1a2030;font-weight:700}
+.rk.gone{opacity:.5;text-decoration:line-through}
+.cdet.under summary{color:#ff9d9d}

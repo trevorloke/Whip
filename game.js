@@ -657,7 +657,7 @@ const ACTIONS = {
     ok: () => S.president.party === S.side && S.bill.presCalls < presCallMax(),
     run(m) {
       spend(1); S.bill.presCalls++;
-      const d = (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * diminish(m);
+      const d = (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * Math.max(0.4, 1 - (S.undermine || 0) * 0.12) * diminish(m);
       m.b.touches++; applyDelta(m, d);
       ui.lastQuote = `“The President? Calling me? …Yes, ma'am. Yes, sir.” — Sen. ${m.name}`;
       log(`${presTitle()} called ${sen(m)} (${fmt(d)}).`, 'good');
