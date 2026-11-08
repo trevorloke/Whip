@@ -7,7 +7,7 @@
 /* ---------------- the realistic map ---------------- */
 // small states get labeled callout boxes out in the Atlantic
 const CALLOUTS = ['VT', 'NH', 'MA', 'RI', 'CT', 'NJ', 'DE', 'MD', 'DC'];
-const LABEL_AT = { FL: [818, 520], LA: [574, 466], MI: [688, 262], HI: [292, 578], ID: [210, 175], CA: [72, 292], NY: [826, 172], KY: [690, 318], WV: [760, 285], VA: [800, 302], NC: [790, 344], TN: [672, 350], ME: [915, 95], AK: [110, 520], OK: [470, 372], TX: [438, 468], MN: [520, 120], MS: [610, 430] };
+const LABEL_AT = { FL: [789, 530], LA: [574, 466], MI: [684, 185], HI: [317, 588], ID: [210, 175], CA: [72, 292], NY: [826, 172], KY: [690, 318], WV: [760, 285], VA: [800, 302], NC: [790, 344], TN: [672, 350], ME: [915, 95], AK: [110, 520], OK: [470, 372], TX: [438, 468], MN: [520, 120], MS: [610, 430] };
 function labelAt(code) { return LABEL_AT[code] || US_MAP[code].c; }
 let mapSeq = 0;
 
