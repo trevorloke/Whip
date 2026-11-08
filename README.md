@@ -46,6 +46,27 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   and you can't twist their arms. Each has a cause, and will cut a deal: their
   vote for writing that cause into the bill. They also run against both parties
   in three-way races, and sometimes for President.
+- **People with pasts.** Hundreds of diverse names. Every senator, governor,
+  cabinet member, Vice President and candidate has an age, hometown, a life
+  before politics and a political history that keeps growing as they vote,
+  break ranks, win, lose, get appointed or run for president.
+- **The Docket.** Between bills you choose what comes next: one of the
+  leadership's picks, or your own bill on any issue, which is how you keep
+  campaign promises. In the minority it takes a discharge petition.
+- **The executive branch.** A Vice President and a 12-member cabinet. New
+  presidents send their whole cabinet for confirmation, and you whip for or
+  against each nominee. If a sitting senator joins the cabinet, their
+  governor appoints a replacement, sometimes from the other party. Presidents
+  sign executive orders (ask yours for one, or sue to block theirs), face
+  foreign crises, and may ask Congress to authorize war; an unpopular war can
+  be ended with a War Powers Resolution.
+- **Governors.** All 50, elected on the real calendar (36 in midterms, 11 in
+  presidential years, New Hampshire and Vermont every two years). They help
+  their party's Senate candidates, appoint senators when seats open, and run
+  for president.
+- **The Pulse.** Presidential approval and the generic ballot over time,
+  right track/wrong track, the issues voters care about, cable news chyrons
+  and voices from the states.
 - **The path to law.** After the Senate, a bill needs the House (435 seats,
   which you can whip for better odds), then the President's signature. An
   opposing President may veto it, and you can fight an override that needs 67
@@ -63,6 +84,12 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **Primaries.** Before each election, senators who broke with the party line
   draw challengers from their flank. Protect them, back the challenger, or
   meddle in the other party's primaries.
+- **Presidential primaries.** In each presidential year both parties hold
+  primaries state by state, from Iowa through June, with delegates and
+  dropouts. Senators, House members, governors, cabinet secretaries and the
+  Vice President run. Endorse a candidate to back a winner. Nominees pick
+  running mates; in the fall, home states, running mates, candidate appeal,
+  debates, wars and your battleground spending all move the Electoral College.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435
   House seats, and the White House every four years, decided by the Electoral
   College. Senators who voted against their state's interests are vulnerable.
@@ -101,6 +128,8 @@ a Hall of Legacy tracks 21 achievements and your best legacy score.
 | `usmap.js` | State outlines (Albers USA projection), generated from us-atlas 3.0.1 |
 | `art.js` | The map renderer, the Capitol illustration, portraits, the newspaper, the chamber backdrop |
 | `depth.js` | Achievements and legacy, the opposing whip's personality and poison pills, campaign promises, headlines |
+| `names.js` | Name pools, backgrounds, hometowns and generated political histories |
+| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse, presidential primaries and the battleground |
 | `night.js` | Election Night: the Electoral College, House results by state, and the results screen |
 
 ## Testing a shortcut

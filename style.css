@@ -359,3 +359,49 @@ h1,h2,h3,.rank,.verdict,.tally{font-family:var(--serif)}
 .pgrid .btn{font-size:12px;padding:6px 8px}
 .pgrid .btn.on{background:linear-gradient(180deg,#3a3220,#272013);border-color:var(--gold)}
 @media (max-width:600px){.mast{flex-direction:column;align-items:center;gap:2px;text-align:center}.mast span{font-size:10px}}
+
+/* ---------- people, the administration, the pulse, the docket, primaries ---------- */
+.cdet{margin:8px 0;background:#141821;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.cdet summary{cursor:pointer;font-weight:700;font-size:13px;color:var(--gold2)}
+.career{font-size:12px;margin-top:6px}
+.career .bio{color:var(--dim);margin-bottom:6px}
+.ctl .ce{display:flex;gap:8px;padding:3px 0;border-bottom:1px dashed #2a3242}
+.ctl .ce span{color:var(--gold2);font-weight:800;min-width:38px}
+.modal-card .career{max-height:320px;overflow:auto}
+.nomp svg,.cp svg{width:46px;height:46px;border-radius:50%;border:2px solid #e3b54a55;flex:none}
+.race.nom{align-items:center}
+.race a,.cand2 a{color:var(--gold2)}
+.mapmode{display:flex;gap:6px;justify-content:center;margin:0 0 6px}
+.mapmode .btn{padding:4px 12px;font-size:12px}
+.pulsecards{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
+.pc{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.pc small{display:block;color:var(--dim);font-size:11px}
+.pc b{font-size:20px;font-family:var(--serif)}
+.pc.war{border-color:#7a3333;background:#2a1414}
+.chyron{background:#7d1018;color:#fff;font-weight:800;font-size:12px;letter-spacing:.5px;border-radius:6px;overflow:hidden;white-space:nowrap;padding:7px 0;margin:6px 0 10px}
+.chyron span{display:inline-block;padding:0 22px;animation:ticker 26s linear infinite}
+.chyron span::after{content:'  ★'}
+@keyframes ticker{from{transform:translateX(30%)}to{transform:translateX(-120%)}}
+.pulsegrid{display:grid;grid-template-columns:1.3fr 1fr;gap:12px}
+@media (max-width:640px){.pulsegrid{grid-template-columns:1fr}}
+.lchart{width:100%;height:auto;background:#141821;border-radius:8px;margin-top:6px}
+.salrow{display:flex;justify-content:space-between;align-items:center;font-size:12px;margin:5px 0;gap:8px}
+.salrow .mbar{width:45%}
+.voices{margin-top:10px;font-size:13px}
+.voices p{margin:6px 0;font-style:italic}
+.voices small{font-style:normal;color:var(--dim)}
+.shop.docket .btn{font-size:13px}
+.ownbill{margin-top:8px;display:flex;flex-wrap:wrap;gap:4px;align-items:center}
+.ownbill small{width:100%;color:var(--dim)}
+.btn.tagb{padding:4px 9px;font-size:11px}
+.btn.tagb.promise{border-color:var(--gold);color:var(--gold2)}
+.presbox{background:#141821;border:1px solid #e3b54a55;border-radius:10px;padding:10px;margin:6px 0}
+.ticket{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.tk{display:flex;gap:8px;align-items:center;border:2px solid;border-radius:10px;padding:6px 10px;flex:1;min-width:200px;background:#1a2030}
+.tk svg{width:52px;height:52px;border-radius:50%}
+.vs{font-family:var(--serif);font-weight:900;color:var(--gold2)}
+.cands{display:flex;flex-direction:column;gap:6px;margin:8px 0}
+.cand2{display:flex;gap:10px;align-items:center;background:#141821;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.cand2.out{opacity:.45}
+.dbar{height:8px;background:#2a303b;border-radius:4px;overflow:hidden;margin:4px 0}
+.dbar i{display:block;height:100%}

@@ -113,8 +113,10 @@ function portrait(m) {
   const hair = older && R() < 0.6 ? P(['#bdbdbd', '#d8d8d8', '#9a9a9a', '#e8e8e8']) : P(['#2b1d14', '#5a3a22', '#a26a32', '#d9b46a', '#1a1a1a', '#7b2e1e', '#3d2b1f']);
   const suit = P(['#1f2937', '#273449', '#3b2f2f', '#2d3a2e', '#4a4a52', '#1c2541', '#5b2333', '#2e2e3a']);
   const pc = PARTY[m.party].color;
-  const style = Math.floor(R() * 9), neck = P(['tie', 'tie', 'tie', 'blouse', 'pearls', 'open', 'bow']);
-  const glasses = R() < 0.32, beard = R() < 0.16, stache = !beard && R() < 0.14, earrings = R() < 0.25, smile = R();
+  const fem = m.gender === 'f', masc = m.gender === 'm';
+  const style = fem ? P([1, 3, 4, 4, 5, 6, 2]) : masc ? P([0, 0, 1, 2, 6, 7, 8]) : Math.floor(R() * 9);
+  const neck = fem ? P(['blouse', 'pearls', 'blouse', 'open', 'tie']) : masc ? P(['tie', 'tie', 'tie', 'bow', 'open']) : P(['tie', 'tie', 'tie', 'blouse', 'pearls', 'open', 'bow']);
+  const glasses = R() < 0.32, beard = !fem && R() < 0.2, stache = !fem && !beard && R() < 0.16, earrings = fem ? R() < 0.6 : R() < 0.04, smile = R();
   const browY = 43 + R() * 2, eyeGap = 9 + R() * 2;
   const hairBack = {
     3: `<path d="M22 46 Q20 16 50 15 Q80 16 78 46 L80 70 Q72 60 70 44 Q50 34 30 44 Q28 60 20 70Z" fill="${hair}"/>`,

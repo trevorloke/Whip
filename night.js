@@ -53,46 +53,85 @@ function runHouse(swingSide) {
 }
 
 /* ---------------- the Presidency, by electoral vote ---------------- */
-function runPres() {
-  const P = S.president, inc = P.party;
-  const running = P.terms < 2;
-  const names = { D: inc === 'D' && running ? P.name : pick(FIRST) + ' ' + pick(LAST), R: inc === 'R' && running ? P.name : pick(FIRST) + ' ' + pick(LAST) };
-  const indShare = Math.random() < 0.35 ? rnd(2, 9) : 0;
-  if (indShare) names.I = pick(FIRST) + ' ' + pick(LAST);
-  // voters tire of one party holding the White House for long
+// the presidential race, shared by the campaign trail's projection and the real count
+const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment'], FLANKS = ['Progressives', 'Freedom Caucus'];
+function presSetup() {
+  const P = S.president, inc = P.party, running = P.terms < 2, N = S.nominees || {}, E = S.election || {};
+  const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: fullName(), R: fullName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
+  const noms = { D: nom('D'), R: nom('R') };
   S.whStreak = S.whStreak || 1;
-  const presCash = (S.election && S.election.presCash) || 0;
-  const score = clamp((P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 + (inc === S.side ? 1 : -1) * cashEff(presCash, 0.9) - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + rnd(-3.5, 3.5), -10, 10);
-  const envD = inc === 'D' ? score : -score;
+  const q = p => (noms[p].charisma - 1) * 6 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
+  let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
+  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 0.9));
+  if (S.war && S.war.party === inc) base += (S.war.support - 50) / 12;
+  return { inc, running, noms, base };
+}
+function stateMarginD(c, envD, noms) {
+  let dm = -stLean(c) + envD;
+  if (noms.D.state === c) dm += 4; if (noms.R.state === c) dm -= 4;            // home-state advantage
+  if (noms.D.vp && noms.D.vp.state === c) dm += 2; if (noms.R.vp && noms.R.vp.state === c) dm -= 2;
+  const cash = (S.election && S.election.presStates && S.election.presStates[c]) || 0;
+  if (cash) dm += (S.side === 'D' ? 1 : -1) * cashEff(cash, 1.6);
+  return dm;
+}
+function presProjection() {
+  const s = presSetup(), envD = s.inc === 'D' ? s.base : -s.base, margins = {};
+  let evMine = 0;
+  for (const c of Object.keys(EV)) { margins[c] = stateMarginD(c, envD, s.noms); if ((margins[c] > 0) === (S.side === 'D')) evMine += EV[c]; }
+  return { margins, evMine, noms: s.noms };
+}
+function runPres() {
+  const P = S.president, { inc, running, noms, base } = presSetup();
+  const names = { D: noms.D.name, R: noms.R.name };
+  const indShare = Math.random() < 0.3 ? rnd(2, 9) : 0;
+  if (indShare) names.I = fullName();
+  const score = clamp(base + rnd(-3.5, 3.5), -11, 11), envD = inc === 'D' ? score : -score;
   const states = {};
   let evD = 0, evR = 0, popD = 0, popR = 0;
   for (const c of Object.keys(EV)) {
-    const dm = -stLean(c) + envD + rnd(-2.5, 2.5);
+    const dm = stateMarginD(c, envD, noms) + rnd(-2.5, 2.5);
     const iPct = indShare ? clamp(indShare + rnd(-2, 3), 0.5, 20) : 0, scale = (98.5 - iPct) / 98.5;
     const dPct = clamp(49.25 + dm / 2, 5, 95) * scale, rPct = 98.5 - iPct - dPct;
-    const tv = turnout(c);
-    const w = dPct > rPct ? 'D' : 'R';
+    const tv = turnout(c), w = dPct > rPct ? 'D' : 'R';
     states[c] = { dPct, rPct, iPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, iVotes: tv * iPct / 100, ev: EV[c], w, call: callTime(c, dPct - rPct) };
     if (w === 'D') evD += EV[c]; else evR += EV[c];
     popD += states[c].dVotes; popR += states[c].rVotes;
   }
-  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : inc;
+  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : inc, loser = other(winner);
   S.whStreak = winner === inc ? S.whStreak + 1 : 1;
-  let what;
-  if (winner === inc && running) { P.terms++; P.approval = clamp(P.approval + 4, 22, 72); what = `${presTitle()} wins a second term.`; }
+  const ev = `${Math.max(evD, evR)}–${Math.min(evD, evR)}`;
+  if (noms[loser].p) hist(noms[loser].p, `Lost the presidential election, ${Math.min(evD, evR)}–${Math.max(evD, evR)} in the Electoral College`);
+  let what, extra = [];
+  if (winner === inc && running) { P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President, ${ev} in the Electoral College`); what = `${presTitle()} wins a second term.`; }
   else {
-    const oldT = presTitle();
-    S.president = { name: names[winner], party: winner, faction: pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1 };
-    what = (winner === inc ? `${oldT} was term-limited; fellow ${PARTY[winner].name} ${names[winner]} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${names[winner]} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
+    const oldT = presTitle(), N = noms[winner];
+    const person = N.p ? { ...N.p } : newPerson(winner, pick(STATES)[0]);
+    // the winner leaves their old job
+    const sen = S.members.find(m => m.name === person.name && m.party === winner);
+    if (sen) extra.push(vacateSeat(sen, 'was elected President'));
+    const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === person.name);
+    if (govCode) { governorSucceeded(govCode, 'was elected President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
+    hist(person, `Elected President of the United States, ${ev} in the Electoral College`);
+    S.president = { ...person, name: person.name, party: winner, faction: N.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1 };
+    if (N.vp) {
+      const vm = S.members.find(m => m.name === N.vp.name);
+      S.vp = vm ? { ...vm, b: undefined } : newPerson(winner, N.vp.state);
+      hist(S.vp, 'Elected Vice President');
+      if (vm) extra.push(vacateSeat(vm, 'was elected Vice President'));
+    } else { S.vp = newPerson(winner, pick(STATES)[0]); hist(S.vp, 'Elected Vice President'); }
+    S.pendingCabinet = true;
+    what = (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].name} ${N.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${N.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
     if (winner !== inc) S.vacancyBlocked = false;
   }
+  S.nominees = null; S._fallbackNames = null;
+  if (extra.length) what += ' ' + extra.join(' ');
   return { states, evD, evR, popD, popR, names, winner, inc, what };
 }
 
 /* ---------------- the show ---------------- */
 let NIGHT = null;
 function openNight(data, onDone) {
-  const tabs = [data.pres && 'pres', 'senate', 'house'].filter(Boolean);
+  const tabs = [data.pres && 'pres', 'senate', 'house', data.gov && data.gov.length && 'gov'].filter(Boolean);
   NIGHT = { ...data, tab: tabs[0], tabs, t: window.FF_FAST ? 1 : 0, sel: null, onDone, called: new Set(), timer: null };
   let el = $('#night');
   if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
@@ -135,6 +174,7 @@ function closeNight() {
 function contests(tab) {
   const N = NIGHT;
   if (tab === 'senate') return N.races.map(r => ({ code: r.code, call: r.call, r }));
+  if (tab === 'gov') return N.gov.map(r => ({ code: r.code, call: r.call, r }));
   if (tab === 'pres') return Object.entries(N.pres.states).map(([code, s]) => ({ code, call: s.call, s }));
   return Object.entries(N.house.states).map(([code, s]) => ({ code, call: s.call, s }));
 }
@@ -161,6 +201,7 @@ function tallies() {
   for (const r of N.races) { if (isCalled({ call: r.call })) sen[r.wParty]++; else und.n++; }
   out.senate = { D: sen.D, R: sen.R, I: sen.I, und: und.n };
   if (N.pres) { let d = 0, r = 0, u = 0; for (const s of Object.values(N.pres.states)) { if (NIGHT.t >= s.call) { if (s.w === 'D') d += s.ev; else r += s.ev; } else u += s.ev; } out.pres = { D: d, R: r, und: u }; }
+  if (N.gov && N.gov.length) { const up = new Set(N.gov.map(r => r.code)), g = { D: 0, R: 0, I: 0, und: 0 }; for (const [c, p] of Object.entries(N.govBefore || {})) if (!up.has(c)) g[p]++; for (const r of N.gov) { if (isCalled({ call: r.call })) g[r.wParty]++; else g.und++; } out.gov = g; }
   { let d = 0, r = 0, u = 0; for (const s of Object.values(N.house.states)) { if (NIGHT.t >= s.call) { d += s.d; r += s.r; } else u += s.n; } out.house = { D: d, R: r, und: u }; }
   return out;
 }
@@ -180,7 +221,7 @@ function nightMap() {
     fill: code => {
       const c = byCode[code]; if (!c) return null;
       if (!isCalled(c)) return { c: '#4a5366' };
-      if (N.tab === 'senate') { const s = shade(c.r.wParty, c.r.margin); return { c: s.fill, op: s.op }; }
+      if (N.tab === 'senate' || N.tab === 'gov') { const s = shade(c.r.wParty, c.r.margin); return { c: s.fill, op: s.op }; }
       if (N.tab === 'pres') { const s = shade(c.s.w, c.s.dPct - c.s.rPct); return { c: s.fill, op: s.op }; }
       const sh = c.s.d / c.s.n; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 };
     },
@@ -188,10 +229,10 @@ function nightMap() {
       const c = byCode[code]; if (!c) return '';
       if (N.tab === 'pres') return c.s.ev;
       if (!isCalled(c)) return N.t > c.call * 0.6 ? '…' : '';
-      if (N.tab === 'senate') return c.r.flip ? 'FLIP' : '';
+      if (N.tab === 'senate' || N.tab === 'gov') return c.r.flip ? 'FLIP' : '';
       return `${c.s.d}–${c.s.r}`;
     },
-    ring: code => { const c = byCode[code]; if (N.sel === code) return '#fff'; if (!c || !isCalled(c)) return null; return (N.tab === 'senate' && c.r.flip) || (N.tab === 'house' && c.s.d !== c.s.prevD) ? '#f6d27a' : null; },
+    ring: code => { const c = byCode[code]; if (N.sel === code) return '#fff'; if (!c || !isCalled(c)) return null; return ((N.tab === 'senate' || N.tab === 'gov') && c.r.flip) || (N.tab === 'house' && c.s.d !== c.s.prevD) ? '#f6d27a' : null; },
     attr: code => byCode[code] ? `data-code="${code}"` : '',
   });
 }
@@ -208,13 +249,13 @@ function detailPanel() {
   const nav = `<div class="nnav"><button class="btn" id="nprev">◀ Prev</button><span>${i + 1} / ${L.length}</span><button class="btn" id="nnext">Next ▶</button></div>`;
   const status = called ? `<span class="call">PROJECTED</span>` : (N.t > c.call * 0.6 && Math.abs(marginOf(c)) < 5 ? '<span class="call close">TOO CLOSE TO CALL</span>' : '<span class="call wait">TOO EARLY TO CALL</span>');
   let body = '';
-  if (N.tab === 'senate') {
+  if (N.tab === 'senate' || N.tab === 'gov') {
     const r = c.r;
     const list = r.cands || [{ name: r.wName, party: r.wParty, votes: r.wVotes, pct: r.wPct }, { name: r.lName, party: r.lParty, votes: r.lVotes, pct: r.lPct }];
     const rows = list.map((x, i) => [x.name, x.party, x.votes, x.pct, i === 0, x.inc ? ' <span class="inc">incumbent</span>' : '']);
     if (!called) rows.forEach(x => { x[2] *= rep; x[3] = x[3] + (x[4] ? -1 : 1) * (1 - rep) * 3 * Math.sin(r.call * 40); x[4] = false; });
     rows.sort((a, b) => b[3] - a[3]);
-    body = `<h3>${stName(r.code)} · Senate (Class ${r.cls})</h3><div class="nsub">${r.open ? 'Open seat' : 'Incumbent: ' + r.incumbent}${r.threeWay ? ' · <b style="color:' + PARTY.I.color + '">three-way race</b>' : ''} · ${leanLabel(stLean(r.code))} · ${status} ${called && r.flip ? `<span class="call flip">${r.wParty} FLIP</span>` : called ? '<span class="call hold">HOLD</span>' : ''}</div>
+    body = `<h3>${stName(r.code)} · ${N.tab === 'gov' ? 'Governor' : `Senate (Class ${r.cls})`}</h3><div class="nsub">${r.open ? 'Open seat' : 'Incumbent: ' + r.incumbent}${r.threeWay ? ' · <b style="color:' + PARTY.I.color + '">three-way race</b>' : ''} · ${leanLabel(stLean(r.code))} · ${status} ${called && r.flip ? `<span class="call flip">${r.wParty} FLIP</span>` : called ? '<span class="call hold">HOLD</span>' : ''}</div>
       ${rows.map(x => candRow(...x)).join('')}<div class="nsub">${Math.round(rep * 100)}% of the expected vote reported${called ? ` · margin ${pct(r.margin)}` : ''}</div>`;
   } else if (N.tab === 'pres') {
     const s = c.s, P = N.pres;
@@ -245,7 +286,7 @@ function raceList() {
 }
 // diverging bar chart of the closest called contests
 function closestChart() {
-  const L = contests(NIGHT.tab).filter(isCalled).map(c => ({ code: c.code, m: NIGHT.tab === 'senate' ? (c.r.wParty === 'D' ? -1 : 1) * c.r.margin : c.s.rPct - c.s.dPct, flip: c.r && c.r.flip, ind: c.r && c.r.wParty === 'I' }))
+  const L = contests(NIGHT.tab).filter(isCalled).map(c => ({ code: c.code, m: c.r ? (c.r.wParty === 'D' ? -1 : 1) * c.r.margin : c.s.rPct - c.s.dPct, flip: c.r && c.r.flip, ind: c.r && c.r.wParty === 'I' }))
     .sort((a, b) => Math.abs(a.m) - Math.abs(b.m)).slice(0, 10);
   if (!L.length) return '<div class="nsub">No races called yet.</div>';
   const W = 420, H = L.length * 20 + 24, mx = Math.max(10, ...L.map(x => Math.abs(x.m)));
@@ -274,9 +315,10 @@ function popularVote() {
     return `<b>National House vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 98.4)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 98.4)}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)}</span><span>Before: D ${H.before.D} – R ${H.before.R}</span><span>${nfmt(r)}</span></div>`;
   }
   let d = 0, r = 0, ind = 0;
-  for (const x of N.races) { const rp = reporting({ call: x.call }); for (const c of x.cands || []) { if (c.party === 'D') d += c.votes * rp; else if (c.party === 'R') r += c.votes * rp; else ind += c.votes * rp; } }
+  for (const x of (N.tab === 'gov' ? N.gov : N.races)) { const rp = reporting({ call: x.call }); for (const c of x.cands || []) { if (c.party === 'D') d += c.votes * rp; else if (c.party === 'R') r += c.votes * rp; else ind += c.votes * rp; } }
   const tot = d + r + ind || 1;
   const flips = N.races.filter(x => x.flip && isCalled({ call: x.call }));
+  if (N.tab === 'gov') return `<b>Governors' races, all votes</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>`;
   return `<b>Senate vote, all races</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div>${ind ? `<div style="width:${ind / tot * 100}%;background:${PARTY.I.color}">I ${pct(ind / tot * 100)}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>
     <div class="nsub">Flips so far: ${flips.length ? flips.map(x => `<b style="color:${PARTY[x.wParty].color}">${x.code}</b>`).join(', ') : 'none'} · Before: D ${N.before.D} – R ${N.before.R}${N.before.I ? ` – I ${N.before.I}` : ''}</div>`;
 }
@@ -284,14 +326,14 @@ function popularVote() {
 function renderNight() {
   if (!NIGHT) return;
   const N = NIGHT, T = tallies();
-  const tabName = { pres: 'President', senate: 'Senate', house: 'House' };
+  const tabName = { pres: 'President', senate: 'Senate', house: 'House', gov: 'Governors' };
   const sc = $('#night .nside') ? $('#night .nside').scrollTop : 0;
   $('#night').innerHTML = `<div class="nwrap">
     <div class="nhead"><div><div class="kicker">Election Night ${N.year} · ${N.t >= 1 ? 'Final results' : 'LIVE'}</div><h2>${clockText(N.t)}</h2></div>
       <div class="ntabs">${N.tabs.map(t => `<button class="btn ${N.tab === t ? 'on' : ''}" data-tab="${t}">${tabName[t]}</button>`).join('')}</div>
       <div>${N.t < 1 ? '<button class="btn" id="nskip">⏩ Skip to final results</button>' : '<button class="btn primary" id="ndone">Continue →</button>'}</div></div>
     <div class="ntally">${N.pres ? barChart(`President · ${N.pres.names.D} vs ${N.pres.names.R}`, T.pres, 538, 270, 'electoral votes') : ''}
-      ${barChart('Senate', T.senate, 100, 51, `${N.races.length} seats up`)}${barChart('House', T.house, 435, 218, 'all 435 seats')}</div>
+      ${barChart('Senate', T.senate, 100, 51, `${N.races.length} seats up`)}${barChart('House', T.house, 435, 218, 'all 435 seats')}${T.gov ? barChart('Governors', T.gov, 50, 26, `${N.gov.length} races`) : ''}</div>
     <div class="nbody"><div class="nmapwrap">${nightMap()}<div class="npop">${popularVote()}</div></div>
       <div class="nside"><div class="ndetail">${detailPanel()}</div>
         <div class="nlist"><div class="lh">All ${tabName[N.tab].toLowerCase()} results · ← → to browse</div>${raceList()}</div>
