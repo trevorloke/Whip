@@ -1206,6 +1206,7 @@ function electionPrep() {
       <div class="deploy"><button class="btn" data-auto="smart">🎯 Smart deploy<small>Each unit where it adds the most</small></button><button class="btn" data-auto="defend">🛡 Defend my seats<small>Only seats your party holds</small></button><button class="btn" data-auto="offense">⚔ Go on offense<small>Only seats you could flip</small></button><button class="btn ghost" data-auto="reset">↺ Take it all back</button></div>
       <div class="national">
         <div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. The first unit ≈ +0.8 points nationally (a few House seats); more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${money(E.houseCash)}</span><button class="btn" data-hc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>
+        ${govRaceCount(E.year) ? `<div class="race"><span>🏛️ <b>Governors' races</b><br><small style="color:var(--dim)">${govRaceCount(E.year)} governorships up. Transfer money to your party's candidates: the first unit ≈ +1.2 points in every race; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-gc="-1" ${E.govCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.govCash || 0)}</span><button class="btn" data-gc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>` : ''}
         ${pres ? presBattleHTML() : ''}
         ${pres && false ? `<div class="race"><span>🇺🇸 <b>Presidential swing states</b><br><small style="color:var(--dim)">Ads and turnout in the battlegrounds. The first unit ≈ +0.9 points for your ticket; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>` : ''}
       </div>
@@ -1224,6 +1225,7 @@ function electionPrep() {
     });
     card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
     bindPresBattle(draw);
+    card.querySelectorAll('[data-gc]').forEach(b => b.onclick = () => { const d = +b.dataset.gc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.govCash) return; E.govCash = (E.govCash || 0) + d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-promise]').forEach(b => b.onclick = () => { const id = b.dataset.promise, P = E.platform; if (P.includes(id)) E.platform = P.filter(x => x !== id); else if (P.length < 3) P.push(id); sfx.click(); draw(); });
     card.querySelectorAll('[data-filt]').forEach(b => b.onclick = () => { E.filter = b.dataset.filt; sfx.click(); draw(); });
@@ -1243,7 +1245,7 @@ function raceChance(rc) {
 function cashGain(rc) { const b = raceChance(rc); rc.cash++; const g = raceChance(rc) - b; rc.cash--; return g; }
 function autoDeploy(mode) {
   const E = S.election;
-  if (mode === 'reset') { for (const rc of E.races) { E.cash += rc.cash; rc.cash = 0; } E.cash += E.houseCash + E.presCash; E.houseCash = 0; E.presCash = 0; return; }
+  if (mode === 'reset') { for (const rc of E.races) { E.cash += rc.cash; rc.cash = 0; } E.cash += E.houseCash + E.presCash + (E.govCash || 0); E.houseCash = 0; E.presCash = 0; E.govCash = 0; return; }
   const pool = E.races.filter(rc => mode === 'defend' ? rc.m.party === S.side : mode === 'offense' ? rc.m.party !== S.side : true);
   while (E.cash > 0) {
     let best = null, gain = 0.003;
@@ -1253,6 +1255,7 @@ function autoDeploy(mode) {
   }
 }
 function chanceColor(p) { return p >= 0.6 ? PARTY[S.side].color : p <= 0.4 ? PARTY[other(S.side)].color : '#b8a24a'; }
+function govRaceCount(year) { return Object.keys(S.governors || {}).filter(c => govUp(c, year)).length; }
 function campaignMap() {
   const E = S.election;
   const byState = {}; E.races.forEach((rc, i) => byState[rc.m.state] = i);

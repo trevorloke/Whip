@@ -62,7 +62,7 @@ function presSetup() {
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 6 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
-  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 0.9) + (E.waveSignal || 0));
+  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 1.2) + (E.waveSignal || 0));
   if (S.war && S.war.party === inc) base += (S.war.support - 50) / 12;
   return { inc, running, noms, base };
 }
@@ -70,8 +70,6 @@ function stateMarginD(c, envD, noms) {
   let dm = -stLean(c) + envD;
   if (noms.D.state === c) dm += 4; if (noms.R.state === c) dm -= 4;            // home-state advantage
   if (noms.D.vp && noms.D.vp.state === c) dm += 2; if (noms.R.vp && noms.R.vp.state === c) dm -= 2;
-  const cash = (S.election && S.election.presStates && S.election.presStates[c]) || 0;
-  if (cash) dm += (S.side === 'D' ? 1 : -1) * cashEff(cash, 1.6);
   return dm;
 }
 function presProjection() {

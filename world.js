@@ -338,6 +338,17 @@ function contestShares(field, states, endorsed) {
   }
   return res;
 }
+function primaryPoll(field) {
+  const act = field.filter(f => f.active); if (!act.length) return {};
+  const tot = {}; act.forEach(f => tot[f.name] = 0);
+  const r = contestShares(field, Object.keys(EV), null);
+  let w = 0;
+  for (const [code, rows] of Object.entries(r)) { const ev = EV[code] || 3; w += ev; rows.forEach(x => tot[x.f.name] += x.pct * ev); }
+  const undecided = Math.max(4, 14 - Object.values(field).reduce((a, f) => a + f.wins, 0));
+  const out = {}; for (const f of act) out[f.name] = tot[f.name] / w * (100 - undecided) / 100;
+  out._undecided = undecided;
+  return out;
+}
 function runPrimaryFor(party, endorsed, step) {
   const field = primaryField(party), results = {}, totalDel = Object.values(EV).reduce((a, b) => a + b, 0) * 10, need = Math.floor(totalDel / 2) + 1;
   let i = 0;
@@ -398,6 +409,11 @@ function primariesModal(done) {
   }
   const draw = () => {
     const field = R.field.slice().sort((a, b) => b.del - a.del);
+    const endF = endorsed ? R.field.find(f => f.name === endorsed) : null, endOut = endF && !endF.active;
+    const poll = R.poll || (R.poll = primaryPoll(R.field));
+    const lastIdx = PRIMARY_CAL.findIndex(c => c[0] === lastLabel), lastStates = lastIdx >= 0 ? PRIMARY_CAL[lastIdx][1] : [];
+    const resultRows = codes => codes.filter(c => R.results[c]).map(c => `<div class="prow"><b>${stName(c)}</b><span>${R.results[c].slice(0, 3).map((x, i) => `<span style="color:${x.f.color}">${i === 0 ? '✓ ' : ''}${lastName(x.f.p)} ${x.pct.toFixed(0)}%</span>`).join(' · ')}</span></div>`).join('');
+    const decided = PRIMARY_CAL.slice(0, lastIdx + 1);
     const mapHTML = usMap({
       fill: code => { const r = R.results[code]; return r ? { c: r[0].f.color, op: 0.5 + Math.min(0.5, (r[0].pct - (r[1] ? r[1].pct : 0)) / 30) } : null; },
       sub: code => R.results[code] ? lastName(R.results[code][0].f.p).slice(0, 6) : '',
@@ -405,17 +421,20 @@ function primariesModal(done) {
       title: code => R.results[code] ? `${stName(code)}: ${R.results[code].map(x => `${lastName(x.f.p)} ${x.pct.toFixed(0)}%`).join(', ')}` : stName(code),
     });
     showModal(`<div class="kicker">${year} · ${PARTY[mine].name} presidential primaries</div><h2>${lastLabel ? `After ${lastLabel}` : 'The Field'}</h2>
-      <p>${R.need.toLocaleString()} delegates to win. ${endorsed ? `You endorsed <b>${endorsed}</b>.` : 'Endorse a candidate (1 capital) to give them a boost: back the winner and you\'ll have a friend at the top of the ticket (+3 capital); back a loser and it costs you.'}</p>
+      <p>${R.need.toLocaleString()} delegates to win. ${endOut ? `<b style="color:var(--no)">${endorsed}, your candidate, has dropped out.</b> You can endorse someone still in the race (1 capital).` : endorsed ? `You endorsed <b>${endorsed}</b>.` : 'Endorse a candidate (1 capital) to give them a boost: back the winner and you\'ll have a friend at the top of the ticket (+3 capital); back a loser and it costs you.'}</p>
+      <div class="pollbox"><b>📊 National primary poll</b>${field.filter(f => f.active).sort((a, b) => (poll[b.name] || 0) - (poll[a.name] || 0)).map(f => `<div class="salrow"><span style="color:${f.color};font-weight:700">${f.name}</span><span class="mbar"><i style="width:${Math.min(100, (poll[f.name] || 0) * 2)}%;background:${f.color}"></i></span><b>${(poll[f.name] || 0).toFixed(0)}%</b></div>`).join('')}<small style="color:var(--dim)">Undecided ${poll._undecided}% · polls move with wins and momentum</small></div>
       <div class="cands">${field.map(f => `<div class="cand2 ${f.active ? '' : 'out'}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b> <small>· ${f.office} · ${f.faction}${f.active ? '' : ` · dropped out after ${f.out}`}</small>
-        <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.del.toLocaleString()} delegates · ${f.wins} state${f.wins === 1 ? '' : 's'} won</small></span>
-        <span style="display:flex;flex-direction:column;gap:4px"><a href="#" data-cprof="${R.field.indexOf(f)}">profile</a>${!endorsed && f.active ? `<button class="btn" data-endorse="${R.field.indexOf(f)}" ${S.career.capital < 1 ? 'disabled' : ''}>Endorse</button>` : ''}</span></div>`).join('')}</div>
+        <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.del.toLocaleString()} delegates · ${f.wins} state${f.wins === 1 ? '' : 's'} won${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%` : ''}${f.name === endorsed ? ' · <b style="color:var(--gold2)">your endorsement</b>' : ''}</small></span>
+        <span style="display:flex;flex-direction:column;gap:4px"><a href="#" data-cprof="${R.field.indexOf(f)}">profile</a>${(!endorsed || endOut) && f.active ? `<button class="btn" data-endorse=""${R.field.indexOf(f)}" ${S.career.capital < 1 ? 'disabled' : ''}>Endorse</button>` : ''}</span></div>`).join('')}</div>
+      ${lastStates.length ? `<div class="presults"><b>🗳️ ${lastLabel} results</b>${resultRows(lastStates)}</div>` : '<p style="color:var(--dim)">No votes cast yet. Iowa is first.</p>'}
       <div class="campmap">${mapHTML}</div>
+      ${decided.length > 1 ? `<details class="cdet"><summary>All results so far (${decided.reduce((a, c) => a + c[1].length, 0)} states)</summary>${decided.map(([lbl, codes]) => `<div class="plbl">${lbl}</div>${resultRows(codes)}`).join('')}</details>` : ''}
       <div class="choices">${R.done() ? '<button class="btn primary big" id="pfin">See the nominees</button>' : `<button class="btn primary big" id="pnext">Next: ${PRIMARY_CAL[PRIMARY_CAL.findIndex(c => c[0] === lastLabel) + 1 || 0][0]} ▶</button><button class="btn ghost" id="pskip">Skip to the end</button>`}</div>`);
     const card = $('#modal-card');
-    card.querySelectorAll('[data-endorse]').forEach(b => b.onclick = () => { if (S.career.capital < 1) return; S.career.capital--; endorsed = R.field[+b.dataset.endorse].name; R.field[+b.dataset.endorse].charisma *= 1.12; const f = R.field[+b.dataset.endorse]; hist(f.p, `Endorsed for President by the ${PARTY[mine].name} whip`); sfx.up(); draw(); });
+    card.querySelectorAll('[data-endorse]').forEach(b => b.onclick = () => { if (S.career.capital < 1) return; S.career.capital--; endorsed = R.field[+b.dataset.endorse].name; R.poll = null; R.field[+b.dataset.endorse].charisma *= 1.12; const f = R.field[+b.dataset.endorse]; hist(f.p, `Endorsed for President by the ${PARTY[mine].name} whip`); sfx.up(); draw(); });
     card.querySelectorAll('[data-cprof]').forEach(a => a.onclick = e => { e.preventDefault(); const f = R.field[+a.dataset.cprof]; profileModal(f.p, f.office, draw); });
-    if ($('#pnext')) $('#pnext').onclick = () => { lastLabel = R.nextContest(); sfx.click(); draw(); };
-    if ($('#pskip')) $('#pskip').onclick = () => { while (!R.done()) lastLabel = R.nextContest(); draw(); };
+    if ($('#pnext')) $('#pnext').onclick = () => { lastLabel = R.nextContest(); R.poll = null; sfx.click(); draw(); };
+    if ($('#pskip')) $('#pskip').onclick = () => { while (!R.done()) lastLabel = R.nextContest(); R.poll = null; draw(); };
     if ($('#pfin')) $('#pfin').onclick = finishAll;
   };
   draw();
@@ -430,7 +449,8 @@ function runGovernors(year) {
     const g = S.governors[code], open = (g.terms || 1) >= 2 && !GOV_EVERY_TWO.includes(code);
     const A = g.party, adv = (A === 'R' ? ST[code].lean : -ST[code].lean) * 0.35;
     const pm = (A === S.side ? 1 : -1) * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8) - (S.president.party === A && year % 4 ? 2 : 0);
-    const mg = adv + pm + (open ? 0 : 5) + gauss() * 8;
+    const gc = (S.election && S.election.govCash) || 0;
+    const mg = adv + pm + (open ? 0 : 5) + (A === S.side ? 1 : -1) * cashEff(gc, 1.2) + gauss() * 8;
     const np = mg >= 0 ? A : other(A);
     const wPct = clamp(49.25 + Math.abs(mg) / 2, 49.5, 75), lPct = 98.5 - wPct, tv = turnout(code);
     let winner;
@@ -500,27 +520,24 @@ function presBattleHTML() {
   const battle = Object.keys(EV).map(c => ({ c, m: pr.margins[c] * sign })).filter(x => Math.abs(x.m) < 9).sort((a, b) => EV[b.c] - EV[a.c]);
   const mapHTML = usMap({
     fill: code => { if (!EV[code]) return null; const m = pr.margins[code] * sign; return { c: m >= 0 ? PARTY[mine].color : PARTY[other(mine)].color, op: 0.3 + Math.min(0.7, Math.abs(m) / 15) }; },
-    sub: code => EV[code] ? `${EV[code]}${E.presStates[code] ? ' $' + E.presStates[code] : ''}` : '',
-    ring: code => E.presStates[code] ? '#f6d27a' : null,
-    attr: code => EV[code] ? `data-ps="${code}"` : '',
+    sub: code => EV[code] ? `${EV[code]}` : '',
+
     title: code => `${stName(code)}: ${pr.margins[code] * sign >= 0 ? 'your ticket' : 'theirs'} +${Math.abs(pr.margins[code]).toFixed(1)} · ${EV[code]} EV`,
   });
   return `<div class="presbox"><b>🇺🇸 The race for the White House</b>
     <div class="ticket">${[my, their].map((n, i) => `<div class="tk" style="border-color:${PARTY[i ? other(mine) : mine].color}">${n.p ? portrait(n.p) : ''}<span><b>${n.name}</b><br><small>${n.office || (n.p === S.president ? 'President' : 'Nominee')} · ${n.faction || ''}${n.state ? ' · ' + n.state : ''}${n.vp ? `<br>Running mate: ${n.vp.name} (${n.vp.state})` : ''}</small></span></div>`).join('<span class="vs">vs</span>')}</div>
-    <p>Projected Electoral College for your ticket: <b style="color:${pr.evMine >= 270 ? 'var(--yes)' : 'var(--no)'}">${pr.evMine}</b> of 270. Home states and running mates swing their states. Spend in the battlegrounds (each unit ≈ +1.6 points there, then less), or nationally.</p>
-    <div class="campmap">${mapHTML}<small>Click a state to send a unit there · right-click to pull one back</small></div>
-    <div class="races" style="max-height:none">${battle.map(x => `<div class="race"><span><b>${stName(x.c)}</b> · ${EV[x.c]} EV</span><span class="cashctl"><span class="chance"><b style="color:${x.m >= 0 ? 'var(--yes)' : 'var(--no)'}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b><small>your margin</small></span><button class="btn" data-ps="${x.c}" data-d="-1" ${E.presStates[x.c] ? '' : 'disabled'}>−</button><span class="dots">${money(E.presStates[x.c] || 0)}</span><button class="btn" data-ps="${x.c}" data-d="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>`).join('')}
-      <div class="race"><span>📺 <b>National ad campaign</b><br><small style="color:var(--dim)">≈ +0.9 points everywhere, then less.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>
+    <p>Projected Electoral College for your ticket: <b style="color:${pr.evMine >= 270 ? 'var(--yes)' : 'var(--no)'}">${pr.evMine}</b> of 270. Home states and running mates swing their states. The campaign decides where to spend; you set the budget.</p>
+    <div class="campmap">${mapHTML}</div>
+    <div class="battle"><b>Battlegrounds</b> ${battle.map(x => `<span class="bchip" style="border-color:${x.m >= 0 ? 'var(--yes)' : 'var(--no)'}">${x.c} ${EV[x.c]} · <b style="color:${x.m >= 0 ? 'var(--yes)' : 'var(--no)'}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b></span>`).join('') || '<small style="color:var(--dim)">None: this race isn\'t close.</small>'}</div>
+    <div class="races" style="max-height:none">
+      <div class="race"><span>🇺🇸 <b>Presidential campaign</b><br><small style="color:var(--dim)">Transfer money to your ticket. The first unit ≈ +1.2 points nationwide; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>
       <div class="race"><span>🎤 <b>The debates</b><br><small style="color:var(--dim)">${E.debate == null ? 'Prep your nominee (1 capital) or let them wing it.' : E.debate >= 1 ? `Your nominee won the debates (+${E.debate.toFixed(1)}).` : E.debate > -0.5 ? 'The debates were a draw.' : `Your nominee stumbled (${E.debate.toFixed(1)}).`}</small></span>${E.debate == null ? `<span class="cashctl"><button class="btn" data-debate="prep" ${S.career.capital < 1 ? 'disabled' : ''}>Debate prep<small>1 cap</small></button><button class="btn ghost" data-debate="wing">Wing it</button></span>` : ''}</div></div></div>`;
 }
 function bindPresBattle(draw) {
   const card = $('#modal-card'), E = S.election; if (!E.pres) return;
   E.presStates = E.presStates || {};
   const add = (code, d) => { if (d > 0 && E.cash < 1) return; if (d < 0 && !(E.presStates[code] > 0)) return; E.presStates[code] = (E.presStates[code] || 0) + d; E.cash -= d; sfx.click(); draw(); };
-  card.querySelectorAll('[data-ps]').forEach(el => {
-    if (el.tagName === 'BUTTON') el.onclick = () => add(el.dataset.ps, +el.dataset.d);
-    else { el.onclick = () => add(el.dataset.ps, 1); el.oncontextmenu = e => { e.preventDefault(); add(el.dataset.ps, -1); }; }
-  });
+
   card.querySelectorAll('[data-debate]').forEach(b => b.onclick = () => {
     if (b.dataset.debate === 'prep') { if (S.career.capital < 1) return; S.career.capital--; E.debate = clamp(gauss() * 1.4 + 1.4, -2, 4); }
     else E.debate = clamp(gauss() * 1.8, -3, 3);

@@ -406,3 +406,9 @@ h1,h2,h3,.rank,.verdict,.tally{font-family:var(--serif)}
 .dbar{height:8px;background:#2a303b;border-radius:4px;overflow:hidden;margin:4px 0}
 .dbar i{display:block;height:100%}
 .forecast{background:#141821;border-left:3px solid var(--gold);padding:6px 10px;border-radius:0 6px 6px 0}
+.pollbox,.presults{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}
+.prow{display:flex;justify-content:space-between;gap:10px;font-size:12px;padding:3px 0;border-bottom:1px dashed #2a3242}
+.prow span{text-align:right}
+.plbl{font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--gold2);margin:8px 0 2px}
+.battle{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:6px 0;font-size:12px}
+.bchip{border:1px solid;border-radius:999px;padding:2px 8px;background:#1a2030}
