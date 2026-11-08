@@ -98,7 +98,11 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   clicking states on the map, and fund the House and presidential races too.
   There's no cap on any race; each extra unit in the same place does a little
   less, so spreading money usually pays. Races are uncertain enough that
-  roughly a third of them are in play every cycle.
+  roughly a third of them are in play every cycle. Each cycle also has a national environment
+  with fat tails: most years are close, but roughly one in eight is a wave
+  that sweeps the Senate, House, governorships and the White House together.
+  Forecasters see most of a wave coming, but not all of it, so landslides are
+  rare but never come from nowhere.
 - **Election Night.** Results come in from east to west, with close races
   called last. You get a clickable map, President, Senate and House tabs, vote
   totals and percentages, live seat and electoral-vote tallies, a closest-races

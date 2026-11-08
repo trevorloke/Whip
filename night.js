@@ -62,7 +62,7 @@ function presSetup() {
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 6 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
-  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 0.9));
+  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 0.9) + (E.waveSignal || 0));
   if (S.war && S.war.party === inc) base += (S.war.support - 50) / 12;
   return { inc, running, noms, base };
 }
@@ -85,7 +85,9 @@ function runPres() {
   const names = { D: noms.D.name, R: noms.R.name };
   const indShare = Math.random() < 0.3 ? rnd(2, 9) : 0;
   if (indShare) names.I = fullName();
-  const score = clamp(base + rnd(-3.5, 3.5), -11, 11), envD = inc === 'D' ? score : -score;
+  // the wave forecasters saw is in base; the rest of it lands on election night
+  const surprise = S.election ? (inc === S.side ? 1 : -1) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
+  const score = clamp(base + surprise + rnd(-3, 3), -20, 20), envD = inc === 'D' ? score : -score;
   const states = {};
   let evD = 0, evR = 0, popD = 0, popR = 0;
   for (const c of Object.keys(EV)) {

@@ -927,7 +927,7 @@ function settle(won, detail, headline, isLaw) {
     c.capital += cap;
     if (c.streak % 3 === 0 && c.confidence < 5) { c.confidence++; lines.push('Three in a row: +1 confidence'); }
     lines.unshift(`+${cap} political capital`);
-    S.mood = clamp(S.mood + 1 + (B.opinion - 50) / 12 * (B.landmark ? 2 : 1), -12, 12);
+    S.mood = clamp(S.mood + 1 + (B.opinion - 50) / 12 * (B.landmark ? 2 : 1), -15, 15);
     sfx.fanfare();
     if (isLaw && !B.nomination) {
       const cr = courtRisk();
@@ -938,7 +938,7 @@ function settle(won, detail, headline, isLaw) {
     if (['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
     else { c.confidence--; c.capital += 1; lines.unshift('−1 party confidence · +1 capital (consolation)'); }
     if (B.nomination) { S.nominee = { name: fullName(), tries: (S.nominee.tries || 0) + 1 }; lines.push(`The nomination is withdrawn. ${presTitle()} will send a more moderate pick, Judge ${S.nominee.name}, next.`); }
-    S.mood = clamp(S.mood - 1.5, -12, 12);
+    S.mood = clamp(S.mood - 1.5, -15, 15);
     sfx.gavel();
   }
   if (B.budget) {
@@ -954,7 +954,7 @@ function settle(won, detail, headline, isLaw) {
   const P = S.president;
   if (P.party === S.side) P.approval += won ? 1 + Math.round((B.opinion - 50) / 20) : -2;
   else P.approval += won ? -1 : 1;
-  P.approval = clamp(Math.round(P.approval + (50 - P.approval) * 0.18) + ri(-1, 1), 22, 72);
+  P.approval = clamp(Math.round(P.approval + (50 - P.approval) * 0.15) + ri(-2, 2), 18, 82);
   S.calledEarly = 0;
   // legacy and achievements
   if (won) {
@@ -1118,6 +1118,7 @@ function projMargin(rc) {
   const pb = (S.election ? promiseBoost(rc.m.state) : 0) + (S.governors && S.governors[rc.m.state] ? (S.governors[rc.m.state].party === S.side ? 1.5 : -1.5) : 0);
   if (A === S.side) mg += pb + cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
   else mg -= pb + cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
+  mg += (A === S.side ? 1 : -1) * (S.election ? S.election.waveSignal : 0);
   return mg + (has('pollmap') ? rc.noise : 0);
 }
 const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives', R: f => f === 'Freedom Caucus' ? 'Populists' : 'Freedom Caucus' };
@@ -1128,7 +1129,10 @@ function electionPrep() {
   if (!pres) S.mood += (S.president.party === S.side ? -3 : 3); // midterms punish the White House party
   const races = S.members.filter(m => m.cls === cls).map(m => ({ m, retiring: m.party !== 'I' && (m.retireNudge || Math.random() < 0.1), cash: 0, noise: gauss() * RACE_SD, ind: null }));
   const promiseReport = judgePromises();
-  S.election = { k, year, cls, pres, races, platform: [], promiseReport, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
+  // the national environment: most cycles are close, but about one in eight is a wave
+  const wave = Math.random() < 0.13 ? (Math.random() < 0.5 ? -1 : 1) * rnd(7, 14) : gauss() * 3;
+  const waveSignal = wave * 0.65 + gauss() * 2; // what the forecasters can see coming
+  S.election = { k, year, cls, pres, races, wave, waveSignal, platform: [], promiseReport, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
   S.warchest = 0;
   const E = S.election;
   // primary challenges: senators who bucked the party line, and moderates in safe seats, draw challengers from the flank
@@ -1192,6 +1196,7 @@ function electionPrep() {
     showModal(`<div class="kicker">Election Day ${year} · Class ${cls} · ${E.races.length} seats up${pres ? ' · Presidential year' : ' · Midterms'}</div><h2>The Campaign Trail</h2>
       ${balanceBar()}
       <p>${presTitle()} (${S.president.party}): approval <b>${S.president.approval}%</b>${pres ? (S.president.terms >= 2 ? ' · term-limited, open race' : ' · running for re-election') : ''}. House: ${S.house.D}D–${S.house.R}R, all 435 seats up.</p>
+      <p class="forecast">📡 <b>The forecast:</b> ${Math.abs(E.waveSignal) >= 6 ? `<b style="color:${E.waveSignal > 0 ? 'var(--yes)' : 'var(--no)'}">a ${E.waveSignal > 0 ? PARTY[S.side].name : PARTY[other(S.side)].name} wave is building</b> — the national environment favors them by about ${Math.abs(E.waveSignal).toFixed(0)} points` : Math.abs(E.waveSignal) >= 3 ? `the environment leans ${E.waveSignal > 0 ? 'your way' : 'against you'} by about ${Math.abs(E.waveSignal).toFixed(0)} points` : 'a close, neutral year'}. Forecasts can be off by several points either way.</p>
       <p>Your party's national mood: <b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b>, built from the bills you passed and how popular they were${pres ? '' : (S.president.party === S.side ? ', minus the usual midterm penalty for holding the White House' : ', plus a midterm boost against the White House')}. Senators who voted against their state's interests are exposed.</p>
       ${E.promiseReport || ''}
       ${platformHTML()}
@@ -1278,7 +1283,7 @@ function countBallots() {
   const races = [];
   for (const rc of E.races) {
     const m = rc.m, A = majorParty(rc), Bp = other(A);
-    const final = projMargin(rc) + (has('pollmap') ? 0 : rc.noise);
+    const final = projMargin(rc) + (has('pollmap') ? 0 : rc.noise) + (A === S.side ? 1 : -1) * (E.wave - E.waveSignal);
     // candidates: the major holder party, the other major party, and maybe an independent
     const nameA = m.party === A && !rc.retiring ? (rc.primaried ? rc.nominee.name : m.name) : fullName();
     const cands = [{ party: A, name: nameA, inc: m.party === A && !rc.retiring && !rc.primaried }, { party: Bp, name: fullName(), inc: false }];
@@ -1315,7 +1320,7 @@ function countBallots() {
   const P = S.president;
   const apTerm = (P.approval - 50) * 0.2 * (P.party === S.side ? 1 : -1);
   const hMajBefore = houseMaj();
-  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + rnd(-2.5, 2.5));
+  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + E.wave * 0.55 + rnd(-2, 2));
   const govBefore = Object.fromEntries(Object.entries(S.governors).map(([c, g]) => [c, g.party]));
   const gov = runGovernors(E.year);
   const pres = E.pres ? runPres() : null;
@@ -1342,7 +1347,11 @@ function countBallots() {
   addLegacy(Math.max(0, net) * 4);
   const promiseLine = adoptPromises(); S.dirtied = false;
   const won = isMajority();
-  const hl = won ? `${PARTY[S.side].short.toUpperCase()} ${wasMaj ? 'HOLD' : 'TAKE'} THE SENATE` : `${PARTY[other(S.side)].short.toUpperCase()} ${wasMaj ? 'SEIZE' : 'KEEP'} THE SENATE`;
+  let hl = won ? `${PARTY[S.side].short.toUpperCase()} ${wasMaj ? 'HOLD' : 'TAKE'} THE SENATE` : `${PARTY[other(S.side)].short.toUpperCase()} ${wasMaj ? 'SEIZE' : 'KEEP'} THE SENATE`;
+  const evW = pres ? Math.max(pres.evD, pres.evR) : 0;
+  if (evW >= 400) hl = `LANDSLIDE: ${hl}`;
+  else if (net >= 5 || hNet >= 25) hl = `${PARTY[S.side].short.toUpperCase()} WAVE: ${hl}`;
+  else if (net <= -5 || hNet <= -25) hl = `WIPEOUT: ${hl}`;
   const summary = () => {
     showModal(`${frontPage({ headline: hl, sub: `${pres ? pres.what.replace(/<[^>]+>/g, '') + ' ' : ''}Senate ${seats('D')}–${seats('R')}${seats('I') ? '–' + seats('I') : ''}; House ${S.house.D}–${S.house.R}.`, body: [`Election night ${E.year} is in the books. ${flips.length ? flips.length + ' Senate seats changed hands.' : 'Not a single Senate seat changed hands.'}`, conf.replace(/<[^>]+>/g, '')], mood: won ? 'dawn' : 'storm', date: `November ${E.year} · Special edition` })}
       <h2>The New Congress</h2>${balanceBar()}${promiseLine}

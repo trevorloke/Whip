@@ -184,7 +184,15 @@ function worldNews() {
   }
   // a cabinet's competence shows up in the polls
   const comp = Object.values(S.cabinet).reduce((a, c) => a + (c.competence || 3), 0) / CABINET_POSTS.length;
-  P.approval = clamp(Math.round(P.approval + (comp - 3) * 0.3 + (Math.random() < 0.5 ? 0 : -0.5)), 22, 72);
+  P.approval = clamp(Math.round(P.approval + (comp - 3) * 0.3 + (Math.random() < 0.5 ? 0 : -0.5)), 18, 82);
+  // big moments: rare, sharp swings in the national mood
+  if (Math.random() < 0.09) {
+    const up = Math.random() < 0.5, d = ri(5, 10);
+    const [h, why] = up ? pick([['a booming jobs report', 'The economy roars'], ['a hostage rescue', 'A daring rescue abroad'], ['a stirring address to the nation', 'A speech for the ages'], ['a historic peace deal', 'Peace breaks out']]) : pick([['a stock market crash', 'Markets plunge'], ['a botched disaster response', 'A hurricane response goes wrong'], ['a White House scandal', 'Scandal engulfs the West Wing'], ['soaring gas prices', 'Prices at the pump spike']]);
+    P.approval = clamp(P.approval + (up ? d : -d), 18, 82);
+    S.mood = clamp(S.mood + (P.party === S.side ? 1 : -1) * (up ? d : -d) * 0.35, -15, 15);
+    out.push(`${up ? '📈' : '📉'} <b>${why}.</b> After ${h}, ${presTitle()}'s approval ${up ? 'jumps' : 'drops'} ${d} points.`);
+  }
   // governors come and go
   if (Math.random() < 0.05) { const code = pick(Object.keys(S.governors)), g = S.governors[code]; if (g) { hist(g, 'Resigned as governor'); S.formers.push(g); governorSucceeded(code, 'resigned'); out.push(`🏛️ Gov. ${g.name} of ${ST[code].name} resigns; the lieutenant governor takes over.`); } }
   return out;
@@ -421,7 +429,7 @@ function runGovernors(year) {
     if (!govUp(code, year)) continue;
     const g = S.governors[code], open = (g.terms || 1) >= 2 && !GOV_EVERY_TWO.includes(code);
     const A = g.party, adv = (A === 'R' ? ST[code].lean : -ST[code].lean) * 0.35;
-    const pm = (A === S.side ? S.mood : -S.mood) * 0.5 - (S.president.party === A && year % 4 ? 2 : 0);
+    const pm = (A === S.side ? 1 : -1) * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8) - (S.president.party === A && year % 4 ? 2 : 0);
     const mg = adv + pm + (open ? 0 : 5) + gauss() * 8;
     const np = mg >= 0 ? A : other(A);
     const wPct = clamp(49.25 + Math.abs(mg) / 2, 49.5, 75), lPct = 98.5 - wPct, tv = turnout(code);

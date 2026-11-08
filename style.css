@@ -405,3 +405,4 @@ h1,h2,h3,.rank,.verdict,.tally{font-family:var(--serif)}
 .cand2.out{opacity:.45}
 .dbar{height:8px;background:#2a303b;border-radius:4px;overflow:hidden;margin:4px 0}
 .dbar i{display:block;height:100%}
+.forecast{background:#141821;border-left:3px solid var(--gold);padding:6px 10px;border-radius:0 6px 6px 0}
