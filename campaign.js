@@ -46,6 +46,7 @@ const campSign = () => S.side === 'D' ? 1 : -1;              // D-positive → y
 const campYear = () => S.election ? S.election.year : electionYear(nextElectionK());
 const campLast = n => (n && n.name ? (lastName(n) || n.name) : '—');
 const campNum = (v, d = 1) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
+const campAn = w => (/^([aeiou]|8|11\b|18\b)/i.test(w) ? 'an ' : 'a ') + w;   // the right article, numbers included
 function campNoms() { return presSetup().noms; }
 function campIsPres(n, p) { return !!n && S.president.party === p && n.name === S.president.name; }
 function campOffice(n, p) { return campIsPres(n, p) ? 'President of the United States' : (n.office || `${PARTY[p].name} nominee`); }
@@ -127,9 +128,10 @@ function campTruth() { const s = presSetup(); return (s.inc === S.side ? 1 : -1)
 function campPoll(lbl, und, truth) {
   const C = campC(); if (truth == null) truth = campTruth();
   const tp = C.thirdParty ? C.thirdParty.share : 0, pool = 100 - und - tp;
-  let me = pool / 2 + truth / 2 + gauss() * 1.5; me = clamp(me, pool * 0.3, pool * 0.7);
+  // each ticket's share carries its own sampling error (about ±1.5 on the margin); the undecided absorb the difference
+  const me = clamp(pool / 2 + truth / 2 + gauss() * 1.1, pool * 0.3, pool * 0.7), them = clamp(pool / 2 - truth / 2 + gauss() * 1.1, pool * 0.3, pool * 0.7);
   const L = CAMP_POLL_LBL[lbl] || [lbl, lbl.toLowerCase()];
-  const pt = { lbl, short: L[0], since: L[1], me: +me.toFixed(1), them: +(pool - me).toFixed(1), und: +und.toFixed(1), tp: +tp.toFixed(1) };
+  const pt = { lbl, short: L[0], since: L[1], me: +me.toFixed(1), them: +them.toFixed(1), und: +Math.max(1, 100 - tp - me - them).toFixed(1), tp: +tp.toFixed(1) };
   C.polls.push(pt); return pt;
 }
 // the tracker: both tickets over the fall, with the moments labeled and the end labels kept apart
@@ -199,13 +201,15 @@ function campMapHTML(P) {
 
 /* ---------------- shared pieces of every campaign screen ---------------- */
 function campTicketsHTML(noms) {
-  const mine = S.side;
+  const mine = S.side, C = campC();
   return `<div class="camp-tickets">${[mine, other(mine)].map(p => {
-    const n = noms[p], person = campPersonOf(n);
+    const n = noms[p], person = campPersonOf(n), office = campOffice(n, p);
+    // the message: the one the campaign chose on Labor Day once it has, the convention's before that
+    const theme = (p === mine ? C && C.theme : C && C.opp && C.opp.theme) || n.theme;
     return `<div class="camp-tk" style="border-color:${PARTY[p].color}">${person && person.seed != null ? portrait(person) : '<span class="camp-noport">🇺🇸</span>'}<div>
       <div class="camp-tkn"><b>${n.name}</b>${p === mine ? '<span class="camp-you">your ticket</span>' : ''}${person ? `<a href="#" data-cprof="${p}">profile</a>` : ''}</div>
-      <small>${campOffice(n, p)} · ${n.faction || PARTY[p].name}${n.state ? ' · ' + stName(n.state) : ''}</small>
-      <small>${n.vp ? `with <b>${n.vp.name}</b>${n.vp.state ? ` of ${stName(n.vp.state)}` : ''}` : 'no running mate named'}${n.theme && TAG[n.theme] ? ` · message: ${TAG[n.theme][0]} ${TAG[n.theme][1]}` : ''}${n.unity != null ? ` · party ${Math.round(n.unity * 100)}% united` : ''}</small></div></div>`;
+      <small>${office} · ${n.faction || PARTY[p].name}${n.state && !office.includes(stName(n.state)) ? ' · ' + stName(n.state) : ''}</small>
+      <small>${n.vp ? `with <b>${n.vp.name}</b>${n.vp.state ? ` of ${stName(n.vp.state)}` : ''}` : 'no running mate named'}${theme && TAG[theme] ? ` · message: ${TAG[theme][0]} ${TAG[theme][1]}` : ''}${n.unity != null ? ` · party ${Math.round(n.unity * 100)}% united` : ''}</small></div></div>`;
   }).join('<span class="vs">vs</span>')}</div>`;
 }
 function campTrackerHTML() {
@@ -232,13 +236,16 @@ function campMoneyHTML() {
 }
 function campPickHTML(label, key, note = '') { return `<div class="camp-pick">✓ <b>${label}</b>${note ? `<small>${note}</small>` : ''}<a href="#" data-camp="re:${key}">change</a></div>`; }
 function campFrame(title, intro, decisions, nextLabel) {
-  const C = campC(), P = campProj();
+  const C = campC(), P = campProj(), card = $('#modal-card');
+  // a redraw of the same screen (a pick, a money click, back from a profile) keeps the scroll position; a new round starts at the top
+  const key = `${C.stage}:${title}`, sc = CAMP_UI && CAMP_UI.screen === key ? card.scrollTop : 0;
   showModal(`<div class="kicker">The Fall Campaign · ${CAMP_ROUNDS[C.round]} · ${campYear()}</div><h2>${title}</h2>
     ${campTicketsHTML(P.noms)}<p>${intro}</p>
     ${campTrackerHTML()}${campMapCardHTML(P)}${campMoneyHTML()}
     ${decisions}
     <div class="choices"><button class="btn primary big adv" id="campnext">${nextLabel}</button><button class="btn ghost adv" id="campauto">Let the campaign run itself ⏩<small>The campaign manager makes every remaining call.</small></button></div>`);
-  $('#modal-card').classList.add('camp-wide');
+  card.classList.add('camp-wide'); card.scrollTop = sc;
+  if (CAMP_UI) CAMP_UI.screen = key;
   campBindCommon();
 }
 function campBindCommon() {
@@ -464,7 +471,7 @@ function campRound2() {
   const C = campC(); C.round = 1; C.stage = 'r2'; campPrepDebateUI(1);
   const draw = () => {
     const noms = campNoms(), my = noms[S.side], their = noms[other(S.side)], ui = C.ui, O = C.opp;
-    const oppLine = O && O.strategy && TAG[O.theme] ? ` Across the aisle, ${their.name} is running on ${TAG[O.theme][1]}${O.themeHot ? ' — a top issue with voters, and it\'s biting (−1 for you)' : ', which few voters are asking about'} and has planted the flag in ${CAMP_MAPS[O.strategy].where}${O.strategy === 'base' ? ' (−0.6 for you nationally, +0.4 in the swing states they\'ve abandoned)' : ` (${O.focus.join(', ')}: −1.5 for you there, +0.3 everywhere else)`}.` : '';
+    const oppLine = O && O.strategy && TAG[O.theme] ? ` Across the aisle, ${their.name} is running on ${TAG[O.theme][1]}${O.themeHot ? ' — a top issue with voters, and it\'s biting (−1 for you)' : ', which few voters are asking about'} and has planted the flag in ${CAMP_MAPS[O.strategy].where}${O.strategy === 'base' ? ' (−0.6 for you nationally, +0.4 in the swing states they\'ve abandoned)' : ` (${O.focus.length ? O.focus.join(', ') + ': ' : ''}−1.5 for you there, +0.3 everywhere else)`}.` : '';
     const intro = `The first debate is ${ui.when} in <b>${ui.city}</b>, moderated by ${ui.mod}. Stage presence: ${campLast(my)} <span class="camp-stars">${campStars(campCharisma(my))}</span>, ${campLast(their)} <span class="camp-stars">${campStars(campCharisma(their))}</span>.${oppLine} Insiders say ${their.name}'s team has spent the week ${CAMP_DEBATE[ui.hint].drill}. Leaks have been wrong before.`;
     campFrame('The first debate', intro, campDebateDecisionsHTML(ui, false), 'Debate night ▶');
     campBindDebateDecisions(draw);
@@ -595,7 +602,7 @@ const CAMP_EVENTS = [
       stakes: 'Rallies help the President\'s party. Fiascos do the opposite.',
       choices: [
         { t: 'Back a show of force', s: `Approval +3 (helps ${x.whMine ? 'your' : 'their'} ticket); ${x.whMine ? '+0.4' : '−0.4'} national.`, go: fx => { fx.appr(3); fx.n(x.whMine ? 0.4 : -0.4); fx.sal('security', 2); return `Carrier groups moved. ${x.my.name} said the right things about standing together. ${x.whMine ? 'The ticket rode the rally.' : 'The rally was the other side\'s.'}`; } },
-        { t: 'Urge restraint and diplomacy', s: 'A coin flip: +0.5 if talks hold, −0.5 if the crisis worsens.', go: fx => { if (Math.random() < 0.5) { fx.n(0.5); return 'The talks held. "Grown-up foreign policy," the editorials said, and they meant your nominee.'; } fx.n(-0.5); return `${place} got worse while you counseled patience. "Weak," said the ads.`; } },
+        { t: 'Urge restraint and diplomacy', s: 'A coin flip: +0.5 if talks hold, −0.5 if the crisis worsens.', go: fx => { if (Math.random() < 0.5) { fx.n(0.5); return 'The talks held. "Grown-up foreign policy," the editorials said, and they meant your nominee.'; } fx.n(-0.5); return `${place.charAt(0).toUpperCase() + place.slice(1)} got worse while you counseled patience. "Weak," said the ads.`; } },
         { t: 'Demand the President consult Congress', s: x.whMine ? '−0.3 national: it reads as disloyalty to your own President.' : '+0.3 national: the whip defends the Senate\'s war powers.', go: fx => { fx.n(x.whMine ? -0.3 : 0.3); return x.whMine ? 'Your own President\'s aides called you "unhelpful." On the record.' : 'A letter signed by forty senators. Constitutional, and useful.'; } },
       ] };
   } },
@@ -626,7 +633,8 @@ const CAMP_EVENTS = [
     return { h: `SUPREME COURT ${strikes ? 'STRIKES DOWN' : 'UPHOLDS'} ${target.toUpperCase()}`, d: `A ${courtLabel()} Court rules on the first Monday in October.`, mood: 'storm',
       body: [`The ${maj === 'R' ? 'conservative' : 'liberal'} majority ${strikes ? 'struck down' : 'upheld'} ${target} in a ${maj === 'R' ? `${courtCount('R')}–${courtCount('D')}` : `${courtCount('D')}–${courtCount('R')}`} decision. ${PARTY[energized].short} are furious; ${PARTY[maj].short} are quietly pleased, which in October is the weaker emotion.`, `By nightfall the losing side had raised $${ri(11, 40)} million online.`],
       stakes: `Backlash energizes the ${PARTY[energized].name} side: ${energized === x.mine ? '+0.5 for your ticket' : '−0.5 for your ticket'}, already in.`,
-      auto: fx => fx.n(energized === x.mine ? 0.5 : -0.5, 'the backlash'),
+      // the Court has now ruled on this law: take it off the docket so the game's own Court doesn't rule on it a second time
+      auto: fx => { if (law) S.laws = (S.laws || []).filter(l => l !== law); fx.n(energized === x.mine ? 0.5 : -0.5, 'the backlash'); },
       choices: [
         { t: 'Make the Court the closing argument', s: energized === x.mine ? '+0.7 national.' : 'A coin flip: ±0.5. Your side won the case; the losers are angrier.', go: fx => { if (energized === x.mine) { fx.n(0.7); return 'Every stump speech ended with the Court. The rallies got loud.'; } const up = Math.random() < 0.5; fx.n(up ? 0.5 : -0.5); return up ? 'You defended the ruling and your base loved you for it.' : 'You defended the ruling and the suburbs flinched.'; } },
         { t: 'Promise to remake the Court', s: '+0.4 with the base, −0.3 with swing voters: +0.1 net, party mood +0.6.', go: fx => { fx.n(0.1); fx.mood(0.6); return 'Term limits, more seats, a new code of ethics: the base roared and the moderates squinted.'; } },
@@ -670,17 +678,17 @@ const CAMP_EVENTS = [
       stakes: `${mine ? '+0.4 for your ticket' : '−0.4 for your ticket'} among younger voters, already in.`,
       auto: fx => fx.n(mine ? 0.4 : -0.4, 'the endorsement'),
       choices: mine ? [
-        { t: `Put ${who.split(' ')[0]} on stage at the rallies`, s: '+0.5 national; 20% chance of an awkward moment (−0.3 instead).', go: fx => { if (Math.random() < 0.2) { fx.n(-0.3); return `${who} swore on live television and compared the opponent to a disease. The campaign spent two days apologizing for its own surprise guest.`; } fx.n(0.5); return `Three stadium rallies, three sold-out crowds, three nights of free coverage.`; } },
+        { t: `Put ${who} on stage at the rallies`, s: '+0.5 national; 20% chance of an awkward moment (−0.3 instead).', go: fx => { if (Math.random() < 0.2) { fx.n(-0.3); return `${who} swore on live television and compared the opponent to a disease. The campaign spent two days apologizing for its own surprise guest.`; } fx.n(0.5); return `Three stadium rallies, three sold-out crowds, three nights of free coverage.`; } },
         { t: 'A thank-you post and nothing more', s: '+0.1 national.', go: fx => { fx.n(0.1); return 'Gracious, brief, forgotten by Tuesday.'; } },
       ] : [
-        { t: 'Mock the celebrity politics', s: '+0.2 national with voters who roll their eyes at Hollywood.', go: fx => { fx.n(0.2); return `"I'll take the votes of nurses over ${role.replace('the ', 'a ')}," your nominee said in ${pick(['Dubuque', 'Erie', 'Fayetteville'])}. It got a laugh and a few votes.`; } },
+        { t: 'Mock the celebrity politics', s: '+0.2 national with voters who roll their eyes at Hollywood.', go: fx => { fx.n(0.2); return `"I'll take the votes of nurses over ${campAn(role.replace(/^the /, ''))}," your nominee said in ${pick(['Dubuque', 'Erie', 'Fayetteville'])}. It got a laugh and a few votes.`; } },
         { t: 'Ignore it', s: 'No effect.', go: () => 'You said nothing. The endorsement was a two-day story.' },
       ] };
   } },
   { id: 'paper', w: () => 1, make: x => {
     const t = pick(campTargets(x.proj)), code = t.c, city = pick(HOMETOWNS[code] || ['the capital']), paper = `The ${city} ${pick(CAMP_PAPERS)}`, mine = Math.random() < 0.55, N = mine ? x.my : x.their;
     return { h: `${paper.toUpperCase()} ENDORSES ${(mine ? x.myL : x.theirL).toUpperCase()}`, d: `The biggest paper in ${stName(code)} (${EV[code]} EV) breaks ${Math.random() < 0.5 ? 'a 40-year tradition' : 'with its own publisher'}.`, mood: 'dawn',
-      body: [`"${N.name} is the ${pick(['steadier', 'more serious', 'only acceptable'])} choice," the editorial board wrote, in ${pick(['1,800', '2,400', '3,100'])} words that the campaign had turned into a mailer by morning.`, `${stName(code)} is ${Math.abs(t.m) < 3 ? 'a coin flip' : `a ${Math.abs(t.m).toFixed(0)}-point race`}; an endorsement there is worth about half a point.`],
+      body: [`"${N.name} is the ${pick(['steadier', 'more serious', 'only acceptable'])} choice," the editorial board wrote, in ${pick(['1,800', '2,400', '3,100'])} words that the campaign had turned into a mailer by morning.`, `${stName(code)} is ${Math.abs(t.m) < 3 ? 'a coin flip' : campAn(`${Math.abs(t.m).toFixed(0)}-point race`)}; an endorsement there is worth about half a point.`],
       stakes: `${mine ? '+0.6' : '−0.6'} in ${code}, already in.`,
       auto: fx => fx.st(code, mine ? 0.6 : -0.6),
       choices: mine ? [
@@ -732,9 +740,9 @@ const CAMP_EVENTS = [
       ] };
   } },
   { id: 'caucus', w: () => S.members.some(m => m.party === S.side && T(m, 'shady')) ? 1 : 0, make: x => {
-    const m = pick(S.members.filter(m => m.party === x.mine && T(m, 'shady'))), what = pick(['INDICTED ON BRIBERY CHARGES', 'CAUGHT IN FBI STING', 'ACCUSED OF SELLING ACCESS']);
+    const m = pick(S.members.filter(m => m.party === x.mine && T(m, 'shady'))), [what, said] = pick([['INDICTED ON BRIBERY CHARGES', 'was indicted on bribery charges'], ['CAUGHT IN FBI STING', 'was caught in an FBI sting'], ['ACCUSED OF SELLING ACCESS', 'is accused of selling access']]);
     return { h: `SEN. ${lastName(m).toUpperCase()} ${what}`, d: `A grand jury in ${pick(HOMETOWNS[m.state])} names a sitting ${PARTY[m.party].name} senator three weeks out.`, mood: 'storm',
-      body: [`${sen(m)}, a member of your own caucus, ${what.toLowerCase().replace('indicted on', 'was indicted on').replace('caught in', 'was caught in').replace('accused of', 'is accused of')}: ${pick(['gold bars in a closet', 'a no-show job for a nephew', 'a yacht that belonged to a lobbyist', '$400,000 in "consulting fees"'])}. The other ticket's ad writes itself: "the party of ${lastName(m)}."`, `As whip, you have to say something about your own senator by morning.`],
+      body: [`${sen(m)}, a member of your own caucus, ${said}: ${pick(['gold bars in a closet', 'a no-show job for a nephew', 'a yacht that belonged to a lobbyist', '$400,000 in "consulting fees"'])}. The other ticket's ad writes itself: "the party of ${lastName(m)}."`, `As whip, you have to say something about your own senator by morning.`],
       stakes: `−0.6 national and −1.0 in ${stName(m.state)} already in. Your answer sets the rest.`,
       auto: fx => { fx.n(-0.6, 'the scandal'); fx.st(m.state, -1.0); },
       choices: [
@@ -748,7 +756,7 @@ const CAMP_EVENTS = [
     const [h, why] = up ? pick([['a hostage rescue', 'a daring rescue abroad'], ['a stirring address to the nation', 'a speech for the ages'], ['a historic peace deal', 'peace breaking out'], ['a cancer-screening breakthrough from a federal lab', 'a breakthrough from the labs']]) : pick([['a White House scandal', 'a West Wing scandal'], ['a botched press conference', 'a press conference gone wrong'], ['soaring gas prices', 'four-dollar gas'], ['a chief of staff\'s resignation', 'chaos in the West Wing']]);
     return { h: `${presTitle().toUpperCase()} APPROVAL ${up ? 'SURGES' : 'CRATERS'} AFTER ${h.toUpperCase()}`, d: `${up ? 'Up' : 'Down'} ${d} points in a week, to ${clamp(S.president.approval + (up ? d : -d), 18, 82)}%.`, mood: up ? 'dawn' : 'storm',
       body: [`After ${why}, ${presTitle()}'s approval ${up ? 'jumped' : 'fell'} ${d} points. The President is ${x.whMine ? 'your party\'s' : 'their party\'s'}, so the ticket ${x.whMine === up ? 'gains' : 'loses'} with every point.`, `The ${up ? 'glow' : 'stench'} reaches every down-ballot race in the country.`],
-      stakes: `Already in: ${fmt(up ? d : -d)} approval, about ${campNum((up ? d : -d) / 5 * (x.whMine ? 1 : -1))} for your ticket.`,
+      stakes: `Already in: ${campNum(up ? d : -d, 0)} approval, about ${campNum((up ? d : -d) / 5 * (x.whMine ? 1 : -1))} for your ticket.`,
       auto: fx => fx.appr(up ? d : -d),
       choices: x.whMine ? (up ? (campIsPres(x.my, x.mine) ? [
         { t: 'Lean into it: a victory-lap tour', s: '+0.4 national; approval +1.', go: fx => { fx.n(0.4); fx.appr(1); return `${presTitle()} did five rallies in five days. The crowds were enormous.`; } },
@@ -993,7 +1001,7 @@ function campAutoRun() {
     else if (C.stage === 'r2') { C.round = 1; const r = campApplyR2(); note(`First debate in ${r.city}: ${campDebateVerdict(r)}.`); }
     else if (C.stage === 'r3') { C.round = 2; const r = campApplyR3(); const vp = C.debates.find(d => d.round === 'vp'); if (vp) note(`Running mates' debate: ${vp.winner === S.side ? 'won' : vp.winner ? 'lost' : 'a wash'} (${campNum(vp.result)}).`); note(`Second debate in ${r.city}: ${campDebateVerdict(r)}.${C.momentum ? ' Momentum (+0.5).' : ''}`); }
     else if (C.stage === 'r4') { C.round = 3; campApplyR4(null); note(`October surprise, <span class="camp-hl">${C.lastOutcome.title}</span>: ${C.lastOutcome.choice}${C.lastOutcome.effect ? ` (${C.lastOutcome.effect})` : ''}.`); }
-    else if (C.stage === 'r5') { C.round = 4; campApplyR5(); note(`Final weekend: ${C.surrogates.map(s => `${lastName({ name: s.name })} → ${s.code}`).join(', ') || 'no surrogates'}; kept the money and the capital.`); if (C.opp) note(`Their closing weekend: ${campOppLine(C.opp)}.`); }
+    else if (C.stage === 'r5') { C.round = 4; campApplyR5(); note(`Final weekend: ${C.surrogates.map(s => `${lastName({ name: s.name })} → ${s.code}`).join(', ') || 'no surrogates'}; ${C.adBuy ? `${C.adBuy} unit${C.adBuy > 1 ? 's' : ''} of late ads (${campNum(cashEff(C.adBuy, 0.7))})` : 'no late ads'}; ${C.gotv ? 'paid the turnout machine (+0.5)' : 'kept the capital'}.`); if (C.opp) note(`Their closing weekend: ${campOppLine(C.opp)}.`); }
   }
   sfx.up();
   campEveScreen();
