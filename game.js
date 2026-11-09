@@ -1212,6 +1212,7 @@ function electionPrep() {
       ${E.promiseReport || ''}
       ${platformHTML()}
       ${E.primaryNews && E.primaryNews.length ? `<div class="primnews"><b>Primary results</b>${E.primaryNews.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
+      ${!pres && typeof midTrailHTML === 'function' ? midTrailHTML() : ''}
       <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· the first unit in a race is worth +${per} points for your side, and each extra unit in the same race a bit less. No limit.</small></div>
         <div>Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b></div></div>
       <div class="deploy"><button class="btn" data-auto="smart">🎯 Smart deploy<small>Each unit where it adds the most</small></button><button class="btn" data-auto="defend">🛡 Defend my seats<small>Only seats your party holds</small></button><button class="btn" data-auto="offense">⚔ Go on offense<small>Only seats you could flip</small></button><button class="btn ghost" data-auto="reset">↺ Take it all back</button></div>
@@ -1760,7 +1761,8 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 <li>In presidential years, both parties hold <b>primaries</b> state by state (Spring). Senators, House members, governors and cabinet officials run. Rank up to three candidates; your endorsement follows your list. Watch the other party's race too, and undermine your own President if you dare.</li>
 <li>Each party then holds its <b>convention</b> (Summer). At yours you pick the <b>running mate</b> (vet them for hidden risks), settle the <b>platform</b> fight between the flank and the center, choose the keynote and the speech, and ride out the surprises; a party that leaves united gets a <b>bounce</b>. If nobody clinched, it's a <b>brokered convention</b> and you can be the kingmaker. The other party's convention plays out on the news.</li>
 <li>The <b>fall campaign</b> (after the Senate primaries) runs five rounds: the message and the map on Labor Day, two <b>debates</b> (prep them, pick a game plan), the running mates' debate, an <b>October surprise</b> with hard choices, and a final weekend of ads, <b>surrogates</b> and turnout. The poll tracker and the Electoral College map move with every call you make, and every unit you spend on the ticket is one you can't spend on a Senate seat.</li>
-<li>Check <b>The Pulse</b> for approval, the generic ballot and what voters care about. Every politician's profile carries their political history.</li>
+<li>In midterm years the Senate gets its own <b>midterm campaign</b>: pick the message and whether to defend, attack, nationalize or localize, send a debate coach, handle a surprise, and pick your closing surrogates.</li>
+<li>Check <b>The Pulse</b> for approval, the generic ballot, the presidential horse race, the Senate outlook and what voters care about. Every politician's profile carries their political history.</li>
 <li>Win bills to earn <b>capital</b>, then hire staff and repay your debts. Lose bills (or seats) and the caucus loses <b>confidence</b>. At zero, your career is over.</li></ul>
 <div class="choices"><button class="btn primary" id="howok">To the floor</button></div>`;
 

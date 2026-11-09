@@ -69,14 +69,19 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   governor appoints a replacement, sometimes from the other party. Presidents
   sign executive orders (ask yours for one, or sue to block theirs), face
   foreign crises, and may ask Congress to authorize war; an unpopular war can
-  be ended with a War Powers Resolution.
+  be ended with a War Powers Resolution. Long, unpopular wars drain the
+  President's approval; after two years Congress may force a War Powers vote
+  onto the docket, and after five the President pulls out.
 - **Governors.** All 50, elected on the real calendar (36 in midterms, 11 in
   presidential years, New Hampshire and Vermont every two years). They help
   their party's Senate candidates, appoint senators when seats open, and run
   for president.
 - **The Pulse.** Presidential approval and the generic ballot over time,
   right track/wrong track, the issues voters care about, cable news chyrons
-  and voices from the states.
+  and voices from the states. In presidential years it follows the horse race
+  (both tickets, the national poll and its trend, the Electoral College map and
+  the battlegrounds); every cycle it shows the Senate outlook: projected seats,
+  your odds of control and the closest races.
 - **The path to law.** After the Senate, a bill needs the House (435 seats,
   which you can whip for better odds), then the President's signature. An
   opposing President may veto it, and you can fight an override that needs 67
@@ -126,6 +131,14 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   projection move with every call. Campaign money is shared with the Senate
   races, so every unit spent on the ticket is one you can't spend on a seat.
   Or let the campaign run itself.
+- **The midterm campaign.** In the years without a presidential race, the
+  Senate gets its own three-round campaign: Labor Day (the message, and whether
+  to defend, go on offense, nationalize the race around the President or keep
+  every race local to blunt a bad wave), October (debates in the three closest
+  races, a debate coach, and a midterm surprise with hard choices), and a
+  closing weekend (ads, turnout, and surrogates: the President can help or
+  hurt). A seat tracker shows where the Senate is heading; the other party
+  plays the same game.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435
   House seats, and the White House every four years, decided by the Electoral
   College. Senators who voted against their state's interests are vulnerable.
@@ -173,17 +186,18 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | File | What it holds |
 |---|---|
 | `index.html` | The page shell |
-| `style.css` | Base styling; `convention.css`, `campaign.css`, `results.css`, `events.css` style their modules |
+| `style.css` | Base styling; `convention.css`, `campaign.css`, `midterm.css`, `results.css`, `events.css` style their modules |
 | `game.js` | The Senate, whipping, the budget, the House, President and Court, Senate primaries, elections, the office, saving |
 | `content.js` | Most of the bills, staff, whip traits, House caucuses and independent causes |
 | `usmap.js` | State outlines (Albers USA projection), generated from us-atlas 3.0.1 |
 | `art.js` | The map renderer, the Capitol illustration, portraits, the newspaper, the chamber backdrop |
 | `depth.js` | Achievements and legacy, the opposing whip's personality and poison pills, campaign promises, headlines |
 | `names.js` | Name pools, backgrounds, hometowns and generated political histories |
-| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse |
+| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse (horse race, Senate outlook) |
 | `primaries.js` | Presidential primaries, state by state, with ranked endorsements |
 | `convention.js` | The two national conventions: running mates, platforms, speeches, brokered conventions, the bounce |
 | `campaign.js` | The fall campaign: five rounds, debates, October surprises, strategy, surrogates, the battleground |
+| `midterm.js` | The midterm campaign: the message and the map, Senate debates, surprises, the closing weekend |
 | `events.js` | Breaking news on the floor, world news and moments between bills |
 | `night.js` | Election Night: the Electoral College, House results by state, the projection banner, ticker and tables |
 | `results.js` | The election archive, the full-results explorer and the Almanac |

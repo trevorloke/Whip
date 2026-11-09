@@ -192,7 +192,7 @@ function midStratPlan(key, p) {
     else if (key === 'offense') out.races[c] = !held && Math.abs(mg) < 8 ? 1.5 : held && mg >= 8 ? -0.5 : 0;
   }
   if (key === 'nationalize') { const g = midNatGood(p); out.national = g ? 1.2 : -1.2; out.house = g ? 0.6 : -0.6; }
-  if (key === 'localize') out.national = -0.5 * sg * S.election.waveSignal;
+  if (key === 'localize') out.national = clamp(-0.5 * sg * S.election.waveSignal, -3, 3); // capped: localizing blunts a wave, it doesn't reverse one
   return out;
 }
 function midApplyPlan(plan, p) {
