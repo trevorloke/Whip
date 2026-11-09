@@ -1126,6 +1126,7 @@ function projMargin(rc) {
   if (A === S.side) mg += pb + cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
   else mg -= pb + cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
   mg += (A === S.side ? 1 : -1) * (S.election ? S.election.waveSignal : 0);
+  if (typeof midtermRaceAdj === 'function') mg += (A === S.side ? 1 : -1) * midtermRaceAdj(rc); // the midterm campaign's message, strategy, surrogates (midterm.js)
   return mg + (has('pollmap') ? rc.noise : 0);
 }
 const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives', R: f => f === 'Freedom Caucus' ? 'Populists' : 'Freedom Caucus' };
@@ -1170,7 +1171,9 @@ function electionPrep() {
     }
     E.primaryNews = out;
     // in a presidential year the fall campaign runs first, then the Senate trail
-    if (pres && typeof fallCampaign === 'function') fallCampaign(draw); else draw();
+    if (pres && typeof fallCampaign === 'function') fallCampaign(draw);
+    else if (!pres && typeof midtermCampaign === 'function') midtermCampaign(draw); // midterm.js: the lighter Senate campaign
+    else draw();
   };
   const drawPrimaries = () => {
     if (!primaries.length) return runPrimaries();
@@ -1330,7 +1333,7 @@ function countBallots() {
   const P = S.president;
   const apTerm = (P.approval - 50) * 0.2 * (P.party === S.side ? 1 : -1);
   const hMajBefore = houseMaj();
-  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + E.wave * 0.55 + rnd(-2, 2));
+  const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + E.wave * 0.55 + (typeof midtermHouseAdj === 'function' ? midtermHouseAdj() : 0) + rnd(-2, 2));
   const govBefore = Object.fromEntries(Object.entries(S.governors).map(([c, g]) => [c, g.party]));
   const gov = runGovernors(E.year);
   const pres = E.pres ? runPres() : null;
