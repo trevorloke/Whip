@@ -1368,7 +1368,7 @@ function countBallots() {
       <p>${flips.length ? `<b>${flips.length} Senate seat${flips.length > 1 ? 's' : ''} flipped:</b> ${flips.map(f => `<b style="color:${PARTY[f.wParty].color}">${stName(f.code)}</b>`).join(', ')}.` : 'No Senate seats changed hands.'}</p>
       <p>${conf}</p>
       <div class="choices"><button class="btn ghost" id="replay">📺 Back to the results</button>${HOOKS.results.map(h => h.html(nightData)).join('')}<button class="btn primary big" id="post">${c.confidence <= 0 ? 'Face the caucus…' : 'Swear in the new Congress'}</button></div>`);
-    $('#replay').onclick = () => openNight(nightData, summary);
+    $('#replay').onclick = () => openNight(nightData, summary, { final: true });
     HOOKS.results.forEach(h => h.bind(nightData, summary));
     $('#post').onclick = () => { if (c.confidence <= 0) gameOver(); else interlude(); };
   };

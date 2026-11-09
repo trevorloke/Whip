@@ -55,10 +55,11 @@ function runHouse(swingSide) {
 /* ---------------- the Presidency, by electoral vote ---------------- */
 // the presidential race, shared by the campaign trail's projection and the real count
 const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment'], FLANKS = ['Progressives', 'Freedom Caucus'];
+function nightFallbackName() { let nm = fullName(); for (let i = 0; i < 20 && lastName({ name: nm }) === lastName(S.president); i++) nm = fullName(); return nm; }
 function presSetup() {
   const P = S.president, inc = P.party, N = S.nominees || {}, E = S.election || {};
   const running = P.terms < 2 && (!N[inc] || N[inc].name === P.name);
-  const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: fullName(), R: fullName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
+  const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: nightFallbackName(), R: nightFallbackName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
   const noms = { D: nom('D'), R: nom('R') };
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 6 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
@@ -84,8 +85,10 @@ function presProjection() {
 function runPres() {
   const P = S.president, { inc, running, noms, base } = presSetup();
   const names = { D: noms.D.name, R: noms.R.name };
-  const indShare = Math.random() < 0.3 ? rnd(2, 9) : 0;
-  if (indShare) names.I = fullName();
+  // the fall campaign's third-party surge (campaign.js) is on the ballot; otherwise the usual random independent
+  const tp = S.election && S.election.camp && S.election.camp.thirdParty;
+  const indShare = tp ? clamp((tp.share || 5) * rnd(0.6, 0.95), 1, 12) : Math.random() < 0.3 ? rnd(2, 9) : 0;
+  if (indShare) names.I = tp && tp.name ? tp.name : fullName();
   // the wave forecasters saw is in base; the rest of it lands on election night
   const surprise = S.election ? (inc === S.side ? 1 : -1) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
   const score = clamp(base + surprise + rnd(-3, 3), -20, 20), envD = inc === 'D' ? score : -score;
@@ -129,9 +132,12 @@ function runPres() {
     S.president = { ...person, name: person.name, party: winner, faction: N.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1 };
     if (N.vp) {
       const vm = S.members.find(m => m.name === N.vp.name);
-      S.vp = vm ? { ...vm, b: undefined } : newPerson(winner, N.vp.state);
+      const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === N.vp.name);
+      const live = vm || (S.vp && S.vp.name === N.vp.name ? S.vp : null) || (govCode ? S.governors[govCode] : null) || Object.values(S.cabinet || {}).find(c => c && c.name === N.vp.name) || (S.reps || []).find(r => r.name === N.vp.name) || null;
+      S.vp = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, N.vp.state), { name: N.vp.name, faction: N.vp.faction || pick(FACTIONS[winner])[0] });
       hist(S.vp, 'Elected Vice President', year);
       if (vm) extra.push(vacateSeat(vm, 'was elected Vice President'));
+      if (govCode) { governorSucceeded(govCode, 'was elected Vice President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
     } else { S.vp = newPerson(winner, pick(STATES)[0]); hist(S.vp, 'Elected Vice President', year); }
     S.pendingCabinet = true;
     what = (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].short.replace(/s$/, '')} ${N.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${N.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;

@@ -188,4 +188,4 @@ function paperBody(won) {
     `"${won ? pick(['A sad day for the country.', 'They\'ll regret this at the ballot box.', 'Rammed through, plain and simple.']) : pick(['Common sense won today.', 'The American people dodged a bullet.', 'Washington finally listened.'])}" countered Sen. ${O.name} (${tagOf(O)}).`,
   ];
 }
-showMenu();
+// showMenu() runs from index.html once every module has loaded (achievements register at load)

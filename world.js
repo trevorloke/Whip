@@ -118,7 +118,7 @@ function lineChart(series, opts = {}) {
   for (const s of series) {
     if (!s.pts.length) continue;
     svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" points="${s.pts.map((v, i) => `${x(i)},${y(v)}`).join(' ')}"/>`;
-    const last = s.pts.length - 1; svg += `<circle cx="${x(last)}" cy="${y(s.pts[last])}" r="4" fill="${s.color}"/><text x="${x(last) - 4}" y="${y(s.pts[last]) - 8}" font-size="11" text-anchor="end" fill="${s.color}" font-weight="800">${s.label} ${Math.round(s.pts[last])}%</text>`;
+    const last = s.pts.length - 1; svg += `<circle cx="${x(last)}" cy="${y(s.pts[last])}" r="4" fill="${s.color}"/><text x="${x(last) - 4}" y="${y(s.pts[last]) - 8 - 12 * series.indexOf(s)}" font-size="11" text-anchor="end" fill="${s.color}" font-weight="800">${s.label} ${Math.round(s.pts[last])}%</text>`;
   }
   return svg + '</svg>';
 }
