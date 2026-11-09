@@ -176,6 +176,12 @@ const LINES = {
 
 /* ---------------- state ---------------- */
 let S = null;
+// extension registries: later files push into these (see SPEC in the repo history / each module's header)
+//  office:    { html: () => string, button: () => string, bind: draw => void }   sections and footer buttons in the Whip's Office
+//  interlude: () => Array<next => void>                                           extra steps between bills (each must call next())
+//  worldNews: () => string[]                                                      extra news lines between bills (may set S flags)
+//  results:   { html: nightData => string, bind: (nightData, back) => void }     buttons on the morning-after election summary
+const HOOKS = { office: [], interlude: [], worldNews: [], results: [] };
 let ui = { sel: null, pitchOpen: false, lastQuote: '', lastDelta: null, view: 'chamber' };
 
 const other = p => p === 'D' ? 'R' : 'D';
@@ -1162,7 +1168,8 @@ function electionPrep() {
       if (Math.random() < chance) rc.ind = { name: fullName(), cause: pick(IND_CAUSES), str: rnd(10, 26) + (rc.primaried ? 6 : 0) };
     }
     E.primaryNews = out;
-    draw();
+    // in a presidential year the fall campaign runs first, then the Senate trail
+    if (pres && typeof fallCampaign === 'function') fallCampaign(draw); else draw();
   };
   const drawPrimaries = () => {
     if (!primaries.length) return runPrimaries();
@@ -1361,14 +1368,16 @@ function countBallots() {
       ${presLine}<div class="elmap">${mapSVG('party', { flips: flips.map(f => S.members.find(m => m.state === f.code && m.cls === f.cls).id), up: E.cls })}</div>
       <p>${flips.length ? `<b>${flips.length} Senate seat${flips.length > 1 ? 's' : ''} flipped:</b> ${flips.map(f => `<b style="color:${PARTY[f.wParty].color}">${stName(f.code)}</b>`).join(', ')}.` : 'No Senate seats changed hands.'}</p>
       <p>${conf}</p>
-      <div class="choices"><button class="btn ghost" id="replay">📺 Back to the results</button><button class="btn primary big" id="post">${c.confidence <= 0 ? 'Face the caucus…' : 'Swear in the new Congress'}</button></div>`);
+      <div class="choices"><button class="btn ghost" id="replay">📺 Back to the results</button>${HOOKS.results.map(h => h.html(nightData)).join('')}<button class="btn primary big" id="post">${c.confidence <= 0 ? 'Face the caucus…' : 'Swear in the new Congress'}</button></div>`);
     $('#replay').onclick = () => openNight(nightData, summary);
+    HOOKS.results.forEach(h => h.bind(nightData, summary));
     $('#post').onclick = () => { if (c.confidence <= 0) gameOver(); else interlude(); };
   };
   const gFlips = gov.filter(r => r.flip);
   presLine += `<p><b>Governors:</b> ${gov.length} races. ${gFlips.length ? `${gFlips.length} flipped: ${gFlips.map(r => `<b style="color:${PARTY[r.wParty].color}">${stName(r.code)}</b>`).join(', ')}.` : 'No governorships changed hands.'} Now ${Object.values(S.governors).filter(g => g.party === 'D').length} D – ${Object.values(S.governors).filter(g => g.party === 'R').length} R.</p>`;
   pulseTick();
-  const nightData = { year: E.year, races, house, pres, before, prevMembers, gov, govBefore };
+  const nightData = { year: E.year, races, house, pres, before, prevMembers, gov, govBefore, wave: E.wave, waveSignal: E.waveSignal };
+  if (typeof archiveElection === 'function') archiveElection(nightData);
   openNight(nightData, summary);
 }
 function balanceBar() {
@@ -1384,6 +1393,8 @@ function interlude() {
   if (S.pendingCabinet) { S.pendingCabinet = false; S.cabinetVacancy = null; steps.push(next => cabinetConfirmations(CABINET_POSTS.map(c => c[0]), next)); }
   else if (S.cabinetVacancy) { const post = S.cabinetVacancy; S.cabinetVacancy = null; steps.push(next => cabinetConfirmations([post], next)); }
   if (presPrimariesDue()) steps.push(next => primariesModal(next));
+  if (typeof conventionsDue === 'function' && conventionsDue()) steps.push(next => conventionsModal(next));
+  for (const f of HOOKS.interlude) steps.push(...(f() || []));
   const run = () => { const st = steps.shift(); if (st) st(run); else officeView(); };
   run();
 }
@@ -1424,8 +1435,9 @@ function officeView() {
       ${c.perks.length ? `<p style="color:var(--dim);font-size:12px">Your staff: ${c.perks.filter(p => !isTrait(p)).map(p => PERKS[p][0]).join(', ') || 'none'} · Your traits: ${c.perks.filter(isTrait).map(p => PERKS[p][0]).join(', ') || 'none'}</p>` : ''}
       ${docketHTML()}
       ${execHTML()}
-      <div class="choices"><button class="btn" id="pulsebtn">📈 The Pulse</button><button class="btn" id="whbtn">🏛️ The Administration</button><button class="btn primary big" id="go">Next bill →</button></div>`);
-    bindDocket(draw); bindExec(draw);
+      ${HOOKS.office.map(h => h.html ? h.html() : '').join('')}
+      <div class="choices"><button class="btn" id="pulsebtn">📈 The Pulse</button><button class="btn" id="whbtn">🏛️ The Administration</button>${HOOKS.office.map(h => h.button ? h.button() : '').join('')}<button class="btn primary big" id="go">Next bill →</button></div>`);
+    bindDocket(draw); bindExec(draw); HOOKS.office.forEach(h => h.bind && h.bind(draw));
     $('#pulsebtn').onclick = () => openPulse(draw);
     $('#whbtn').onclick = () => openAdmin(draw);
     const card = $('#modal-card');
