@@ -294,17 +294,54 @@ function resAny(x) {
   const rest = Object.entries(x).filter(([k, v]) => v != null && v !== head && typeof v !== 'object' && !/^(id|year)$/.test(k)).map(([k, v]) => `<span><small style="color:var(--dim)">${k}</small> ${typeof v === 'number' ? (Math.abs(v) < 20 && !Number.isInteger(v) ? v.toFixed(1) : v) : v}</span>`).join(' · ');
   return `<div class="res-debrow"><span>${head ? `<b>${head}</b>${rest ? '<br>' : ''}` : ''}${rest}</span></div>`;
 }
+const RES_STRAT = { rust: 'the Rust Belt', sun: 'the Sun Belt', expand: 'expand the map', base: 'turn out the base' };
+// the fall campaign's poll tracker, drawn with a y-axis that fits the race (lineChart's fixed 20–80 scale flattens it)
+function resPollChart(polls, side, names) {
+  const pts = (polls || []).filter(p => p && p.me != null && p.them != null), n = pts.length;
+  if (n < 2) return '';
+  const W = 640, H = 210, pl = 36, pr = 118, pt = 16, pb = 30;
+  const vals = pts.flatMap(p => [+p.me, +p.them]);
+  let lo = Math.floor((Math.min(...vals) - 3) / 5) * 5, hi = Math.ceil((Math.max(...vals) + 3) / 5) * 5;
+  if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = Math.floor((mid - 10) / 5) * 5; hi = lo + 20; }
+  const x = i => pl + i * (W - pl - pr) / (n - 1), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb);
+  let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart res-pollchart">`;
+  for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="10" fill="#6b7587" text-anchor="end">${v}%</text>`;
+  pts.forEach((p, i) => { svg += `<text x="${x(i)}" y="${H - 8}" font-size="10" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${String(p.short || p.lbl || '').slice(0, 14)}</text>`; });
+  const series = [{ k: 'me', color: PARTY[side].color, label: names[side] }, { k: 'them', color: PARTY[other(side)].color, label: names[other(side)] }];
+  const last = pts[n - 1], ends = series.map(s => y(+last[s.k]));
+  if (Math.abs(ends[0] - ends[1]) < 15) { const d = (15 - Math.abs(ends[0] - ends[1])) / 2; if (ends[0] <= ends[1]) { ends[0] -= d; ends[1] += d; } else { ends[0] += d; ends[1] -= d; } }
+  series.forEach((s, si) => {
+    svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(+p[s.k])}`).join(' ')}"/>`;
+    pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(+p[s.k])}" r="${i === n - 1 ? 4.5 : 2.5}" fill="${s.color}"><title>${p.lbl || ''}: ${s.label} ${(+p[s.k]).toFixed(1)}%</title></circle>`; });
+    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="11.5" fill="${s.color}" font-weight="800">${s.label} ${(+last[s.k]).toFixed(1)}%</text>`;
+  });
+  return svg + '</svg>';
+}
+// a debate as campaign.js records it: { round: 1|2|'vp', city, mine, theirs, prep, theirPrep, result, winner, snap, gaffeMine, gaffeTheirs }
+function resDebateRow(d, side, nm) {
+  const res = d.result == null ? '' : ` · <b style="color:${d.result > 0 ? 'var(--yes)' : d.result < 0 ? 'var(--no)' : 'var(--dim)'}">${resSigned(+d.result)}</b> for your ticket`;
+  const verdict = d.winner && PARTY[d.winner] ? `<b style="color:${PARTY[d.winner].color}">${nm(d.winner)} won</b>${d.snap ? ` (${d.snap}% in the snap poll)` : ''}` : 'a draw';
+  const plan = k => k ? String(k).charAt(0).toUpperCase() + String(k).slice(1) : '?';
+  if (d.round === 'vp') return `<div class="res-debrow"><span><b>The running mates' debate</b>${d.city ? ` · ${d.city}` : ''}<br>${d.gaffeMine ? 'Your running mate gaffed. ' : ''}${d.gaffeTheirs ? 'Their running mate gaffed. ' : ''}${verdict}${res}</span></div>`;
+  return `<div class="res-debrow"><span><b>${d.round === 1 ? 'First' : d.round === 2 ? 'Second' : 'The'} debate</b>${d.city ? ` · ${d.city}` : ''}<br>Your plan: ${plan(d.mine)}${d.prep ? ' (prepped)' : ''} · theirs: ${plan(d.theirs)}${d.theirPrep ? ' (prepped)' : ''} · ${verdict}${res}</span></div>`;
+}
+// an October surprise as campaign.js records it: { title, choice, effect, result }
+function resEventRow(e) {
+  if (!e || typeof e !== 'object' || !e.title) return resAny(e);
+  return `<div class="res-debrow"><span><b>${e.title}</b>${e.choice ? `<br>Your call: <i>${e.choice}</i>` : ''}${e.effect ? ` · ${e.effect}` : ''}${e.result ? `<br><small style="color:var(--dim)">${e.result}</small>` : ''}</span></div>`;
+}
 function resXCampaign(R, X) {
   const C = R.campaign, V = R.conventions, side = R.side || S.side, P = R.pres;
   const cards = [];
+  const nm = p => { const full = (C && C.tickets && C.tickets[p] && C.tickets[p].name) || (P && P.names && P.names[p]) || PARTY[p].short; return String(full).includes(' ') ? lastName({ name: String(full) }) : String(full); };
   if (C && Array.isArray(C.polls) && C.polls.length > 1) {
     const me = C.polls.map(p => +p.me || 0), them = C.polls.map(p => +p.them || 0);
-    cards.push(resCard('The poll tracker', lineChart([{ pts: me, color: PARTY[side].color, label: PARTY[side].short }, { pts: them, color: PARTY[other(side)].color, label: PARTY[other(side)].short }]) + `<div class="res-chips">${C.polls.map((p, i) => `<span class="res-chip">${p.lbl || `Round ${i + 1}`}: ${(+p.me || 0).toFixed(0)}–${(+p.them || 0).toFixed(0)}</span>`).join('')}</div>${P ? `<div class="nsub">Final polls: your ticket ${me[me.length - 1].toFixed(0)}–${them[them.length - 1].toFixed(0)}. Result: ${P.names[side]} ${(P[side === 'D' ? 'popD' : 'popR'] / (P.popD + P.popR + (P.popI || 0) || 1) * 100).toFixed(1)}% of the vote.</div>` : ''}`));
+    cards.push(resCard('The poll tracker', (resPollChart(C.polls, side, { D: nm('D'), R: nm('R') }) || lineChart([{ pts: me, color: PARTY[side].color, label: PARTY[side].short }, { pts: them, color: PARTY[other(side)].color, label: PARTY[other(side)].short }])) + `<div class="res-chips">${C.polls.map((p, i) => `<span class="res-chip">${p.lbl || `Round ${i + 1}`}: ${(+p.me || 0).toFixed(0)}–${(+p.them || 0).toFixed(0)}</span>`).join('')}</div>${P ? `<div class="nsub">Final polls: your ticket ${me[me.length - 1].toFixed(0)}–${them[them.length - 1].toFixed(0)}. Result: ${P.names[side]} ${(P[side === 'D' ? 'popD' : 'popR'] / (P.popD + P.popR + (P.popI || 0) || 1) * 100).toFixed(1)}% of the vote.</div>` : ''}`));
   }
   if (V && (V.D || V.R)) cards.push(resCard('The conventions', `<div class="res-conv">${['D', 'R'].map(p => { const c = V[p]; if (!c) return ''; const vp = c.vp && typeof c.vp === 'object' ? c.vp.name : c.vp; return `<div class="res-convcard" style="border-color:${PARTY[p].color}"><h4 style="color:${PARTY[p].color}">${PARTY[p].name} convention${c.city ? ` · ${c.city}` : ''}</h4>${P ? `<p>Nominee: <b>${P.names[p]}</b>${vp ? ` · running mate <b>${vp}</b>${c.vp && c.vp.state ? ` (${c.vp.state})` : ''}` : ''}</p>` : vp ? `<p>Running mate: <b>${vp}</b></p>` : ''}${c.bounce != null ? `<p>Bounce: <b style="color:${c.bounce >= 0 ? 'var(--yes)' : 'var(--no)'}">${resSigned(+c.bounce)}</b> nationally</p>` : ''}${c.unity != null ? `<p>Unity: <b>${Math.round(+c.unity * 100)}%</b> ${+c.unity >= 0.9 ? '· a united party' : +c.unity >= 0.7 ? '· some grumbling' : '· an open feud'}</p>` : ''}${Array.isArray(c.planks) && c.planks.length ? `<p>Platform: ${c.planks.map(k => k && k.tag && TAG[k.tag] ? `${TAG[k.tag][0]} ${k.dir > 0 ? 'more' : 'less'} ${TAG[k.tag][1]}` : resAny(k)).join(' · ')}</p>` : ''}${c.theme && TAG[c.theme] ? `<p>Message: ${TAG[c.theme][0]} ${TAG[c.theme][1]}</p>` : ''}${c.keynote ? `<p>Keynote: ${typeof c.keynote === 'object' ? c.keynote.name || '' : c.keynote}</p>` : ''}${Array.isArray(c.events) && c.events.length ? `<p><small style="color:var(--dim)">${c.events.map(e => typeof e === 'string' ? e : e && (e.text || e.title || e.t) || '').filter(Boolean).join(' · ')}</small></p>` : ''}</div>`; }).join('')}</div>`));
-  if (C && Array.isArray(C.debates) && C.debates.length) cards.push(resCard('The debates', `<div class="res-deb">${resAny(C.debates)}</div>`));
-  if (C && Array.isArray(C.events) && C.events.length) cards.push(resCard('October surprises and campaign events', `<div class="res-deb">${resAny(C.events)}</div>`));
-  if (C && (C.strategy || C.theme)) cards.push(resCard('Strategy', `<p class="res-narr">${C.strategy ? `Strategy: <b>${typeof C.strategy === 'object' ? resAny(C.strategy) : C.strategy}</b>. ` : ''}${C.theme ? `Message: <b>${TAG[C.theme] ? `${TAG[C.theme][0]} ${TAG[C.theme][1]}` : C.theme}</b>.` : ''}</p>`));
+  if (C && Array.isArray(C.debates) && C.debates.length) cards.push(resCard('The debates', `<div class="res-deb">${C.debates.map(d => d && typeof d === 'object' && d.round != null ? resDebateRow(d, side, nm) : resAny(d)).join('')}</div>`));
+  if (C && Array.isArray(C.events) && C.events.length) cards.push(resCard('October surprises and campaign events', `<div class="res-deb">${C.events.map(resEventRow).join('')}</div>`));
+  if (C && (C.strategy || C.theme)) cards.push(resCard('Strategy', `<p class="res-narr">${C.strategy ? `Strategy: <b>${typeof C.strategy === 'object' ? resAny(C.strategy) : RES_STRAT[C.strategy] || C.strategy}</b>. ` : ''}${C.theme ? `Message: <b>${TAG[C.theme] ? `${TAG[C.theme][0]} ${TAG[C.theme][1]}` : C.theme}</b>.` : ''}</p>`));
   cards.push(resWaveCard(R));
   if (!cards.filter(Boolean).length) cards.push(resCard('', '<div class="res-empty">No campaign was recorded for this election.</div>'));
   const half = Math.ceil(cards.length / 2);

@@ -34,6 +34,16 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **The yearly budget.** Every Fall you write the budget: pick two priorities
   to fund and one to cut while a whip count updates live. If it fails anywhere,
   the government shuts down.
+- **Breaking news.** Fifty events can hit a bill mid-fight: K Street comes
+  calling, the CBO score lands, a faction leader issues an ultimatum, a
+  filibuster threat, a whistleblower, a town-hall revolt in the state that hates
+  the bill most, a parliamentarian ruling on the budget, a rival House bill, the
+  President's 2 a.m. posts, a Supreme Court ruling, a snowstorm, a hot mic, a
+  senator's resignation or death (the governor appoints a successor), even a
+  party switch. Between bills the world keeps turning too: an economy that booms
+  and busts, indictments, leaks, impeachment inquiries, and moments that need
+  your call (a scandal in your caucus, a would-be defector, a book deal, the
+  majority leader's offer).
 - **Factions everywhere.** Every Senate faction has a public leader 👑. Members
   follow wherever their leader moves (30% of the way), leaders vote first in
   the roll call, and fence-sitters follow their vote. Leaders are seasoned, so
@@ -84,21 +94,44 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **Primaries.** Before each election, senators who broke with the party line
   draw challengers from their flank. Protect them, back the challenger, or
   meddle in the other party's primaries.
-- **Presidential primaries.** In each presidential year both parties hold
-  primaries state by state, from Iowa through June, with delegates and
-  dropouts. Senators, House members, governors, cabinet secretaries and the
-  Vice President run. Rank up to three candidates: your endorsement goes to
-  your highest-ranked candidate still running. Watch the other party's race
+- **Presidential primaries.** In the spring of each presidential year both
+  parties hold primaries state by state, from Iowa through June, with delegates,
+  polls and dropouts. Senators, House members, governors, cabinet secretaries
+  and the Vice President run. Rank up to three candidates: your endorsement goes
+  to your highest-ranked candidate still running. Watch the other party's race
   too. You can undermine your own party's President and recruit a primary
-  challenger. Nominees pick
-  running mates; in the fall, home states, running mates, candidate appeal,
-  debates, wars and your battleground spending all move the Electoral College.
+  challenger. Dropouts release their delegates, so a clinch is the norm and a
+  contested convention the exception.
+- **The conventions.** Each party holds a national convention in the summer,
+  the out-party first. At yours you call the hall to order, pick the **running
+  mate** from four candidates (a primary rival for unity, a swing-state senator,
+  a governor, a wildcard; vet them for hidden risks, or dump a sitting Vice
+  President), fight out the **platform** plank by plank between the flank and
+  the center, choose the keynote speaker and the acceptance speech's tone, and
+  ride out protests, hot mics, walkouts, leaked vetting files and hurricanes.
+  The party leaves with a **bounce** and a unity score that carry into the
+  fall. If nobody clinched, it's a **brokered convention**: ballot by ballot,
+  you can back the frontrunner, engineer an upset or broker the runner-up onto
+  the ticket. The other party's convention plays out on the news, with its own
+  ticket, platform and bounce.
+- **The fall campaign.** After the Senate primaries, the presidential race runs
+  in five rounds: Labor Day (pick the message and the map: the Rust Belt, the
+  Sun Belt, expand the map or turn out the base), the first debate (prep your
+  nominee, choose a game plan against the opponent's), October (the running
+  mates' debate and the second debate), the October Surprise (nineteen possible
+  front pages, each with hard choices: leaked tapes, a hurricane, a Supreme
+  Court bombshell, a running mate's gaffe, a third-party surge that makes the
+  ballot…), and the final weekend (a last ad buy, senators as surrogates in the
+  battlegrounds, turnout). A poll tracker and a live Electoral College
+  projection move with every call. Campaign money is shared with the Senate
+  races, so every unit spent on the ticket is one you can't spend on a seat.
+  Or let the campaign run itself.
 - **Elections.** Every two years (six bills): a third of the Senate, all 435
   House seats, and the White House every four years, decided by the Electoral
   College. Senators who voted against their state's interests are vulnerable.
   The campaign trail shows your chance in every race. Deploy money in one
   click (smart deploy, defend, or go on offense), fine-tune with +/− or by
-  clicking states on the map, and fund the House and presidential races too.
+  clicking states on the map, and fund the House and governors' races too.
   There's no cap on any race; each extra unit in the same place does a little
   less, so spreading money usually pays. Races are uncertain enough that
   roughly a third of them are in play every cycle. Each cycle also has a national environment
@@ -107,9 +140,19 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   Forecasters see most of a wave coming, but not all of it, so landslides are
   rare but never come from nowhere.
 - **Election Night.** Results come in from east to west, with close races
-  called last. You get a clickable map, President, Senate and House tabs, vote
-  totals and percentages, live seat and electoral-vote tallies, a closest-races
-  chart and the popular vote. Browse races with Prev/Next or the arrow keys.
+  called last. A projection banner lands the moment a ticket reaches 270 (or
+  a deadlock sends it to the House), a decision-desk ticker logs every call,
+  and each tab (President, Senate, House, Governors) has a map, a sortable
+  table with swings since the last election, before-and-after seat counts, a
+  balance-of-power chart, the popular vote and a closest-races chart. Browse
+  races with Prev/Next or the arrow keys.
+- **Full results and the Almanac.** After the count, **Full results** opens a
+  detailed explorer: the tipping-point state, the ten states that decided it,
+  bellwethers, biggest swings, regional popular vote, turnout and third-party
+  share; Senate, House and governors' tables; and, in presidential years, the
+  whole campaign: the poll tracker, both conventions, the debates, the October
+  surprise, and the wave against the forecast. **The Almanac** in the whip's
+  office keeps every past election, the presidents and the current standings.
 - **A career.** Earn political capital and spend it: hire from 28 staff,
   earn 10 personal whip traits, and buy polls, war rooms, galas, oppo
   dossiers, committee seats, retirements and more. Keep your caucus's
@@ -118,26 +161,32 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 ## Look and feel
 
 A real map of the United States (state outlines from US Census boundary data,
-via the us-atlas package) drives the whip view, the campaign trail and Election
-Night, with callouts for the small Northeast states. Every vote ends in a front
-page of *The Capitol Ledger*, and breaking events arrive as newspaper bulletins.
-Senators get illustrated portraits, the chamber has its desks and rostrum, and
-a Hall of Legacy tracks 21 achievements and your best legacy score.
+via the us-atlas package) drives the whip view, the campaign trail, the
+conventions, the fall campaign and Election Night, with callouts for the small
+Northeast states. Every vote ends in a front page of *The Capitol Ledger*, and
+breaking events, convention nights and October surprises arrive as newspaper
+bulletins. Senators get illustrated portraits, the chamber has its desks and
+rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 
 ## Files
 
 | File | What it holds |
 |---|---|
 | `index.html` | The page shell |
-| `style.css` | All styling |
-| `game.js` | The Senate, whipping, events, the budget, the House, President and Court, primaries, elections, saving |
+| `style.css` | Base styling; `convention.css`, `campaign.css`, `results.css`, `events.css` style their modules |
+| `game.js` | The Senate, whipping, the budget, the House, President and Court, Senate primaries, elections, the office, saving |
 | `content.js` | Most of the bills, staff, whip traits, House caucuses and independent causes |
 | `usmap.js` | State outlines (Albers USA projection), generated from us-atlas 3.0.1 |
 | `art.js` | The map renderer, the Capitol illustration, portraits, the newspaper, the chamber backdrop |
 | `depth.js` | Achievements and legacy, the opposing whip's personality and poison pills, campaign promises, headlines |
 | `names.js` | Name pools, backgrounds, hometowns and generated political histories |
-| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse, presidential primaries and the battleground |
-| `night.js` | Election Night: the Electoral College, House results by state, and the results screen |
+| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse |
+| `primaries.js` | Presidential primaries, state by state, with ranked endorsements |
+| `convention.js` | The two national conventions: running mates, platforms, speeches, brokered conventions, the bounce |
+| `campaign.js` | The fall campaign: five rounds, debates, October surprises, strategy, surrogates, the battleground |
+| `events.js` | Breaking news on the floor, world news and moments between bills |
+| `night.js` | Election Night: the Electoral College, House results by state, the projection banner, ticker and tables |
+| `results.js` | The election archive, the full-results explorer and the Almanac |
 
 ## Testing a shortcut
 
@@ -146,3 +195,7 @@ To jump straight to an election, open the browser console and run:
 ```js
 S.career.bills = 6; electionPrep();
 ```
+
+For a whole presidential cycle, run the primaries first (`S.career.bills = 3;
+primariesModal(() => {})`), then the conventions (`S.career.bills = 4;
+conventionsModal(() => {})`), then the line above.
