@@ -1,1 +1,119 @@
-/* Floor Fight — styles for the conventions. Loaded after style.css. */
+/* Floor Fight — styles for the conventions. Loaded after style.css. All classes are prefixed .conv- */
+
+/* the hall: a stage banner in the party color, with bunting and a crowd */
+.conv-hall{--pc:#3b82f6;position:relative;overflow:hidden;border-radius:10px;margin:10px 0;padding:10px 14px;border:1px solid #ffffff22;
+  background:linear-gradient(180deg,color-mix(in srgb,var(--pc) 55%,#0b0f18) 0%,color-mix(in srgb,var(--pc) 22%,#0b0f18) 70%,#0b0f18 100%);box-shadow:0 8px 24px #0006,inset 0 0 40px #0004}
+.conv-hall.big{padding:26px 18px 34px;text-align:center}
+.conv-bunting{position:absolute;left:0;right:0;top:0;height:14px;
+  background:radial-gradient(circle at 50% 0,#f6d27a 0 5px,transparent 6px) 0 0/22px 14px repeat-x,
+  radial-gradient(circle at 50% 0,#fff 0 4px,transparent 5px) 11px 2px/22px 14px repeat-x;opacity:.85}
+.conv-hall.big .conv-bunting{height:22px;background-size:34px 22px,34px 22px;background-position:0 0,17px 4px}
+.conv-stage{position:relative;z-index:1}
+.conv-city{font-family:var(--serif);font-weight:900;font-size:16px;letter-spacing:1px;text-transform:uppercase;color:#fff;text-shadow:0 2px 10px #000}
+.conv-hall.big .conv-city{font-size:clamp(26px,5vw,42px);letter-spacing:3px;margin-top:8px}
+.conv-sub{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#ffe9a8;text-shadow:0 1px 6px #000}
+.conv-hall.big .conv-sub{font-size:12px;margin-top:4px}
+.conv-crowd{position:absolute;left:-10px;right:-10px;bottom:-6px;height:30px;opacity:.9;
+  background:radial-gradient(circle at 50% 100%,#1a2030 0 6px,transparent 7px) 0 0/16px 30px repeat-x,
+  radial-gradient(circle at 50% 100%,#232a35 0 7px,transparent 8px) 8px 4px/16px 30px repeat-x,
+  radial-gradient(circle at 50% 100%,#121826 0 8px,transparent 9px) 4px 10px/16px 30px repeat-x}
+.conv-hall.big::after{content:'';position:absolute;left:50%;top:0;width:60%;height:100%;transform:translateX(-50%);
+  background:radial-gradient(ellipse at 50% 0,#fff6d899 0,transparent 65%);pointer-events:none;mix-blend-mode:screen;opacity:.55}
+
+/* the nominee strip and the fact cards */
+.conv-nominee{display:flex;gap:12px;align-items:center;margin:10px 0}
+.conv-nominee svg{width:72px;height:72px;border-radius:50%;border:3px solid #e3b54a66;flex:none;box-shadow:0 4px 14px #0007}
+.conv-nominee small{display:block;font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.conv-nominee b{font-family:var(--serif);font-size:22px;display:block;line-height:1.1}
+.conv-nominee span{font-size:12px;color:var(--dim)}
+.conv-facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin:10px 0}
+.conv-fact{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px}
+.conv-fact small{display:block;color:var(--dim);font-size:11px}
+.conv-fact b{font-size:15px;font-family:var(--serif)}
+
+/* delegate bars (the roll call) */
+.conv-delbar{position:relative;display:flex;height:18px;border-radius:5px;overflow:visible;background:#3a4250;margin:6px 0}
+.conv-delbar i{display:block;height:100%;transition:width .6s ease}
+.conv-delbar i:first-child{border-radius:5px 0 0 5px}
+.conv-need{position:absolute;top:-4px;bottom:-4px;width:2px;background:#fff;opacity:.9;margin-left:-1px}
+.conv-need::after{content:'majority';position:absolute;top:-13px;left:4px;font-size:9px;letter-spacing:1px;text-transform:uppercase;color:#fff;opacity:.8;white-space:nowrap}
+.conv-ballots{display:flex;flex-direction:column;gap:10px;margin:10px 0}
+.conv-ballot{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px 6px}
+.conv-ballot .conv-delbar{margin-top:16px}
+.conv-bhead{display:flex;justify-content:space-between;gap:8px;font-size:12px}
+.conv-bhead span{color:var(--dim)}
+.conv-ballot small{color:var(--dim);font-size:12px;display:block;margin-top:4px;line-height:1.4}
+
+/* running-mate cards */
+.conv-vpgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:10px 0}
+@media (max-width:640px){.conv-vpgrid{grid-template-columns:1fr}}
+.conv-vp{--pc:#3b82f6;display:flex;gap:10px;background:#141821;border:1px solid var(--line);border-radius:10px;padding:10px;align-items:flex-start}
+.conv-vp.pref{border-color:var(--gold);box-shadow:0 0 0 1px #e3b54a33 inset,0 6px 18px #0005}
+.conv-vp > svg{width:58px;height:58px;border-radius:50%;border:2px solid var(--pc);flex:none}
+.conv-vpbody{flex:1;min-width:0}
+.conv-vpbody > b{font-family:var(--serif);font-size:16px;display:block}
+.conv-vpbody > small{color:var(--dim);font-size:11px;display:block}
+.conv-vpbody ul{margin:6px 0;padding-left:16px;font-size:12px;line-height:1.4;color:#d6dbe6}
+.conv-vpbody li{margin:2px 0}
+.conv-vpbtns{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.conv-vpbtns .btn{padding:5px 10px;font-size:12px;text-align:center}
+.conv-vpbtns .btn small{font-size:10px;margin-top:0}
+
+/* planks */
+.conv-planks{display:flex;flex-direction:column;gap:10px;margin:10px 0}
+.conv-plank{background:#141821;border:1px solid var(--line);border-radius:10px;padding:10px}
+.conv-plank.set{border-color:#e3b54a66}
+.conv-ptitle{font-size:14px;margin-bottom:6px}
+.conv-ptitle small{color:var(--dim);font-size:11px}
+.conv-pvers{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:6px}
+@media (max-width:640px){.conv-pvers{grid-template-columns:1fr}}
+.conv-pvers .btn{text-align:left;font-size:13px;line-height:1.35;height:100%}
+.conv-pvers .btn small{margin-top:4px}
+.conv-plank .btn.ghost{width:100%;font-size:12px;padding:6px 10px}
+.conv-plank .btn.ghost small{display:inline;margin-left:6px}
+.conv-pset{font-size:13px;line-height:1.45;color:#d6dbe6;background:#1a2030;border-left:3px solid var(--gold);padding:6px 10px;border-radius:0 6px 6px 0}
+.conv-theme{background:#141821;border:1px solid #e3b54a55;border-radius:10px;padding:10px;margin:10px 0;font-size:13px}
+.conv-themebtns{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.conv-themebtns .btn{padding:6px 12px;font-size:12px}
+
+/* events, results, speeches */
+.conv-event{background:#1b1a10;border:1px solid #6b5a2a;border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:8px 12px;margin:10px 0;font-size:14px}
+.conv-event p{margin:4px 0;line-height:1.5}
+.conv-result{background:#141821;border:1px solid var(--line);border-left:4px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 12px;margin:10px 0;font-size:13.5px;line-height:1.5}
+.conv-result b{color:var(--gold2)}
+
+/* unity meter, bounce readout, the poll */
+.conv-unity{display:flex;align-items:center;gap:10px;font-size:12px;margin:8px 0;background:#141821;border:1px solid var(--line);border-radius:8px;padding:6px 10px}
+.conv-unity span{color:var(--dim);white-space:nowrap}
+.conv-umeter{flex:1;height:10px;background:#2a303b;border-radius:5px;overflow:hidden}
+.conv-umeter i{display:block;height:100%;transition:width .5s}
+.conv-unity b{white-space:nowrap}
+.conv-bounce{display:flex;gap:14px;align-items:center;flex-wrap:wrap;background:#141821;border:1px solid #e3b54a55;border-radius:10px;padding:10px 14px;margin:10px 0}
+.conv-bnum{display:flex;flex-direction:column;min-width:130px}
+.conv-bnum small{color:var(--dim);font-size:11px;letter-spacing:1.5px;text-transform:uppercase}
+.conv-bnum b{font-family:var(--serif);font-size:40px;line-height:1}
+.conv-bnum span{color:var(--dim);font-size:11px}
+.conv-bparts{display:flex;flex-wrap:wrap;gap:6px;font-size:12px}
+.conv-bparts span{background:#1a2030;border:1px solid var(--line);border-radius:999px;padding:2px 9px;font-weight:700}
+.conv-poll{background:#141821;border:1px solid var(--line);border-radius:10px;padding:8px 12px;margin:10px 0;font-size:13px}
+.conv-poll small{color:var(--dim);font-size:11px;display:block;margin-top:4px}
+.conv-pollrow{display:flex;align-items:center;gap:8px;margin:6px 0}
+.conv-plbl{width:50px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px}
+.conv-pbar{flex:1;display:flex;height:24px;border-radius:6px;overflow:hidden;font-size:12px;font-weight:800}
+.conv-pbar div{display:flex;align-items:center;padding:0 8px;color:#fff;white-space:nowrap;overflow:hidden;transition:width .5s}
+.conv-pbar div:last-child{justify-content:flex-end}
+
+/* the ticket and the other party's report card */
+.conv-ticket{display:flex;gap:10px;flex-wrap:wrap;border:2px solid;border-radius:12px;padding:10px;margin:10px 0;background:#1a2030}
+.conv-tk{display:flex;gap:10px;align-items:center;flex:1;min-width:220px}
+.conv-tk svg{width:56px;height:56px;border-radius:50%;border:2px solid #e3b54a66;flex:none}
+.conv-tk small{display:block;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--dim)}
+.conv-tk b{font-family:var(--serif);font-size:17px;display:block;line-height:1.15}
+.conv-tk span{font-size:11px;color:var(--dim)}
+.conv-report{margin:6px 0}
+.conv-rgrid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:8px 0}
+@media (max-width:640px){.conv-rgrid{grid-template-columns:1fr}}
+.conv-rgrid > div{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-size:13px;line-height:1.4}
+.conv-rgrid small{display:block;color:var(--dim);font-size:11px;letter-spacing:1px;text-transform:uppercase}
+.conv-rgrid b{font-size:14px}
+.modal-card .paper + .kicker{margin-top:8px}
