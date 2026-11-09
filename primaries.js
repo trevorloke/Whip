@@ -60,12 +60,22 @@ function runPrimaryFor(party, endorsed, withIncumbent) {
       elig.forEach(x => x.f.del += Math.round(del * x.pct / et));
       r[code][0].f.wins++;
     }
+    // a candidate who quits endorses someone still running (usually the leader) and releases their delegates
+    const dropOut = (f, when) => {
+      f.active = false; f.out = f.out || when;
+      const act = field.filter(x => x.active).sort((a, b) => b.del - a.del); if (!act.length) return;
+      const to = Math.random() < 0.7 ? act[0] : pick(act);
+      f.backed = to.name; f.released = f.del; to.del += f.del; f.del = 0;
+    };
     // weak candidates drop out after the early states (a sitting President never quits)
-    if (i >= 4) { const act = field.filter(f => f.active).sort((a, b) => b.del - a.del); act.slice(2).forEach(f => { if (f.del < act[0].del * 0.25 && f.name !== endName() && !f.incumbent) { f.active = false; f.out = label; } }); }
-    if (i >= 6) { const act = field.filter(f => f.active).sort((a, b) => b.del - a.del); act.slice(2).forEach(f => { if (!f.incumbent) { f.active = false; f.out = f.out || label; } }); }
+    if (i >= 4) { const act = field.filter(f => f.active).sort((a, b) => b.del - a.del); act.slice(2).forEach(f => { if (f.del < act[0].del * 0.25 && f.name !== endName() && !f.incumbent) dropOut(f, label); }); }
+    // after the sixth contest the race narrows to two, unless a third candidate has won enough states and holds a
+    // real share of the delegates: they stay in through June and the delegates split three ways
+    // (three state wins and 40% of the leader's delegates leaves roughly one open race in eight without a majority)
+    if (i >= 6) { const act = field.filter(f => f.active).sort((a, b) => b.del - a.del); act.slice(2).forEach(f => { if (!f.incumbent && !(f.wins >= 3 && f.del >= act[0].del * 0.4)) dropOut(f, label); }); }
     return label;
   };
-  return { party, field, results, need, totalDel, nextContest, done: () => i >= PRIMARY_CAL.length || field.some(f => f.del >= need) };
+  return { party, field, results, need, totalDel, nextContest, done: () => i >= PRIMARY_CAL.length || field.some(f => f.del >= need), contested: () => !field.some(f => f.del >= need) };
 }
 function primariesModal(done) {
   const P = S.president, year = billYear(S.career.bills + 1), mine = S.side, theirs = other(mine);
@@ -84,40 +94,59 @@ function primariesModal(done) {
   for (const p of ['D', 'R']) state[p] = contest[p] ? runPrimaryFor(p, p === mine ? topRanked : null, !!challenged[p]) : null;
   const allDone = () => ['D', 'R'].every(p => !state[p] || state[p].done());
   const step = () => { let lbl = null; for (const p of ['D', 'R']) if (state[p] && !state[p].done()) lbl = state[p].nextContest() || lbl; if (!lbl) { const i = PRIMARY_CAL.findIndex(c => c[0] === lastLabel); lbl = PRIMARY_CAL[Math.min(PRIMARY_CAL.length - 1, i + 1)][0]; } lastLabel = lbl; for (const p of ['D', 'R']) if (state[p]) state[p].poll = null; };
+  // the end of the primaries: delegate leaders, runners-up and whether anyone actually clinched.
+  // Running mates, platforms and the nominations themselves are settled at the conventions (convention.js).
   const finishAll = () => {
     while (!allDone()) step();
-    S.nominees = {};
+    const totalDel = Object.values(EV).reduce((a, b) => a + b, 0) * 10, need = Math.floor(totalDel / 2) + 1;
+    S.nominees = { conventionsDone: false, ranked: ranking.slice() };
     const lines = [];
     for (const p of ['D', 'R']) {
-      let nom, office, charisma = 1.05;
-      if (!state[p]) { nom = P; office = 'President'; hist(P, 'Renominated for President without serious opposition'); }
+      let nom, office, charisma = 1.05, del = totalDel, runnerUp = null, contested = false, others = [];
+      if (!state[p]) { nom = P; office = 'President of the United States'; hist(P, 'Renominated for President without serious opposition'); }
       else {
-        const f = state[p].field.slice().sort((a, b) => b.del - a.del)[0]; nom = f.p; office = f.office; charisma = f.charisma;
-        if (f.incumbent) { hist(P, `Survived a primary challenge to win renomination`); lines.push(`${presTitle()} beat back a primary challenge in the ${PARTY[p].name} race.`); }
+        const sorted = state[p].field.slice().sort((a, b) => b.del - a.del), f = sorted[0], r = sorted[1];
+        nom = f.p; office = f.office; charisma = f.charisma; del = f.del; contested = state[p].contested();
+        if (r) runnerUp = { name: r.name, faction: r.faction, del: r.del, p: r.p, office: r.office, state: r.state, charisma: r.charisma };
+        others = sorted.slice(2).filter(x => x.del > 0).map(x => ({ name: x.name, faction: x.faction, del: x.del, office: x.office, state: x.state }));
+        if (contested) {
+          hist(f.p, `Led the ${year} ${PARTY[p].name} primaries with ${f.del.toLocaleString()} delegates, short of a majority`);
+          if (r) hist(r.p, `Carried ${r.del.toLocaleString()} delegates into a contested ${year} ${PARTY[p].name} convention`);
+          lines.push(`<b>The ${PARTY[p].short} head for an open convention:</b> ${f.name} leads with ${f.del.toLocaleString()} delegates${r ? `, ${r.name} holds ${r.del.toLocaleString()}` : ''}, and nobody has the ${need.toLocaleString()} needed.`);
+        } else if (f.incumbent) { hist(P, `Survived a primary challenge to win renomination`); lines.push(`${presTitle()} beat back a primary challenge in the ${PARTY[p].name} race.`); }
         else {
-          hist(f.p, `Won the ${year} ${PARTY[p].name} presidential nomination`);
+          hist(f.p, `Clinched the ${year} ${PARTY[p].name} presidential nomination with ${f.del.toLocaleString()} delegates`);
           if (challenged[p]) { hist(P, `Lost the ${year} ${PARTY[p].name} primary to ${f.name}`); lines.push(`<b>A sitting President falls:</b> ${presTitle()} loses the ${PARTY[p].name} nomination to ${f.name}.`); }
         }
-        state[p].field.filter(x => x !== f && !x.incumbent).forEach(x => hist(x.p, `Ran for President in ${year}; lost the nomination`));
+        state[p].field.filter(x => x !== f && !x.incumbent && !(contested && x === r)).forEach(x => hist(x.p, `Ran for President in ${year}; ${x.out ? `dropped out after ${x.out}` : 'lost the nomination'}`));
         if (p === mine && ranking.length) {
-          const pos = ranking.indexOf(f.name);
-          if (pos === 0) { S.career.capital += 3; addLegacy(5); lines.push(`Your first choice, ${f.name}, won the nomination (+3 capital).`); }
-          else if (pos > 0) { S.career.capital += 3 - pos; lines.push(`Your #${pos + 1} choice, ${f.name}, won the nomination (+${3 - pos} capital).`); }
-          else { S.career.capital = Math.max(0, S.career.capital - 1); lines.push(`None of the candidates you ranked won (−1 capital).`); }
+          const pos = ranking.indexOf(f.name), verb = contested ? 'leads the delegate count going into the convention' : 'won the nomination';
+          if (pos === 0) { S.career.capital += 3; addLegacy(5); lines.push(`Your first choice, ${f.name}, ${verb} (+3 capital).`); }
+          else if (pos > 0) { S.career.capital += 3 - pos; lines.push(`Your #${pos + 1} choice, ${f.name}, ${verb} (+${3 - pos} capital).`); }
+          else { S.career.capital = Math.max(0, S.career.capital - 1); lines.push(`None of the candidates you ranked ${contested ? 'leads the field' : 'won'} (−1 capital).`); }
         }
       }
-      const vpPick = shuffle(S.members.filter(m => m.party === p && Math.abs(ST[m.state].lean) <= 6 && m.name !== nom.name))[0] || S.members.find(m => m.party === p && m.name !== nom.name);
-      S.nominees[p] = { p: nom, name: nom.name, state: nom.state, faction: nom.faction, office, charisma, vp: vpPick ? { name: vpPick.name, state: vpPick.state, id: vpPick.id } : null };
-      if (vpPick) hist(vpPick, `Chosen as ${nom.name}'s running mate`);
+      S.nominees[p] = { p: nom, name: nom.name, state: nom.state, faction: nom.faction || pick(FACTIONS[p])[0], office, charisma, del, runnerUp, others, contested, vp: null };
     }
     S.challenger = false; S.undermine = 0;
-    const n = S.nominees;
-    const showConvention = () => { showModal(`${frontPage({ headline: `IT'S ${lastName(n.D.p).toUpperCase()} VS. ${lastName(n.R.p).toUpperCase()}`, sub: `The ${year} presidential matchup is set.`, body: [`Democrats nominate ${n.D.name} (${n.D.office}), with ${n.D.vp ? n.D.vp.name : 'a running mate TBD'} on the ticket.`, `Republicans nominate ${n.R.name} (${n.R.office}), with ${n.R.vp ? n.R.vp.name : 'a running mate TBD'}.`, ...lines, ranking.length || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.'].filter(Boolean), mood: 'dawn', date: `Summer ${year} · Convention edition` })}
-      <div class="choices"><button class="btn ghost" id="nprof1">Profile: ${n.D.name}</button><button class="btn ghost" id="nprof2">Profile: ${n.R.name}</button><button class="btn primary big" id="primdone">On with the session</button></div>`);
-      $('#nprof1').onclick = () => profileModal(n.D.p, 'Democratic nominee', showConvention);
-      $('#nprof2').onclick = () => profileModal(n.R.p, 'Republican nominee', showConvention);
-      $('#primdone').onclick = done; };
-    showConvention();
+    const n = S.nominees, outParty = other(P.party);
+    const head = p => n[p].contested ? `NO ONE CLINCHES: A CONTESTED ${PARTY[p].name.toUpperCase()} CONVENTION LOOMS` : `${lastName(n[p].p).toUpperCase()} CLINCHES THE ${PARTY[p].name.toUpperCase()} NOMINATION`;
+    const headline = n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
+    const para = p => {
+      const N = n[p], ru = N.runnerUp;
+      if (!state[p]) return `${PARTY[p].short}: ${presTitle()} was renominated without serious opposition and arrives at the convention with all ${totalDel.toLocaleString()} delegates in hand.`;
+      if (N.contested) return `${PARTY[p].short}: the June primaries end with ${N.name} (${N.office}) at ${N.del.toLocaleString()} delegates${ru ? `, ${ru.name} at ${ru.del.toLocaleString()}` : ''} and ${need.toLocaleString()} needed. The nomination will be settled on the convention floor.`;
+      return `${PARTY[p].short}: ${N.name} (${N.office}) clinched with ${N.del.toLocaleString()} of ${totalDel.toLocaleString()} delegates${ru ? `; ${ru.name} finished second with ${ru.del.toLocaleString()}` : ''}.`;
+    };
+    const sub = `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority either.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[P.party].short} in August.`;
+    const showNominees = () => {
+      showModal(`${frontPage({ headline, sub, body: [para(mine), para(theirs), ...lines, ranking.length || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}
+      <div class="choices"><button class="btn ghost" id="nprof1">Profile: ${n.D.name}</button><button class="btn ghost" id="nprof2">Profile: ${n.R.name}</button><button class="btn primary big" id="primdone">On to the summer</button></div>`);
+      $('#nprof1').onclick = () => profileModal(n.D.p, n.D.contested ? 'Democratic delegate leader' : 'Democratic nominee', showNominees);
+      $('#nprof2').onclick = () => profileModal(n.R.p, n.R.contested ? 'Republican delegate leader' : 'Republican nominee', showNominees);
+      $('#primdone').onclick = done;
+    };
+    showNominees();
   };
   const draw = () => {
     const R = state[view], yours = view === mine;
@@ -147,7 +176,7 @@ function primariesModal(done) {
       showModal(`<div class="kicker">${year} · Presidential primaries</div><h2>${lastLabel ? `After ${lastLabel}` : 'The Field'}</h2>${tabs}${intro}
         <div class="pollbox"><b>📊 National ${PARTY[view].name} primary poll</b>${field.filter(f => f.active).sort((a, b) => (poll[b.name] || 0) - (poll[a.name] || 0)).map(f => `<div class="salrow"><span style="color:${f.color};font-weight:700">${f.name}</span><span class="mbar"><i style="width:${Math.min(100, (poll[f.name] || 0) * 2)}%;background:${f.color}"></i></span><b>${(poll[f.name] || 0).toFixed(0)}%</b></div>`).join('')}<small style="color:var(--dim)">Undecided ${poll._undecided}% · polls move with wins and momentum</small></div>
         <div class="cands">${field.map(f => { const idx = R.field.indexOf(f), rk = ranking.indexOf(f.name); return `<div class="cand2 ${f.active ? '' : 'out'}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b> <small>· ${f.office} · ${f.faction}${f.active ? '' : ` · dropped out after ${f.out}`}</small>
-          <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.del.toLocaleString()} delegates · ${f.wins} state${f.wins === 1 ? '' : 's'} won${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%` : ''}${yours && rk >= 0 ? ` · <b style="color:var(--gold2)">your #${rk + 1}${f.name === top ? ', getting your endorsement' : ''}</b>` : ''}</small></span>
+          <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.active || !f.released ? `${f.del.toLocaleString()} delegates` : `released ${f.released.toLocaleString()} delegates to ${f.backed.split(' ').slice(1).join(' ')}`} · ${f.wins} state${f.wins === 1 ? '' : 's'} won${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%` : ''}${yours && rk >= 0 ? ` · <b style="color:var(--gold2)">your #${rk + 1}${f.name === top ? ', getting your endorsement' : ''}</b>` : ''}</small></span>
           <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><a href="#" data-cprof="${idx}">profile</a>${yours && f.active && rk < 0 && ranking.length < 3 ? `<button class="btn" data-rank="${idx}" ${S.career.capital < cost ? 'disabled' : ''}>Rank #${ranking.length + 1}${cost ? ' (1 cap)' : ''}</button>` : ''}${yours && rk >= 0 ? `<button class="btn ghost" data-unrank="${idx}" ${S.career.capital < cost ? 'disabled' : ''}>Unrank${cost ? ' (1 cap)' : ''}</button>` : ''}</span></div>`; }).join('')}</div>
         ${lastStates.length ? `<div class="presults"><b>🗳️ ${lastLabel} results</b>${resultRows(lastStates) || '<div class="prow">No contests for this party this round.</div>'}</div>` : '<p style="color:var(--dim)">No votes cast yet. Iowa is first.</p>'}
         <div class="campmap">${mapHTML}</div>
