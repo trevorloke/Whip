@@ -2,6 +2,9 @@
 
 /* ---------- Election Night additions ---------- */
 .res-hbtns{display:flex;gap:8px;align-items:center}
+/* phones: the tab row wraps, and the map column may shrink below the table's natural width (the table then scrolls inside .res-scroll) */
+#night .ntabs{flex-wrap:wrap}
+#night .nmapwrap{min-width:0}
 .res-banner{--pc:var(--gold);position:relative;overflow:hidden;margin:12px 0 2px;padding:12px 18px;border-radius:12px;border:1px solid var(--pc);
   background:linear-gradient(90deg,color-mix(in srgb,var(--pc) 38%,#0b0e14),#0f1420 70%);box-shadow:0 10px 30px #0008,inset 0 0 0 1px #ffffff12;animation:res-in .5s ease-out}
 .res-banner::before{content:'';position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--pc)}

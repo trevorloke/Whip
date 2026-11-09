@@ -27,7 +27,7 @@ function resBuildRecord(nd) {
   const pres = P ? {
     states: Object.fromEntries(Object.entries(P.states).map(([c, s]) => [c, [r1(s.dPct), r1(s.rPct), r1(s.iPct || 0)]])),
     evD: P.evD, evR: P.evR, popD: Math.round(P.popD), popR: Math.round(P.popR), popI: Math.round(P.popI || 0), names: P.names, winner: P.winner, inc: P.inc, running: !!P.running,
-    prev: P.prev ? { year: P.prev.year, states: P.prev.states } : null, homes: P.homes || null, vps: P.vps || null, offices: P.offices || null,
+    prev: P.prev ? { year: P.prev.year, states: P.prev.states } : null, homes: P.homes || null, vps: P.vps || null, offices: P.offices || null, houseVote: P.houseVote || null,
   } : null;
   const senate = { before: nd.before || null, after: { D: seats('D'), R: seats('R'), I: seats('I') }, races: (nd.races || []).map(r => {
     const o = { code: r.code, cls: r.cls, wParty: r.wParty, wName: r.wName, lParty: r.lParty, lName: r.lName, wPct: r1(r.wPct), lPct: r1(r.lPct), margin: r1(r.margin), flip: !!r.flip, open: !!r.open, threeWay: !!r.threeWay, inc: r.incumbent || null };
@@ -49,7 +49,7 @@ function archiveElection(nd) {
     if (rec.pres) {
       const pv = rec.pres.popD >= rec.pres.popR ? 'D' : 'R';
       if (pv !== rec.pres.winner) unlock('split');
-      if (Object.values(rec.pres.states).filter(s => (s[0] > s[1]) === (rec.pres.winner === 'D')).length >= 40) unlock('sweep40');
+      if (Object.entries(rec.pres.states).filter(([c, s]) => c !== 'DC' && (s[0] > s[1]) === (rec.pres.winner === 'D')).length >= 40) unlock('sweep40');
     }
   } catch (e) { console.error('archiveElection failed', e); }
 }
@@ -83,17 +83,26 @@ const resSwingOf = (P, c) => P.prev && P.prev.states && P.prev.states[c] != null
 const resMaj = o => (o.D || 0) > (o.R || 0) ? 'D' : (o.R || 0) > (o.D || 0) ? 'R' : null;
 // the headline of a record, for the explorer and the Almanac
 function resHeadline(R) {
-  if (R.pres) { const P = R.pres, w = P.winner, re = w === P.inc && P.running, big = Math.max(P.evD, P.evR); return `${P.names[w]} ${big >= 400 ? 'wins in a landslide' : re ? 're-elected' : 'elected President'}, ${Math.max(P.evD, P.evR)}–${Math.min(P.evD, P.evR)}`; }
+  if (R.pres) {
+    const P = R.pres, w = P.winner, re = w === P.inc && P.running, big = Math.max(P.evD, P.evR);
+    if (resDeadlocked(P)) return `${P.names[w]} ${re ? 're-elected' : 'elected'} by the House after a 269–269 deadlock`;
+    return `${P.names[w]} ${big >= 400 ? 'wins in a landslide' : re ? 're-elected' : 'elected President'}, ${big}–${Math.min(P.evD, P.evR)}`;
+  }
   const b = R.senate.before || {}, a = R.senate.after, was = resMaj(b), now = resMaj(a);
+  if (!R.senate.races.length && !(a.D || a.R)) return `${R.year}: no detailed results on record`;
   return now ? `${PARTY[now].short} ${was === now ? 'hold' : 'take'} the Senate, ${a.D}–${a.R}${a.I ? `–${a.I}` : ''}` : `Senate deadlocked ${a.D}–${a.R}`;
 }
+// a full 538-vote count that nobody won outright (the House chose), and how the state delegations voted
+const resDeadlocked = P => P.evD + P.evR === 538 && P.evD < 270 && P.evR < 270;
+const resHouseTxt = P => { const hv = P.houseVote; if (!hv) return ''; const w = P.winner, l = other(w), tied = 50 - hv.D - hv.R; return hv[w] > hv[l] ? `${hv[w]} delegations to ${hv[l]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${hv.D}–${hv.R}${tied ? ` with ${tied} tied` : ''}`; };
 // two or three sentences of narrative for a record's presidential race
 function resNarrative(R) {
   const P = R.pres, w = P.winner, l = other(w), evW = Math.max(P.evD, P.evR), evL = Math.min(P.evD, P.evR), re = w === P.inc && P.running;
   const carried = Object.keys(P.states).filter(c => resPresW(P, c) === w).length, tot = P.popD + P.popR + (P.popI || 0) || 1;
   const pvW = P.popD >= P.popR ? 'D' : 'R', gap = Math.abs(P.popD - P.popR), pts = gap / tot * 100, tip = resPresTip(P), closest = resPresClosest(P, 1)[0];
-  const out = [];
-  out.push(`${P.names[w]}${P.offices && P.offices[w] ? `, the ${P.offices[w].replace(/^President$/, 'sitting President')},` : ''} ${re ? 'won a second term' : w === P.inc ? `kept the White House for the ${PARTY[w].short}` : `took the White House from the ${PARTY[l].short}`} with <b>${evW} electoral votes</b> to ${P.names[l]}'s ${evL}, carrying ${carried} of 51 contests${evW >= 400 ? ' — a landslide by any measure' : evW < 290 ? ' in a race that went down to the wire' : ''}.`);
+  const out = [], who = `${P.names[w]}${P.offices && P.offices[w] ? `, the ${P.offices[w].replace(/^President$/, 'sitting President')},` : ''}`, how = re ? 'won a second term' : w === P.inc ? `kept the White House for the ${PARTY[w].short}` : `took the White House from the ${PARTY[l].short}`;
+  if (resDeadlocked(P)) out.push(`${who} ${how} without winning the Electoral College: it deadlocked at <b>269–269</b>, and under the Twelfth Amendment the House of Representatives chose the President, one vote per state delegation${P.houseVote ? ` (${resHouseTxt(P)})` : ''}. ${P.names[w]} carried ${carried} of 51 contests on the night.`);
+  else out.push(`${who} ${how} with <b>${evW} electoral votes</b> to ${P.names[l]}'s ${evL}, carrying ${carried} of 51 contests${evW >= 400 ? ' — a landslide by any measure' : evW < 290 ? ' in a race that went down to the wire' : ''}.`);
   if (pvW !== w) out.push(`The popular vote went the other way: ${P.names[pvW]} drew <b>${nfmt(gap)} more votes</b> (${pts.toFixed(1)} points) and still lost — a split decision that will be argued about for years.`);
   else out.push(`The popular vote margin was ${nfmt(gap)} votes, ${pts.toFixed(1)} points, out of ${nfmt(tot)} cast${P.popI ? `; independent ${P.names.I} took ${(P.popI / tot * 100).toFixed(1)}%` : ''}.`);
   if (tip) out.push(`The tipping point was <b>${stName(tip)}</b> (${EV[tip]} EV), carried by ${Math.abs(resPresM(P, tip)).toFixed(1)}${closest !== tip ? `; the closest state of all was ${stName(closest)}, decided by ${Math.abs(resPresM(P, closest)).toFixed(1)}` : ''}.`);
@@ -113,8 +122,14 @@ function resNorm(r) {
   o.house.after = o.house.after || { D: 0, R: 0 }; o.house.byState = o.house.byState || {};
   o.gov = (o.gov || []).map(cand);
   o.president = o.president || { name: S.president.name, party: S.president.party, terms: S.president.terms || 1 };
-  if (o.pres) o.pres = { states: {}, evD: 0, evR: 0, popD: 0, popR: 0, popI: 0, names: { D: '—', R: '—' }, winner: 'D', inc: 'D', ...o.pres };
-  if (o.pres && !Object.keys(o.pres.states).length) o.pres = null;
+  if (o.pres) {
+    const p = { states: {}, evD: 0, evR: 0, popD: 0, popR: 0, popI: 0, winner: 'D', inc: 'D', ...o.pres };
+    p.names = { D: '—', R: '—', ...(o.pres.names || {}) };
+    p.states = Object.fromEntries(Object.entries(p.states || {}).filter(([c, s]) => EV[c] && Array.isArray(s) && s.length >= 2).map(([c, s]) => [c, [+s[0] || 0, +s[1] || 0, +s[2] || 0]]));
+    if (p.winner !== 'D' && p.winner !== 'R') p.winner = p.evD >= p.evR ? 'D' : 'R';
+    if (p.inc !== 'D' && p.inc !== 'R') p.inc = p.winner;
+    o.pres = Object.keys(p.states).length ? p : null;
+  }
   return o;
 }
 
@@ -124,7 +139,7 @@ function resExplorer(rec, back) {
   if (!rec) { if (back) back(); return; }
   rec = resNorm(rec);
   const tabs = [rec.pres && 'pres', 'senate', 'house', rec.gov && rec.gov.length && 'gov', (rec.campaign || rec.conventions) && 'campaign', 'table'].filter(Boolean);
-  RESX = { rec, tabs, tab: tabs[0], sort: null, sel: null, back, pdAt: 0, pdEl: null };
+  RESX = { rec, tabs, tab: tabs[0], sort: null, sel: null, back, pdAt: Date.now() }; // pdAt: the click that trails the opening tap must not count
   let el = $('#night');
   if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
   hideModal(); el.classList.remove('hidden');
@@ -133,11 +148,12 @@ function resExplorer(rec, back) {
 }
 function resXEvent(e) {
   const X = RESX; if (!X) return;
+  // a tap fires pointerdown and then click, and the pointerdown re-renders, so the click lands on a fresh node: act once.
+  // Clicks are still honored on their own (keyboard activation, or a browser that never sent the pointerdown).
+  if (e.type === 'click' && Date.now() - X.pdAt < 700) return;
   const t = e.target.closest('[data-rtab],[data-sort],[data-code],#ndone,#resback');
   if (!t) return;
-  // a tap fires pointerdown and then click: act once
-  if (e.type === 'click' && X.pdEl === t && Date.now() - X.pdAt < 700) return;
-  if (e.type === 'pointerdown') { X.pdAt = Date.now(); X.pdEl = t; }
+  if (e.type === 'pointerdown') X.pdAt = Date.now();
   if (t.id === 'ndone' || t.id === 'resback') return resXClose();
   if (t.dataset.rtab) { X.tab = t.dataset.rtab; X.sel = null; sfx.click(); }
   else if (t.dataset.sort) { const k = t.dataset.sort; X.sort = X.sort && X.sort.k === k ? { k, d: -X.sort.d } : { k, d: k === 'state' ? 1 : -1 }; sfx.click(); }
@@ -189,7 +205,7 @@ function resXPres(R, X) {
   const closest = resPresClosest(P, 10);
   const swings = Object.keys(P.states).map(c => [c, resSwingOf(P, c)]).filter(x => x[1] != null).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 8);
   const regions = Object.entries(RES_REGIONS).map(([name, codes]) => { let d = 0, r = 0, i = 0, ev = { D: 0, R: 0 }; for (const c of codes) { const s = P.states[c]; if (!s) continue; const pop = POP[c] || 1; d += s[0] * pop; r += s[1] * pop; i += s[2] * pop; ev[resPresW(P, c)] += EV[c] || 0; } return { name, d, r, i, ev }; });
-  const left = `${resCard('', `<div class="res-h" style="color:${PARTY[w].color}">${P.names[w].toUpperCase()} ${w === P.inc && P.running ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div><div class="res-dek">${Math.max(P.evD, P.evR)} electoral votes to ${Math.min(P.evD, P.evR)} · ${carried} of 51 contests · ${pvW === w ? 'won the popular vote' : '<span class="res-split">lost the popular vote</span>'} by ${pts.toFixed(1)} points</div>${map}<div class="nsub">Shade = margin · labels: electoral votes${P.prev ? ` and the swing since ${P.prev.year}` : ''} · gold ring: the tipping-point state · click a state</div>`)}
+  const left = `${resCard('', `<div class="res-h" style="color:${PARTY[w].color}">${P.names[w].toUpperCase()} ${w === P.inc && P.running ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div><div class="res-dek">${resDeadlocked(P) ? `269–269 · chosen by the House${P.houseVote ? `: ${resHouseTxt(P)}` : ''}` : `${Math.max(P.evD, P.evR)} electoral votes to ${Math.min(P.evD, P.evR)}`} · ${carried} of 51 contests · ${pvW === w ? 'won the popular vote' : '<span class="res-split">lost the popular vote</span>'} by ${pts.toFixed(1)} points</div>${map}<div class="nsub">Shade = margin · labels: electoral votes${P.prev ? ` and the swing since ${P.prev.year}` : ''} · gold ring: the tipping-point state · click a state</div>`)}
     ${resCard('Electoral College', barChart(`${P.names.D} vs ${P.names.R}`, { D: P.evD, R: P.evR, und: 0 }, 538, 270, '270 to win') + `<div class="res-kpis">${resKpi('Tipping point', tip ? stName(tip) : '—', tip ? `${EV[tip]} EV · ${resPresW(P, tip)} +${Math.abs(resPresM(P, tip)).toFixed(1)}` : 'no majority')}${resKpi('Closest state', stName(closest[0]), `${resPresW(P, closest[0])} +${Math.abs(resPresM(P, closest[0])).toFixed(1)}`)}${resKpi('States carried', `${carried}–${51 - carried}`, 'of 50 states + DC')}${resKpi('Turnout', nfmt(tot), 'votes cast')}${P.popI ? resKpi('Third party', pct(P.popI / tot * 100), `${P.names.I} (I)`) : resKpi('Third party', '—', 'none of note')}</div>`)}
     ${resCard('Popular vote', resPv(P.names.D, P.popD, P.names.R, P.popR, P.popI, P.names.I) + `<div class="res-callout">${pvW !== w ? `<span class="res-split">⚠ Split decision:</span> <b>${P.names[w]}</b> wins the Electoral College ${Math.max(P.evD, P.evR)}–${Math.min(P.evD, P.evR)} while losing the popular vote by <b>${nfmt(gap)}</b> votes (${pts.toFixed(1)} points).` : `<b>${P.names[w]}</b> wins both the Electoral College and the popular vote, by ${nfmt(gap)} votes (${pts.toFixed(1)} points).`}<br><small>${nfmt(P.popD)} D · ${nfmt(P.popR)} R${P.popI ? ` · ${nfmt(P.popI)} I` : ''}</small></div>`)}
     ${resCard('Regional popular vote', `<div class="res-regions">${regions.map(g => `<div class="res-region"><b>${g.name}</b>${resPv('D', g.d, 'R', g.r, g.i)}<span style="color:${PARTY.D.color}">D ${g.ev.D} EV</span> · <span style="color:${PARTY.R.color}">R ${g.ev.R} EV</span></div>`).join('')}</div><div class="nsub">Shares weighted by state population.</div>`)}`;
@@ -202,7 +218,7 @@ function resXPres(R, X) {
   return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${right}</div></div>`;
 }
 function resWaveCard(R) {
-  if (R.wave == null) return '';
+  if (R.wave == null || R.waveSignal == null) return '';
   const side = R.side || S.side, sgnTxt = v => `${v >= 0 ? PARTY[side].short : PARTY[other(side)].short} +${Math.abs(v).toFixed(1)}`;
   const miss = R.wave - R.waveSignal;
   return resCard('The wave vs. the forecast', `<div class="res-wave"><div class="pc"><small>Forecasters saw</small><b>${sgnTxt(R.waveSignal)}</b></div><div class="pc"><small>It was</small><b style="color:${R.wave >= 0 ? 'var(--yes)' : 'var(--no)'}">${sgnTxt(R.wave)}</b></div><div class="nsub" style="flex:1;min-width:180px">${Math.abs(miss) < 1.5 ? 'The forecast was on the money.' : Math.abs(miss) < 4 ? `The polls missed by ${Math.abs(miss).toFixed(1)} points${miss > 0 ? ', in your favor' : ', against you'}.` : `A ${Math.abs(miss).toFixed(1)}-point polling miss${miss > 0 ? ' that broke your way' : ' that landed on your party'} — the kind pollsters write post-mortems about.`}</div></div>`);
@@ -226,7 +242,7 @@ function resXSenate(R, X) {
   const pc = (r, p) => { const v = r.wParty === p ? r.wPct : r.lParty === p ? r.lPct : r.c3 && r.c3[0] === p ? r.c3[2] : null; return v == null ? null : num(v, `<span style="color:${PARTY[p].color}">${v.toFixed(1)}</span>`); };
   const cols = [{ k: 'state', l: 'State' }, { k: 'cls', l: 'Class', num: 1 }, { k: 'winner', l: 'Winner' }, { k: 'd', l: 'D %', num: 1 }, { k: 'r', l: 'R %', num: 1 }].concat(three.length ? [{ k: 'i', l: 'I %', num: 1 }] : []).concat([{ k: 'margin', l: 'Margin', num: 1 }, { k: 'seat', l: 'Seat', num: 1 }]);
   const rows = races.map(r => ({ code: r.code, c: { state: st(r.code), cls: r.cls != null ? num(r.cls) : null, winner: { v: r.wName, h: resNm(r.wName, r.wParty) }, d: pc(r, 'D'), r: pc(r, 'R'), i: pc(r, 'I'), margin: num(r.margin, resMarginTag(r.wParty, r.margin)), seat: num(r.flip ? 2 : r.open ? 1 : 0, r.flip ? '<span class="call flip">FLIP</span>' : `<span style="color:var(--dim)">${r.open ? 'open · hold' : 'hold'}</span>`) } }));
-  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'HOLD' : 'TAKE'} THE SENATE` : 'A SENATE DEADLOCK'}</div><div class="res-dek">${races.length} seats up · ${flips.length} flipped · ${resCnt(b)} → <b>${resCnt(a)}</b> · ${PARTY[R.side].short} ${resSigned(net, 0)}</div>${map}<div class="nsub">Seats up this year · gold ring and FLIP: seats that changed hands · click a state</div>`)}
+  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'HOLD' : 'TAKE'} THE SENATE` : 'A SENATE DEADLOCK'}</div><div class="res-dek">${races.length} seats up · ${flips.length} flipped · ${Sn.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${Sn.before ? ` · ${PARTY[R.side].short} ${resSigned(net, 0)}` : ''}</div>${map}<div class="nsub">Seats up this year · gold ring and FLIP: seats that changed hands · click a state</div>`)}
     ${resCard('Balance of power', resSeatSnake(b, a, races.map(r => ({ p: r.wParty, m: r.margin, flip: r.flip, code: r.code, title: `${stName(r.code)}: ${r.wName} (${r.wParty}) +${r.margin.toFixed(1)}` })), 51, 100, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span>${a.I ? ` · <span style="color:${PARTY.I.color};font-weight:800">I ${a.I}</span>` : ''} · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 51 for control · seats decided this year sorted by margin, flips outlined in gold`))}
     ${resCard(`Every race · ${races.length}`, `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'margin', d: 1 })}</div>`)}`;
   const right = `${resSelDetail(R, X.sel)}${resCard(`Seats that flipped · ${flips.length}`, flips.length ? `<div class="res-list">${flips.sort((x, y) => x.margin - y.margin).map(r => resRow(r.code, `<span><b>${r.code}</b> ${stName(r.code)} · ${resNm(r.wName, r.wParty)} ${r.open ? 'takes the open seat' : `unseats ${r.lName}`}</span>`, resMarginTag(r.wParty, r.margin), X.sel === r.code)).join('')}</div>` : '<div class="nsub">Not a single seat changed hands.</div>')}
@@ -246,7 +262,7 @@ function resXHouse(R, X) {
   const gains = Object.entries(by).map(([c, s]) => [c, s[0] - s[2]]).filter(x => x[1]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
   const cells = []; for (const [c, s] of Object.entries(by).sort((x, y) => (y[1][3] || 0) - (y[1][4] || 0) - ((x[1][3] || 0) - (x[1][4] || 0)))) { const m = Math.abs((s[3] || 0) - (s[4] || 0)), gain = s[0] - s[2]; for (let i = 0; i < s[1]; i++) cells.push({ p: i < s[0] ? 'D' : 'R', m, code: c, flip: gain > 0 ? i >= s[2] && i < s[0] : i >= s[0] && i < s[2], title: `${stName(c)}: ${s[0]}D–${s[1] - s[0]}R` }); }
   const net = (a[R.side] || 0) - (b[R.side] || 0);
-  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'KEEP' : 'WIN'} THE HOUSE` : 'HOUSE DEADLOCKED'}</div><div class="res-dek">All 435 seats · ${resCnt(b)} → <b>${resCnt(a)}</b> · ${PARTY[R.side].short} ${resSigned(net, 0)} · ${gains.length} states shifted</div>${map}<div class="nsub">Labels: D–R seats · gold ring: delegation changed · click a state</div>`)}
+  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'KEEP' : 'WIN'} THE HOUSE` : 'HOUSE DEADLOCKED'}</div><div class="res-dek">All 435 seats · ${H.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${H.before ? ` · ${PARTY[R.side].short} ${resSigned(net, 0)}` : ''} · ${gains.length} states shifted</div>${map}<div class="nsub">Labels: D–R seats · gold ring: delegation changed · click a state</div>`)}
     ${resCard('Balance of power', resSnakeHTML(cells, 218, 435, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span> · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 218 for control · seats grouped by state, sorted by the state's margin, gains outlined in gold`))}
     ${H.pop ? resCard('National House vote', resPv('Democrats', H.pop[0], 'Republicans', H.pop[1]) + `<div class="nsub">Two-party share of all House ballots; ${H.pop[0] > H.pop[1] ? 'Democrats' : 'Republicans'} led by ${Math.abs(H.pop[0] - H.pop[1]).toFixed(1)} points and ${(now && (H.pop[0] > H.pop[1]) === (now === 'D')) ? 'won the chamber' : 'still lost the chamber'}.</div>`) : ''}`;
   const right = `${resSelDetail(R, X.sel)}${resCard(`Where the delegations moved · ${gains.length}`, gains.length ? `<div class="res-list">${gains.slice(0, 12).map(([c, g]) => resRow(c, `<span><b>${c}</b> ${stName(c)} · now ${by[c][0]}D–${by[c][1] - by[c][0]}R</span>`, `<b style="color:${g > 0 ? PARTY.D.color : PARTY.R.color}">${g > 0 ? 'D' : 'R'} +${Math.abs(g)}</b>`, X.sel === c)).join('')}</div>` : '<div class="nsub">Every state sent back the same split.</div>')}
@@ -283,7 +299,7 @@ function resXCampaign(R, X) {
   const cards = [];
   if (C && Array.isArray(C.polls) && C.polls.length > 1) {
     const me = C.polls.map(p => +p.me || 0), them = C.polls.map(p => +p.them || 0);
-    cards.push(resCard('The poll tracker', lineChart([{ pts: me, color: PARTY[side].color, label: PARTY[side].short }, { pts: them, color: PARTY[other(side)].color, label: PARTY[other(side)].short }]) + `<div class="res-chips">${C.polls.map((p, i) => `<span class="res-chip">${p.lbl || `Round ${i + 1}`}: ${(+p.me || 0).toFixed(0)}–${(+p.them || 0).toFixed(0)}</span>`).join('')}</div>${P ? `<div class="nsub">Final polls: your ticket ${me[me.length - 1].toFixed(0)}–${them[them.length - 1].toFixed(0)}. Result: ${P.names[side]} ${(P[side === 'D' ? 'popD' : 'popR'] / (P.popD + P.popR + (P.popI || 0)) * 100).toFixed(1)}% of the vote.</div>` : ''}`));
+    cards.push(resCard('The poll tracker', lineChart([{ pts: me, color: PARTY[side].color, label: PARTY[side].short }, { pts: them, color: PARTY[other(side)].color, label: PARTY[other(side)].short }]) + `<div class="res-chips">${C.polls.map((p, i) => `<span class="res-chip">${p.lbl || `Round ${i + 1}`}: ${(+p.me || 0).toFixed(0)}–${(+p.them || 0).toFixed(0)}</span>`).join('')}</div>${P ? `<div class="nsub">Final polls: your ticket ${me[me.length - 1].toFixed(0)}–${them[them.length - 1].toFixed(0)}. Result: ${P.names[side]} ${(P[side === 'D' ? 'popD' : 'popR'] / (P.popD + P.popR + (P.popI || 0) || 1) * 100).toFixed(1)}% of the vote.</div>` : ''}`));
   }
   if (V && (V.D || V.R)) cards.push(resCard('The conventions', `<div class="res-conv">${['D', 'R'].map(p => { const c = V[p]; if (!c) return ''; const vp = c.vp && typeof c.vp === 'object' ? c.vp.name : c.vp; return `<div class="res-convcard" style="border-color:${PARTY[p].color}"><h4 style="color:${PARTY[p].color}">${PARTY[p].name} convention${c.city ? ` · ${c.city}` : ''}</h4>${P ? `<p>Nominee: <b>${P.names[p]}</b>${vp ? ` · running mate <b>${vp}</b>${c.vp && c.vp.state ? ` (${c.vp.state})` : ''}` : ''}</p>` : vp ? `<p>Running mate: <b>${vp}</b></p>` : ''}${c.bounce != null ? `<p>Bounce: <b style="color:${c.bounce >= 0 ? 'var(--yes)' : 'var(--no)'}">${resSigned(+c.bounce)}</b> nationally</p>` : ''}${c.unity != null ? `<p>Unity: <b>${Math.round(+c.unity * 100)}%</b> ${+c.unity >= 0.9 ? '· a united party' : +c.unity >= 0.7 ? '· some grumbling' : '· an open feud'}</p>` : ''}${Array.isArray(c.planks) && c.planks.length ? `<p>Platform: ${c.planks.map(k => k && k.tag && TAG[k.tag] ? `${TAG[k.tag][0]} ${k.dir > 0 ? 'more' : 'less'} ${TAG[k.tag][1]}` : resAny(k)).join(' · ')}</p>` : ''}${c.theme && TAG[c.theme] ? `<p>Message: ${TAG[c.theme][0]} ${TAG[c.theme][1]}</p>` : ''}${c.keynote ? `<p>Keynote: ${typeof c.keynote === 'object' ? c.keynote.name || '' : c.keynote}</p>` : ''}${Array.isArray(c.events) && c.events.length ? `<p><small style="color:var(--dim)">${c.events.map(e => typeof e === 'string' ? e : e && (e.text || e.title || e.t) || '').filter(Boolean).join(' · ')}</small></p>` : ''}</div>`; }).join('')}</div>`));
   if (C && Array.isArray(C.debates) && C.debates.length) cards.push(resCard('The debates', `<div class="res-deb">${resAny(C.debates)}</div>`));
