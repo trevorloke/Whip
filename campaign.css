@@ -1,1 +1,110 @@
 /* Floor Fight — styles for the fall campaign. Loaded after style.css. */
+.modal-card.camp-wide{max-width:900px}
+
+/* the two tickets */
+.camp-tickets{display:flex;align-items:center;gap:10px;margin:8px 0;flex-wrap:wrap}
+.camp-tk{display:flex;gap:10px;align-items:center;border:2px solid;border-radius:12px;padding:8px 12px;flex:1;min-width:240px;background:linear-gradient(180deg,#1a2030,#141a28);box-shadow:0 6px 18px #0005}
+.camp-tk svg,.camp-tk .camp-noport{width:56px;height:56px;border-radius:50%;flex:none;border:2px solid #e3b54a44;background:#2a313d}
+.camp-tk .camp-noport{display:flex;align-items:center;justify-content:center;font-size:24px}
+.camp-tkn{display:flex;align-items:center;gap:8px;font-size:15px;flex-wrap:wrap}
+.camp-tkn a{color:var(--gold2);font-size:11px}
+.camp-you{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;background:var(--gold);color:#1a1405;padding:2px 6px;border-radius:4px;font-weight:800}
+.camp-tk small{display:block;color:var(--dim);font-size:11px;line-height:1.45}
+.camp-tk small b{color:var(--ink)}
+
+/* cards: the tracker and the map */
+.camp-card{background:#141821;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0}
+.camp-ch{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:13px}
+.camp-ch span{color:var(--dim);font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+.camp-pop{display:flex;flex-wrap:wrap;gap:4px 18px;margin:8px 0 4px;font-size:13px;align-items:baseline}
+.camp-pop b{font-family:var(--serif);font-size:24px;margin-right:5px}
+.camp-pop-sm{margin:6px 0}
+.camp-pop-sm b{font-size:18px}
+.camp-lead{font-size:12px;color:var(--gold2);margin:2px 0 6px}
+.camp-polls{display:flex;flex-wrap:wrap;gap:4px}
+.camp-pt{font-size:11px;color:var(--dim);background:#1a2030;border:1px solid var(--line);border-radius:999px;padding:2px 8px;white-space:nowrap}
+.camp-pt b{color:var(--ink)}
+.camp-evrow{display:flex;align-items:center;gap:12px;margin:8px 0}
+.camp-ev{text-align:center;min-width:72px}
+.camp-ev b{display:block;font-family:var(--serif);font-size:36px;line-height:1;font-weight:900}
+.camp-ev small{color:var(--dim);font-size:11px}
+.camp-evbar{flex:1;position:relative;height:16px;border-radius:8px;overflow:hidden;background:#3a4250;display:flex}
+.camp-evbar i{display:block;height:100%}
+.camp-evbar i+i{margin-left:auto}
+.camp-evbar em{position:absolute;left:50%;top:-3px;bottom:-3px;width:2px;background:#fff;opacity:.85}
+.camp-chips{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:8px 0 4px;font-size:12px}
+.camp-chip{border:1px solid;border-radius:999px;padding:2px 9px;background:#1a2030;white-space:nowrap}
+.camp-chip small{color:var(--dim)}
+.camp-chip.focus{box-shadow:0 0 0 2px #f6d27a66}
+.camp-chip.oppfocus{border-style:dashed}
+.camp-path{font-size:12px;color:var(--dim);margin:6px 0 0;line-height:1.5}
+.camp-path b{color:var(--ink)}
+
+/* money */
+.camp-money{display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px;align-items:center;background:#1d1a10;border:1px solid #e3b54a55;border-radius:10px;padding:8px 12px;margin:10px 0;font-size:12px}
+.camp-money .cashctl{flex-wrap:wrap}
+.camp-money .cashctl small{color:var(--dim);display:inline}
+.camp-money .cashctl .btn{padding:3px 10px}
+
+/* decisions */
+.camp-dec{background:#141821;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:0 10px 10px 0;padding:10px 12px;margin:10px 0}
+.camp-dec h3{margin:0 0 4px;font-size:16px}
+.camp-dec p{margin:2px 0 8px;font-size:12px;color:var(--dim);line-height:1.45}
+.camp-opts{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px}
+.camp-opts .btn{font-size:13px;padding:7px 10px;align-items:flex-start}
+.camp-opts .btn small{white-space:normal;line-height:1.35}
+.camp-opts .btn small b{color:var(--ink)}
+.camp-evopts{grid-template-columns:1fr}
+.camp-pick{display:flex;align-items:center;gap:10px;flex-wrap:wrap;background:#1a2a20;border:1px solid #2f6b47;border-radius:8px;padding:7px 10px;font-size:13px}
+.camp-pick small{color:var(--dim);font-size:11px}
+.camp-pick a{color:var(--gold2);font-size:12px;margin-left:auto}
+.camp-stars{color:var(--gold2);letter-spacing:1px}
+.camp-state{font-size:12px;color:var(--dim);line-height:1.6}
+
+/* the debates */
+.camp-score{background:#141821;border:1px solid #e3b54a55;border-radius:12px;padding:12px;margin:10px 0}
+.camp-sc-head{display:grid;grid-template-columns:1fr auto 1fr;gap:10px;align-items:stretch}
+@media (max-width:640px){.camp-sc-head{grid-template-columns:1fr}}
+.camp-sc-side{border:2px solid;border-radius:10px;padding:8px 10px;background:#1a2030;display:flex;flex-direction:column;gap:2px}
+.camp-sc-side small,.camp-sc-verdict small{color:var(--dim);font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+.camp-sc-side b{font-size:15px}
+.camp-sc-verdict{text-align:center;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 6px}
+.camp-sc-verdict b{font-family:var(--serif);font-size:26px;font-weight:900;line-height:1.1;animation:pop .8s}
+.camp-snap{margin:12px 0 6px}
+.camp-snap small{color:var(--dim);font-size:11px}
+.camp-score p{margin:8px 0 0;font-size:14px;line-height:1.55;font-family:var(--serif)}
+.camp-vpbox{background:#141821;border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:10px 0;font-size:13px}
+.camp-vpbox.good{border-color:#2f6b47}.camp-vpbox.bad{border-color:#7a3333}
+.camp-vpbox p{margin:6px 0;line-height:1.5}
+
+/* effects and outcomes */
+.camp-fx{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line);background:#1a2030;margin:2px 3px 2px 0;color:var(--dim)}
+.camp-fx.good{border-color:#2f6b47;color:#9be3b7;background:#1a2a20}
+.camp-fx.bad{border-color:#7a3333;color:#ff9d9d;background:#2a1a1a}
+.camp-out{background:#141821;border:1px solid #e3b54a55;border-radius:12px;padding:12px 14px;margin:10px 0}
+.camp-out small{display:block;color:var(--gold);font-size:10px;letter-spacing:2px;text-transform:uppercase}
+.camp-out b{display:block;font-family:var(--serif);font-size:20px;margin:4px 0 6px}
+.camp-out p{margin:0 0 8px;font-size:14px;line-height:1.55;font-family:var(--serif)}
+
+/* surrogates */
+.camp-sur{display:flex;align-items:center;gap:10px;background:#1a2030;border:1px solid var(--line);border-radius:8px;padding:6px 10px;font-size:12px;margin:4px 0}
+.camp-sur.on{border-color:#2f6b47}
+.camp-sur svg{width:40px;height:40px;border-radius:50%;flex:none;border:2px solid #e3b54a33}
+.camp-sur small{display:block;color:var(--dim);font-size:11px}
+.camp-sur .btn{padding:4px 12px;font-size:12px;flex:none}
+.camp-surgo{font-size:12px;white-space:nowrap}
+.camp-surgo small{display:inline;color:var(--yes)}
+.camp-surgo a{color:var(--gold2);margin-left:6px}
+.camp-states{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;align-items:center}
+.camp-states small{width:100%;color:var(--dim);font-size:11px}
+.camp-states .btn{padding:4px 9px;font-size:12px}
+.camp-states .btn small{display:inline;width:auto;margin-left:4px;color:var(--dim)}
+
+/* the recap and the auto-run log */
+.camp-chart{margin-top:6px}
+.camp-hl{font-family:var(--serif);font-weight:900;font-size:11px;letter-spacing:.3px}
+.camp-recap{font-size:12px;line-height:1.5;margin-top:6px}
+.camp-recap div{padding:3px 0;border-bottom:1px dashed #2a3242}
+.camp-recap div:last-child{border-bottom:none;color:var(--gold2)}
+.camp-autolog{background:#141821;border-left:3px solid var(--gold);padding:8px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px;line-height:1.6}
+.cdet .camp-recap{margin-top:4px}
