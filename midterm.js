@@ -15,7 +15,7 @@ const MID_ROUNDS = ['Labor Day', 'October', 'The Final Weekend', 'Election Eve']
 const MID_STRATS = {
   defend: { icon: '🛡', name: 'Defend the seats you hold', prose: 'a defensive map', blurb: 'Money, staff and the candidate\'s calendar go to your own close seats.' },
   offense: { icon: '⚔', name: 'Go on offense', prose: 'an offensive map', blurb: 'Raid the other side\'s close seats and let your safe incumbents fend for themselves.' },
-  nationalize: { icon: '🏛', name: 'Nationalize the midterms', prose: 'a referendum on the White House', blurb: 'Every race becomes a vote on the President. Great if the country agrees with you about him.' },
+  nationalize: { icon: '🏛', name: 'Nationalize the midterms', prose: 'a referendum on the White House', blurb: 'Every race becomes a vote on the President. Great if the country agrees with you about the President.' },
   localize: { icon: '🏘', name: 'All politics is local', prose: 'a race-by-race, all-politics-is-local campaign', blurb: 'Potholes, plants and hometown names: every candidate runs away from Washington.' },
 };
 const MID_MSG = { economy: 'Paychecks, prices and the plant that closed.', environment: 'Clean water, wildfires and the next storm.', security: 'The border, the base and the bad guys.', welfare: 'Medicare, the clinic and the pension.', rural: 'The farm bill, the feed store and rural broadband.', urban: 'Rent, transit and safe streets.', taxes: 'What Washington takes out of your check.', tech: 'Chips, broadband and the jobs of the future.' };
@@ -83,11 +83,15 @@ function midSeatChart(polls, side, opts = {}) {
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart mid-chart">`;
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="#2a3242"/><text x="${pl - 5}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}</text>`;
   svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(51)}" y2="${y(51)}" stroke="#e3b54a" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${y(51) + 4}" font-size="${fs}" fill="#e3b54a" font-weight="700">51 · control</text>`;
-  if (need === 50) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${y(50) + 4}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
+  const lab51 = y(51) + 4, lab50 = Math.max(y(50) + 4, lab51 + fs + 1); // on a tall seat axis the two lines sit close: keep their labels apart
+  if (need === 50) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${lab50}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
   pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/>`; if (narrow && n > 3 && (n - 1 - i) % 2) return; svg += `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${n > 1 && i === 0 ? 'start' : n > 1 && i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${String(p.short || p.lbl || '').slice(0, 12)}</text>`; });
   svg += `<polyline fill="none" stroke="${col}" stroke-width="2.6" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(+p.seats)}`).join(' ')}"/>`;
   pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(+p.seats)}" r="${i === n - 1 ? 4.5 : 2.8}" fill="${col}"><title>${p.lbl}: ${(+p.seats).toFixed(1)} seats projected${p.gb != null ? `, generic ballot ${(+p.gb).toFixed(1)}%` : ''}</title></circle>`; });
-  const last = vals[n - 1], ly = Math.abs(y(last) - y(51)) < 12 ? y(last) + (last >= 51 ? -10 : 14) : y(last) + 4;
+  // the value label must not sit on the "51 · control" or "50 + VP" labels: move it above or below both
+  const last = vals[n - 1], labs = need === 50 ? [lab51, lab50] : [lab51];
+  let ly = y(last) + 4;
+  if (labs.some(b => Math.abs(ly - b) < 12)) ly = last >= 51 || ly < Math.min(...labs) ? Math.min(...labs) - 12 : Math.max(...labs) + 13;
   return svg + `<text x="${W - pr + 6}" y="${ly}" font-size="${narrow ? 13 : 12}" fill="${col}" font-weight="800">~${last.toFixed(1)}</text></svg>`;
 }
 function midTrackerHTML() {
@@ -171,10 +175,12 @@ function midtermCampaign(done) {
 }
 
 /* ---------------- round 1: Labor Day ---------------- */
+// the committee runs on a top-two issue (that is where the +0.8 is), whichever plays better on this map and,
+// at the margin, suits the party; the bonus does not care whose issue it is, so neither does the committee
 function midDefaultMsg() {
-  const sal = Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]), prior = PARTY[S.side].prior;
-  const best = sal.slice(0, 2).find(([t]) => (prior[t] || 0) > 0) || sal.find(([t]) => (prior[t] || 0) > 0) || sal[0];
-  return best ? best[0] : 'economy';
+  const top = midTopSal(2).filter(t => TAGS.includes(t)), prior = PARTY[S.side].prior;
+  const val = t => Object.values(midMsgRaces(t)).reduce((a, v) => a + v, 0) + (prior[t] || 0) * 0.5;
+  return (top.length ? top : TAGS).slice().sort((a, b) => val(b) - val(a))[0] || 'economy';
 }
 function midNatGood(p) { const P = S.president; return (P.party === p && P.approval >= 52) || (P.party !== p && P.approval <= 45); }
 // what a strategy would do, from side p's point of view, race by race (margins measured before anything is applied)
@@ -194,14 +200,24 @@ function midApplyPlan(plan, p) {
   for (const [c, v] of Object.entries(plan.races)) if (v) midAdj(c, sg * v);
   M.national += sg * plan.national; M.houseAdj += sg * plan.house;
 }
+// what a strategy is worth in projected Senate seats on today's map: applied, measured, rolled back
+function midStratSeats(key) {
+  const M = midM(), keep = { national: M.national, houseAdj: M.houseAdj, races: { ...M.races } }, s0 = midSeats();
+  midApplyPlan(midStratPlan(key, S.side), S.side);
+  const d = midSeats() - s0; Object.assign(M, keep); return d;
+}
+// the committee's playbook (the default, and the auto-run): tie the races to a popular President of yours or an
+// unpopular one of theirs; otherwise defend if you have at least as many close seats to protect as to take.
+// Localizing, and reading the map closer than that, is left to you.
 function midDefaultStrat() {
-  const opts = Object.keys(MID_STRATS).map(k => { const pl = midStratPlan(k, S.side); return { k, v: pl.national * midRaces().length * 0.6 + Object.values(pl.races).reduce((a, v) => a + v, 0) * 0.5 }; });
-  return opts.sort((a, b) => b.v - a.v)[0].k;
+  if (midNatGood(S.side)) return 'nationalize';
+  const close = midRaces().filter(rc => Math.abs(midMargin(rc)) < 8), mine = close.filter(rc => rc.m.party === S.side).length;
+  return mine >= close.length - mine ? 'defend' : 'offense';
 }
 // the message: a top-2 issue lifts every race; every message also plays better where voters care about it
 function midMsgRaces(tag) { const o = {}; for (const rc of midRaces()) o[rc.m.state] = +(0.4 * clamp(ST[rc.m.state].voter[tag] || 0, -1, 1.5)).toFixed(2); return o; }
-function midApplyMsg(tag, p) {
-  const M = midM(), sg = p === S.side ? 1 : -1, hot = midTopSal(2).includes(tag);
+function midApplyMsg(tag, p, hotNow) {
+  const M = midM(), sg = p === S.side ? 1 : -1, hot = hotNow != null ? hotNow : midTopSal(2).includes(tag);
   if (hot) M.national += sg * 0.8;
   for (const [c, v] of Object.entries(midMsgRaces(tag))) if (v) midAdj(c, sg * v);
   S.salience = S.salience || {}; S.salience[tag] = (S.salience[tag] || 1) + 0.5;
@@ -209,8 +225,9 @@ function midApplyMsg(tag, p) {
 }
 function midOppPick() {
   const theirs = other(S.side), prior = PARTY[theirs].prior;
-  const sal = Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]);
-  const msg = ((Math.random() < 0.7 && sal.slice(0, 2).find(([t]) => (prior[t] || 0) > 0)) || sal.find(([t]) => (prior[t] || 0) > 0) || sal[0] || ['economy'])[0];
+  // three times in four they run on a top-two issue (their own party's favorite of the two); otherwise on their party's signature issue
+  const pp = t => prior[t] || 0, top = midTopSal(2).filter(t => TAGS.includes(t));
+  const msg = (Math.random() < 0.75 && top.length ? top : TAGS).slice().sort((a, b) => pp(b) - pp(a))[0] || 'economy';
   const ws = S.election.waveSignal, r = Math.random();
   let key;
   if (ws >= 3 && r < 0.6) key = 'localize';
@@ -220,11 +237,11 @@ function midOppPick() {
     key = theirsClose >= close.length - theirsClose ? 'defend' : 'offense';
     if (Math.random() < 0.25) key = key === 'defend' ? 'offense' : 'defend';
   }
-  return { msg, key, plan: midStratPlan(key, theirs) };
+  return { msg, key, plan: midStratPlan(key, theirs), hot: midTopSal(2).includes(msg) };
 }
-function midOppApply({ msg, key, plan }) {
+function midOppApply({ msg, key, plan, hot }) {
   const M = midM(), theirs = other(S.side), O = M.opp;
-  O.message = msg; O.msgHot = midApplyMsg(msg, theirs); O.strategy = key;
+  O.message = msg; O.msgHot = midApplyMsg(msg, theirs, hot); O.strategy = key;
   midApplyPlan(plan, theirs);
   const hit = Object.entries(plan.races).filter(([, v]) => v >= 1.5).map(([c]) => c);
   O.lines.push(`Labor Day: ran on ${TAG[msg][0]} ${TAG[msg][1]}${O.msgHot ? ' (a top issue: −0.8 for you everywhere)' : ''} with ${MID_STRATS[key].prose}${hit.length ? ` (−1.5 for you in ${hit.join(', ')})` : key === 'nationalize' ? ` (${midNum(-plan.national)} for you everywhere)` : key === 'localize' ? ` (${midNum(-plan.national)} for you everywhere)` : ''}.`);
@@ -240,6 +257,10 @@ function midApplyR1() {
   M.stage = 'r2'; midPoll('Labor Day');
 }
 function midStratStanding(key) {
+  const d = midStratSeats(key), seatsTxt = ` <b style="color:${d > 0.05 ? 'var(--yes)' : d < -0.05 ? 'var(--no)' : 'var(--dim)'}">≈ ${midNum(d)} seat${Math.abs(d) >= 0.95 && Math.abs(d) < 1.05 ? '' : 's'} on today's map.</b>`;
+  return midStratDetail(key) + seatsTxt;
+}
+function midStratDetail(key) {
   const pl = midStratPlan(key, S.side), P = S.president, up = Object.entries(pl.races).filter(([, v]) => v >= 1.5).map(([c]) => c), dn = Object.entries(pl.races).filter(([, v]) => v < 0).length;
   if (key === 'defend' || key === 'offense') return `+1.5 in ${up.length} race${up.length === 1 ? '' : 's'}${up.length ? ` (${up.slice(0, 8).join(', ')}${up.length > 8 ? '…' : ''})` : ''}; −0.5 in ${dn} other${dn === 1 ? '' : 's'}.`;
   if (key === 'nationalize') return `${presTitle()} is ${P.party === S.side ? 'yours' : 'theirs'} at ${P.approval}%: <b style="color:${pl.national > 0 ? 'var(--yes)' : 'var(--no)'}">${midNum(pl.national)} in every race, ${midNum(pl.house)} for the House</b>. It works with your own President at 52% or better, or theirs at 45% or worse.`;
