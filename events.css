@@ -1,1 +1,11 @@
 /* Floor Fight — styles for events. Loaded after style.css. */
+/* "Between bills" pill inside the kicker of the moments between bills */
+.evt-pill{display:inline-block;background:#e3b54a22;color:var(--gold2);border:1px solid #e3b54a66;font-weight:800;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;padding:1px 7px;border-radius:4px;margin-right:4px;vertical-align:middle}
+/* result cards on the morning-after screens between bills */
+.evt-card{background:#141821;border:1px solid var(--line);border-left:3px solid var(--gold);border-radius:0 8px 8px 0;padding:10px 12px;margin:10px 0;font-size:13px;line-height:1.5}
+.evt-card p{margin:5px 0}
+.evt-card b{color:var(--gold2)}
+/* a person row: portrait, name, subtitle */
+.evt-person{display:flex;gap:10px;align-items:center;background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0}
+.evt-person svg{width:52px;height:52px;border-radius:50%;border:2px solid #e3b54a66;flex:none}
+.evt-person small{color:var(--dim)}
