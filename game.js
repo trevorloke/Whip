@@ -1215,7 +1215,6 @@ function electionPrep() {
         <div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. The first unit ≈ +0.8 points nationally (a few House seats); more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${money(E.houseCash)}</span><button class="btn" data-hc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>
         ${govRaceCount(E.year) ? `<div class="race"><span>🏛️ <b>Governors' races</b><br><small style="color:var(--dim)">${govRaceCount(E.year)} governorships up. Transfer money to your party's candidates: the first unit ≈ +1.2 points in every race; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-gc="-1" ${E.govCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.govCash || 0)}</span><button class="btn" data-gc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>` : ''}
         ${pres ? presBattleHTML() : ''}
-        ${pres && false ? `<div class="race"><span>🇺🇸 <b>Presidential swing states</b><br><small style="color:var(--dim)">Ads and turnout in the battlegrounds. The first unit ≈ +0.9 points for your ticket; more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>` : ''}
       </div>
       <div class="campmap">${campaignMap()}<small>Click a state to add a unit · right-click to take one back</small></div>
       <div class="ftabs">${[['close', 'Close races'], ['mine', 'My seats'], ['theirs', 'Their seats'], ['all', 'All ' + E.races.length]].map(([k, l]) => `<button class="btn ${E.filter === k ? 'on' : ''}" data-filt="${k}">${l}</button>`).join('')}</div>
@@ -1587,7 +1586,7 @@ function render() {
     <span class="spacer"></span>
     <div class="stat"><span class="k">${PARTY[S.side].short} ${isMajority() ? 'majority' : 'minority'} · ${c.wins}–${c.losses} · streak ${c.streak}</span><span class="v rank">${rank()}</span></div>`;
 
-  $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival}, the <span title="${RIVAL_STYLES[rivalStyle()][1]}" style="border-bottom:1px dotted">${RIVAL_STYLES[rivalStyle()][0]}</span> · Next election ${electionYear(nextElectionK())}</div>
+  $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival}, the <span title="${RIVAL_STYLES[rivalStyle()][1]}" style="border-bottom:1px dotted">${RIVAL_STYLES[rivalStyle()][0]}</span> · Next election ${electionYear(nextElectionK())}${isPresYear(nextElectionK()) ? ' · a presidential year' : ' · midterms'}</div>
     <h2>${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}</h2><div class="blurb">${B.blurb}</div>
     <div class="fx">${fxChips(B.fx)}</div>
     ${B.applied.length ? `<div class="amend-list">Amended: ${B.applied.join(', ')}</div>` : ''}
