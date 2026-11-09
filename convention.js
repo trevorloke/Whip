@@ -49,6 +49,8 @@ const CONV_PLANK_TEXT = {
   },
 };
 ACH.push(['broker', '🤝', 'Kingmaker', 'Broker a contested convention.'], ['bounce', '🎈', 'Balloon Drop', 'Leave your convention with a bounce of 5 or more.']);
+// depth.js drew the menu's Hall of Legacy before these two existed: repaint it so they show from the first visit
+if (typeof legacyHTML === 'function' && $('#legacy')) $('#legacy').innerHTML = legacyHTML();
 let CONV_TAKEN = [];
 
 /* ---------------- small helpers ---------------- */
@@ -85,7 +87,8 @@ function convMakePerson(party, name, state, faction, age) {
   const x = newPerson(party, state && ST[state] ? state : pick(STATES)[0], { age: age || ri(45, 68) });
   if (name) x.name = name; x.faction = faction || pick(FACTIONS[party])[0];
   hist(x, `Worked as ${x.background}`, convYear() - ri(12, 25));
-  hist(x, pick([`Elected Governor of ${ST[x.state].name}`, `Elected to the U.S. House (${districtOf(x.state)})`, `Elected mayor of ${x.hometown}`, `Elected ${ST[x.state].name} Attorney General`]), convYear() - ri(4, 10));
+  const [won, office] = pick([[`Elected Governor of ${ST[x.state].name}`, `Former Governor of ${ST[x.state].name}`], [`Elected to the U.S. House (${districtOf(x.state)})`, 'Former House member'], [`Elected mayor of ${x.hometown}`, `Former mayor of ${x.hometown}`], [`Elected ${ST[x.state].name} Attorney General`, `Former ${ST[x.state].name} Attorney General`]]);
+  hist(x, won, convYear() - ri(4, 10)); x.office = office;
   return x;
 }
 // make sure both parties have a nominee record the convention can work with (old saves, direct calls)
@@ -119,10 +122,10 @@ function convMargin() {
   for (const p of ['D', 'R']) if (N[p] && typeof N[p].bounce === 'number') m += (p === S.side ? 1 : -1) * N[p].bounce;
   return m;
 }
-function convShares(m) { const und = 6; return { me: (100 - und) / 2 + m / 2, them: (100 - und) / 2 - m / 2, und }; }
+function convShares(m) { const und = 6; m = clamp(m, -40, 40); return { me: (100 - und) / 2 + m / 2, them: (100 - und) / 2 - m / 2, und }; }
 function convPollHTML(before, after, label) {
   const mine = S.side, theirs = other(mine), N = S.nominees;
-  const row = (lbl, m) => { const s = convShares(m); return `<div class="conv-pollrow"><span class="conv-plbl">${lbl}</span><div class="conv-pbar"><div style="width:${s.me}%;background:${PARTY[mine].color}">${lastName(N[mine].p)} ${s.me.toFixed(1)}</div><div style="width:${s.und}%;background:#3a4250"></div><div style="width:${s.them}%;background:${PARTY[theirs].color}">${s.them.toFixed(1)} ${lastName(N[theirs].p)}</div></div></div>`; };
+  const row = (lbl, m) => { const s = convShares(m); return `<div class="conv-pollrow"><span class="conv-plbl">${lbl}</span><div class="conv-pbar"><div style="width:${s.me}%;background:${PARTY[mine].color}">${lastName(N[mine])} ${s.me.toFixed(1)}</div><div style="width:${s.und}%;background:#3a4250"></div><div style="width:${s.them}%;background:${PARTY[theirs].color}">${s.them.toFixed(1)} ${lastName(N[theirs])}</div></div></div>`; };
   const d = after - before;
   return `<div class="conv-poll"><b>📊 ${label || 'National poll'}</b>${row('Before', before)}${row('After', after)}<small>Your ticket's margin ${fmt(before) === fmt(after) ? 'holds' : `moves from ${before >= 0 ? '+' : ''}${before.toFixed(1)} to ${after >= 0 ? '+' : ''}${after.toFixed(1)}`} (${d >= 0 ? '+' : ''}${d.toFixed(1)}) · 6% undecided</small></div>`;
 }
@@ -132,7 +135,7 @@ function convHallHTML(C, big) {
     <div class="conv-stage"><div class="conv-city">${C.city} ${C.year}</div><div class="conv-sub">${PARTY[C.p].name} National Convention${big ? ` · ${C.hall} · ${convNum(C.total)} delegates` : ` · ${C.month}`}</div></div>${big ? '<div class="conv-crowd"></div>' : ''}</div>`;
 }
 function convTicketHTML(C) {
-  const N = C.N, vp = N.vp, vpP = vp ? (convLive(vp.name) || convMakePerson(C.p, vp.name, vp.state, vp.faction)) : null;
+  const N = C.N, vp = N.vp, vpP = vp ? (C.vp && C.vp.name === vp.name && C.vp.p) || convLive(vp.name) || convMakePerson(C.p, vp.name, vp.state, vp.faction) : null;
   return `<div class="conv-ticket" style="border-color:${PARTY[C.p].color}"><div class="conv-tk">${portrait(N.p)}<div><small>For President</small><b>${N.name}</b><span>${N.office} · ${N.faction}</span></div></div>
     ${vpP ? `<div class="conv-tk">${portrait(vpP)}<div><small>For Vice President</small><b>${vp.name}</b><span>${vp.office || convOfficeOf(vpP)} · ${vp.state} (${EV[vp.state] || 3} EV)</span></div></div>` : '<div class="conv-tk"><div><small>For Vice President</small><b>To be announced</b></div></div>'}</div>`;
 }
@@ -170,7 +173,7 @@ function conventionsModal(done) {
     if (finished) return; finished = true;
     S.nominees.conventionsDone = true;
     const rec = { year: convYear() };
-    for (const p of ['D', 'R']) { const N = S.nominees[p]; rec[p] = { nominee: N.name, city: N.city, vp: N.vp ? { name: N.vp.name, state: N.vp.state } : null, bounce: N.bounce, unity: N.unity, planks: N.planks, events: (N._lines || []).slice(0, 8) }; delete N._lines; }
+    for (const p of ['D', 'R']) { const N = S.nominees[p]; rec[p] = { nominee: N.name, city: N.city, vp: N.vp ? { name: N.vp.name, state: N.vp.state } : null, bounce: N.bounce, unity: N.unity, planks: (N.planks || []).slice(), theme: N.theme, keynote: N.keynote, events: (N._lines || []).slice(0, 8) }; delete N._lines; }
     S.conventions = rec;
     done();
   };
@@ -230,7 +233,7 @@ function convVPBrings(C, c) {
   if (st) bits.push(c.state === N.state ? `shares the nominee's home state: no new map, no new votes` : Math.abs(c.lean) <= 6 ? `<b>puts ${st.name} (${EV[c.state]} EV, ${leanLabel(c.lean)}) in play</b>: a true battleground` : `${st.name} (${EV[c.state]} EV, ${leanLabel(c.lean)}) is already ${Math.sign(c.lean) === (C.p === 'R' ? 1 : -1) ? 'safe' : 'out of reach'}: little help on the map`);
   if (c.kind === 'runnerUp') bits.push('<b>heals the primary wounds</b>: the runner-up\'s delegates come home (unity +)');
   else if (c.kind === 'vp') bits.push('continuity: the voters already know them');
-  else bits.push(c.faction !== N.faction ? `balances the ticket: ${c.faction} next to a ${N.faction.replace(/s$/, '')}` : `doubles down on the ${c.faction}`);
+  else bits.push(c.faction !== N.faction ? `balances the ticket: the ${c.faction} next to the nominee's ${N.faction}` : `doubles down on the ${c.faction}`);
   bits.push(c.charisma >= 1.15 ? 'a natural on the stump' : c.charisma <= 0.9 ? 'a cautious, scripted speaker' : 'steady on television');
   const age = ageOf(c.p);
   if (age >= 70) bits.push(`${age}: the oldest name on the list`); else if (age <= 45) bits.push(`${age}: youth and energy`);
@@ -244,8 +247,9 @@ function convVPBrings(C, c) {
 function convVPScreen(C, next) {
   const N = C.N, P = C.P;
   if (!C.vpField) C.vpField = convVPField(C);
-  const F = C.vpField, pref = F.find(c => c.pref) || F[0], broke = S.career.capital < 1;
+  const F = C.vpField, pref = F.find(c => c.pref) || F[0];
   const draw = () => {
+    const broke = S.career.capital < 1;   // re-read on every paint: a vet can spend the last point
     const cards = F.map((c, i) => `<div class="conv-vp ${c.pref ? 'pref' : ''}" style="--pc:${PARTY[C.p].color}">${portrait(c.p)}<div class="conv-vpbody"><b>${c.pref ? '★ ' : ''}${c.name}</b><small>${c.office} · ${c.state} · ${EV[c.state] || 3} EV · ${c.faction} · age ${ageOf(c.p)}</small>
         <ul>${convVPBrings(C, c).map(b => `<li>${b}</li>`).join('')}<li>${c.vetted ? `<b style="color:${c.risk >= 0.55 ? 'var(--no)' : c.risk >= 0.25 ? 'var(--gold2)' : 'var(--yes)'}">Vetting: ${convRiskWord(c.risk)}</b> · ${c.risk >= 0.55 ? c.riskStory : c.risk >= 0.25 ? `${c.riskStory}; survivable, probably` : 'the file is boring: a parking ticket in 2009 and a fondness for karaoke'}` : '<span style="color:var(--dim)">Hidden risk: unknown until vetted</span>'}</li></ul>
         <div class="conv-vpbtns">${c.vetted ? '' : `<button class="btn ghost" data-choice="vet:${i}" ${broke ? 'disabled' : ''}>Vet<small>1 capital</small></button>`}<button class="btn ${c.pref ? 'primary' : ''}" data-choice="vp:${i}" ${!c.pref && broke ? 'disabled' : ''}>${c.pref ? (C.deal ? 'Honor the deal' : C.isPres && c.kind === 'vp' ? 'Keep on the ticket' : 'Pick (nominee\'s choice)') : C.isPres && pref.kind === 'vp' ? 'Dump the VP for them' : 'Pick'}${c.pref ? '' : '<small>1 capital' + (C.isPres && pref.kind === 'vp' ? ', unity −10%' : C.deal ? ', breaks the deal' : '') + '</small>'}</button></div></div></div>`).join('');
@@ -263,6 +267,8 @@ function convVPScreen(C, next) {
   };
   draw();
 }
+// what a running mate adds to the bounce: star power, a battleground state, healed wounds; minus baggage and a shared home state
+function convVPValue(C, c) { return clamp((c.charisma - 1) * 1.5 + (Math.abs(c.lean) <= 6 ? 0.4 : 0) + (c.kind === 'runnerUp' ? 0.3 : 0) - (c.risk > 0.7 ? 0.4 : 0) + (c.state === C.N.state ? -0.3 : 0), -0.5, 1); }
 function convPickVP(C, c) {
   const N = C.N, pref = C.vpField.find(x => x.pref);
   N.vp = { name: c.name, state: c.state, faction: c.faction, office: c.office, charisma: c.charisma, risk: c.risk };
@@ -273,7 +279,7 @@ function convPickVP(C, c) {
   const sitting = C.vpField.find(x => x.kind === 'vp');
   if (C.isPres && sitting && c !== sitting) { C.unity = Math.max(0.5, C.unity - 0.1); C.lines.push(`Dumped Vice President ${sitting.name} from the ticket`); convHist(sitting.p, `Dropped from the ticket by ${presTitle()} in favor of ${c.name}`); }
   if (C.deal && c.kind !== 'runnerUp') { C.unity = Math.max(0.5, C.unity - 0.15); C.lines.push(`Broke the convention deal with ${pref ? pref.name : 'the runner-up'}`); }
-  C.parts.vp = clamp((c.charisma - 1) * 1.5 + (Math.abs(c.lean) <= 6 ? 0.4 : 0) + (c.kind === 'runnerUp' ? 0.3 : 0) - (c.risk > 0.7 ? 0.4 : 0) + (c.state === N.state ? -0.3 : 0), -0.5, 1);
+  C.parts.vp = convVPValue(C, c);
   convHist(c.p, `Chosen as ${N.name}'s running mate`);
   C.lines.push(`Running mate: ${c.name} (${c.office}, ${c.state})`);
   if (C.mine) sfx.up();
@@ -333,13 +339,13 @@ function convRollCall(C, next) {
     const n = C.ballots.length + 1; let note;
     if (how === 'back') { const g = U * rnd(0.55, 0.85), d = R.del * rnd(0, 0.08); L.del += g + d; R.del -= d; U -= g; if (!brokeredBy) C.unity = Math.min(1, C.unity + 0.05); note = `You work the ${kingmaker} delegations for ${lastName(L.p)}: ${convNum(g)} free delegates and a trickle from ${lastName(R.p)}'s column.`; }
     else if (how === 'upset') { const g = U * rnd(0.45, 0.8), d = L.del * rnd(0.03, 0.12); R.del += g + d; L.del -= d; U -= g; C.unity = Math.max(0.5, C.unity - 0.05); note = `You go all in for ${lastName(R.p)}: ${convNum(g)} free delegates break their way and ${convNum(d)} of ${lastName(L.p)}'s defect. The hall is a wall of noise.`; }
-    else if (how === 'deal') { const g = U * rnd(0.3, 0.6); L.del += R.del + g; U -= g; R.del = 0; C.unity = Math.min(1, C.unity + 0.1); C.deal = true; C.parts.ballots += 0.3; note = `The deal: ${lastName(R.p)} releases every delegate to ${lastName(L.p)} in exchange for the second slot on the ticket. The two walk onto the stage together.`; }
+    else if (how === 'deal') { const g = Math.min(U, Math.max(U * rnd(0.3, 0.6), C.need - L.del - R.del)); L.del += R.del + g; U -= g; R.del = 0; C.unity = Math.min(1, C.unity + 0.1); C.deal = true; C.parts.ballots += 0.3; note = `The deal: ${lastName(R.p)} releases every delegate to ${lastName(L.p)} in exchange for the second slot on the ticket. The two walk onto the stage together.`; }
     else { const s = Math.random(), g = U * rnd(0.15, 0.45), d = Math.min(L.del, R.del) * rnd(0, 0.08); if (s < 0.5) L.del += g; else R.del += g; U -= g; if (Math.random() < 0.5) { L.del -= d; R.del += d; } else { R.del -= d; L.del += d; } C.parts.ballots -= 0.6; note = pick([`No deal. State chairs trade delegations on the floor like baseball cards; the networks run it live for three hours.`, `The ${pick(['Texas', 'California', 'Ohio', 'Pennsylvania'])} delegation splits on live television and its chair is seen weeping. ${convNum(g)} free delegates move; nobody can say exactly where.`, `A two-hour recess for "consultations." When the roll resumes, ${convNum(g)} free delegates have picked a side and ${convNum(d)} pledged ones have changed their minds.`]); }
     U = Math.max(0, U); L.del = Math.max(0, L.del); R.del = Math.max(0, R.del);
     if (how !== 'floor') brokeredBy = how;
     C.ballots.push({ n, L: L.del, R: R.del, U, note }); C.ballotCount = n;
     if (L.del >= C.need) result = 'L'; else if (R.del >= C.need) result = 'R';
-    else if (n >= 4) { const w = L.del >= R.del ? L : R; w.del += U + (w === L ? R.del : L.del) * 0.5; U = 0; C.unity = Math.max(0.5, C.unity - 0.05); C.ballots[C.ballots.length - 1].note += ` Exhausted, the chair moves to nominate by acclamation.`; result = w === L ? 'L' : 'R'; }
+    else if (n >= 4) { const w = L.del >= R.del ? L : R, l = w === L ? R : L, sw = l.del * 0.5; w.del += U + sw; l.del -= sw; U = 0; C.unity = Math.max(0.5, C.unity - 0.05); const last = C.ballots[C.ballots.length - 1]; last.L = L.del; last.R = R.del; last.U = 0; last.note += ` Exhausted, the chair moves to nominate by acclamation.`; result = w === L ? 'L' : 'R'; }
     if (result) {
       const won = result === 'L' ? L : R, lost = result === 'L' ? R : L;
       C.parts.ballots -= 0.5;
@@ -396,10 +402,11 @@ function convKeynoteOptions(C) {
   const pool = S.members.filter(m => m.party === p && m.name !== N.name && m.name !== vpName && !m.star).map(m => ({ m, s: (T(m, 'ambitious') ? 10 : 0) + (ageOf(m) < 50 ? 6 : 0) + (ageOf(m) < 42 ? 4 : 0) + rnd(0, 8) })).sort((a, b) => b.s - a.s);
   const star = pool[0] && pool[0].m;
   if (star) opts.push({ key: 'star', who: star, label: `A rising star: Sen. ${star.name} (${star.state}), ${ageOf(star)}`, sub: 'Introduce the party\'s future to the country. Careers are made on this stage.' });
-  if (C.holdsWH && !C.isPres) opts.push({ key: 'pres', who: P, label: presTitle(), sub: `The sitting President, at ${P.approval}% approval. ${P.approval >= 50 ? 'An asset to show off.' : 'A liability to manage.'}` });
-  if (C.isPres && S.vp) opts.push({ key: 'veep', who: S.vp, label: `Vice President ${S.vp.name}`, sub: 'Loyal, steady, and nobody will remember a word.' });
+  // a President who was the runner-up appears as the runner-up (below), and one the floor just denied renomination stays home
+  if (C.holdsWH && !C.isPres && !(N.runnerUp && N.runnerUp.name === P.name)) opts.push({ key: 'pres', who: P, label: presTitle(), sub: `The sitting President, at ${P.approval}% approval. ${P.approval >= 50 ? 'An asset to show off.' : 'A liability to manage.'}` });
+  if (C.isPres && S.vp && S.vp.name !== vpName && !(C.vp && C.vp.kind !== 'vp')) opts.push({ key: 'veep', who: S.vp, label: `Vice President ${S.vp.name}`, sub: 'Loyal, steady, and nobody will remember a word.' });
   const ru = N.runnerUp && N.runnerUp.name !== N.name && N.runnerUp.name !== vpName ? (convLive(N.runnerUp.name) || N.runnerUp.p) : null;
-  if (ru) opts.push({ key: 'runnerUp', who: ru, label: `${ru.name}, the runner-up`, sub: 'Heal the primary wounds on live television. Unity +10%.' });
+  if (ru) opts.push({ key: 'runnerUp', who: ru, label: `${ru.name === P.name ? presTitle() : ru.name}, the runner-up`, sub: 'Heal the primary wounds on live television. Unity +10%.' });
   if (opts.length < 3) {
     let elder = pick((S.formers || []).filter(f => f.party === p && f.name !== N.name && f.name !== vpName)) || null;
     if (!elder) { elder = convMakePerson(p, null, null, MODERATE[p], ri(68, 79)); elder.history = []; hist(elder, `Worked as ${elder.background}`, C.year - ri(40, 50)); hist(elder, `Elected Governor of ${ST[elder.state].name}`, C.year - ri(24, 32)); hist(elder, `Ran for President; lost the ${PARTY[p].name} nomination`, C.year - ri(12, 20)); }
@@ -410,7 +417,7 @@ function convKeynoteOptions(C) {
 }
 function convKeynote(C, o) {
   const P = C.P; let k, text;
-  if (o.key === 'star') { k = clamp(0.3 + gauss() * 0.5, -0.4, 1.3); o.who.star = true; if (C.mine) o.who.rel = (o.who.rel || 0) + 1; convHist(o.who, `Delivered the keynote at the ${C.year} ${PARTY[C.p].name} National Convention`); text = k > 0.8 ? `<b>A star is born.</b> Sen. ${o.who.name} talks about ${o.who.hometown} and ${o.who.background} for nineteen minutes without notes; by midnight the clip has 40 million views and three columnists are writing the 20${String(C.year + 8).slice(2)} field.` : k > 0.1 ? `Sen. ${o.who.name} gives a polished, confident speech about growing up in ${o.who.hometown}. The party has found a new surrogate.` : `Sen. ${o.who.name} is fine. The crowd is polite, the networks cut to a panel halfway through.`; }
+  if (o.key === 'star') { k = clamp(0.3 + gauss() * 0.5, -0.4, 1.3); o.who.star = true; if (C.mine) o.who.rel = (o.who.rel || 0) + 1; convHist(o.who, `Delivered the keynote at the ${C.year} ${PARTY[C.p].name} National Convention`); text = k > 0.8 ? `<b>A star is born.</b> Sen. ${o.who.name} talks about ${o.who.hometown} and ${o.who.background} for nineteen minutes without notes; by midnight the clip has 40 million views and three columnists are writing the ${C.year + 8} field.` : k > 0.1 ? `Sen. ${o.who.name} gives a polished, confident speech about growing up in ${o.who.hometown}. The party has found a new surrogate.` : `Sen. ${o.who.name} is fine. The crowd is polite, the networks cut to a panel halfway through.`; }
   else if (o.key === 'pres') { k = clamp((P.approval - 50) / 12 + gauss() * 0.3, -1.5, 1.5); convHist(P, `Spoke for ${C.N.name} at the ${C.year} ${PARTY[C.p].name} convention`); text = P.approval >= 50 ? `${presTitle()} (${P.approval}%) takes a victory lap and hands the baton: “${lastName(C.N.p)} will finish what we started.” The hall eats it up.` : `${presTitle()} (${P.approval}%) is received warmly inside the hall and coolly outside it; the nominee's team winces at every mention of the record.`; }
   else if (o.key === 'veep') { k = clamp(0.2 + gauss() * 0.3, -0.5, 0.8); convHist(o.who, `Keynoted the ${C.year} ${PARTY[C.p].name} convention`); text = `Vice President ${o.who.name} makes the case for four more years in a speech that is competent, loyal and forgotten by the second commercial break.`; }
   else if (o.key === 'runnerUp') { k = clamp(0.3 + gauss() * 0.3, -0.3, 0.9); C.unity = Math.min(1, C.unity + 0.1); convHist(o.who, `Endorsed ${C.N.name} in a keynote speech at the ${C.year} ${PARTY[C.p].name} convention`); text = `${o.who.name} walks out to the longest ovation of the week and asks every one of their delegates to come home. “We fought. We lost. Now we win together.” The primary is officially over.`; }
@@ -490,7 +497,7 @@ function convEventPool(C) {
       { key: 'concede', label: 'Concede the plank', sub: 'Rewrite it their way tonight. Unity +10%.', apply: () => { const pl = C.planks[0]; if (pl) pl.dir = -pl.dir; C.unity = Math.min(1, C.unity + 0.1); C.parts.events -= 0.2; return `The platform committee reconvenes at 1 a.m. and the plank is rewritten. The ${losers} stay. The press calls it a cave; the delegates call it a party.`; } },
       { key: 'bluff', label: 'Call their bluff', sub: '60% they fold. 40% they walk, on camera.', apply: () => { const ok = Math.random() < 0.6; if (ok) { C.unity = Math.min(1, C.unity + 0.05); C.parts.events += 0.1; return `By morning the ${losers} are back in their seats, pretending the whole thing was a misunderstanding. Strength, noted.`; } C.unity = Math.max(0.5, C.unity - 0.15); C.parts.events -= 1; return `Two hundred ${losers} delegates walk out during the roll of the states with their signs held high. Every network splits the screen.`; } },
       { key: 'slot', label: 'Buy them off with a prime-time slot', sub: 'Their chair speaks at 9 p.m. Unity +8%, bounce −.', apply: () => { C.unity = Math.min(1, C.unity + 0.08); C.parts.events -= 0.3; return `Their chair gets twelve minutes at 9 p.m. and uses eleven of them to relitigate the primary. The hall is polite. The ratings dip.`; } }] },
-    { id: 'endorse', title: 'A surprise endorsement', text: (() => { const f = pick((S.formers || []).filter(f => f.party === other(p))) || convMakePerson(other(p), null, null, MODERATE[other(p)], ri(58, 72)); return { f, t: `${f.name}, a former ${convOfficeOf(f).replace('Former official', PARTY[other(p)].name + ' governor').toLowerCase()} and a lifelong ${PARTY[other(p)].name}, calls the campaign: they want to endorse ${lastName(N.p)} from the stage.` }; })(), choices: [
+    { id: 'endorse', title: 'A surprise endorsement', text: (() => { const q = other(p), f = pick((S.formers || []).filter(f => f.party === q)) || convMakePerson(q, null, null, MODERATE[q], ri(58, 72)); const was = f.cls != null ? 'senator' : f.terms ? 'governor' : f.from ? 'cabinet secretary' : (f.office || 'former governor').replace(/^Former /i, '').toLowerCase(); return { f, t: `${f.name}, a former ${PARTY[q].name} ${was} and a lifelong ${PARTY[q].short.replace(/s$/, '')}, calls the campaign: they want to endorse ${lastName(N.p)} from the stage.` }; })(), choices: [
       { key: 'prime', label: 'Give them prime time', sub: 'Crossover appeal. The base grumbles.', apply: ev => { C.parts.events += 0.8; C.unity = Math.max(0.5, C.unity - 0.05); convHist(ev.f, `Crossed party lines to endorse ${N.name} at the ${C.year} ${PARTY[p].name} convention`); return `${ev.f.name} walks onto a ${PARTY[p].name} stage to a stunned, then thunderous, reception: “My party left me. ${lastName(N.p)} did not.” Every undecided focus group in America watched it.`; } },
       { key: 'video', label: 'A taped video message', sub: 'Safe. Still a headline.', apply: ev => { C.parts.events += 0.4; convHist(ev.f, `Endorsed ${N.name} across party lines`); return `A tight two-minute video plays before the keynote. The endorsement leads the morning papers; the base barely notices.`; } },
       { key: 'decline', label: 'Politely decline', sub: 'No turncoats on our stage. Unity +.', apply: () => { C.unity = Math.min(1, C.unity + 0.03); return `The campaign thanks them and says the stage is full. The endorsement comes anyway, by press release, on a Friday.`; } }] },
@@ -504,7 +511,7 @@ function convEventPool(C) {
       { key: 'chant', label: 'Drown them out', sub: 'The floor whips chant the heckler into silence.', apply: () => { C.parts.events += 0.1; return `The state chairs start the chant and the hall finishes it. The heckler is still shouting, but nobody can hear a word, and the speech goes on.`; } }] },
     { id: 'leak', title: 'The vetting file leaks', ok: () => !!vp && !!C.vp, text: `Someone leaks the campaign's vetting file on ${vpC().name} to a cable network. Anchors are reading from it live.`, choices: [
       { key: 'stand', label: 'Stand by the pick', sub: 'Ride it out. Depends on what\'s in the file.', apply: () => { const r = C.vp.risk; C.vp.vetted = true; C.parts.events += r >= 0.55 ? -1 : r >= 0.25 ? -0.3 : 0.2; return r >= 0.55 ? `The file has ${C.vp.riskStory || (C.vp.riskStory = pick(CONV_RISKS))}, in detail, with documents. The campaign stands firm and the story runs for six days.` : r >= 0.25 ? `The file has ${C.vp.riskStory || (C.vp.riskStory = pick(CONV_RISKS))}. Awkward, survivable; the story fades by the weekend.` : `The file is boring: a parking ticket, an overdue library book and a fondness for karaoke. The leaker looks ridiculous and the running mate looks human.`; } },
-      { key: 'swap', label: 'Swap the running mate', sub: 'Pick the next name on the list tonight. Unity −5%, bounce −.', apply: () => { const alt = C.vpField.filter(c => c !== C.vp).sort((a, b) => (b.pref ? 1 : 0) - (a.pref ? 1 : 0))[0]; if (!alt) return 'There is nobody else on the list; the campaign stands by the pick.'; const old = C.vp; convHist(old.p, `Dropped from the ${PARTY[p].name} ticket after a vetting leak`); C.unity = Math.max(0.5, C.unity - 0.05); C.parts.events -= 0.5; C.lines.push(`Swapped running mates after a leak: ${alt.name} in, ${old.name} out`); N.vp = { name: alt.name, state: alt.state, faction: alt.faction, office: alt.office, charisma: alt.charisma, risk: alt.risk }; if (alt.id != null) N.vp.id = alt.id; C.vp = alt; convHist(alt.p, `Chosen as ${N.name}'s running mate after ${old.name} was dropped`); return `${old.name} is off the ticket by 2 a.m.; ${alt.name} is on it by breakfast. The networks call it chaos. The campaign calls it decisiveness.`; } },
+      { key: 'swap', label: 'Swap the running mate', sub: 'Pick the next name on the list tonight. Unity −5%, bounce −.', apply: () => { const alt = C.vpField.filter(c => c !== C.vp).sort((a, b) => (b.pref ? 1 : 0) - (a.pref ? 1 : 0))[0]; if (!alt) return 'There is nobody else on the list; the campaign stands by the pick.'; const old = C.vp; convHist(old.p, `Dropped from the ${PARTY[p].name} ticket after a vetting leak`); C.unity = Math.max(0.5, C.unity - 0.05); C.parts.events -= 0.5; C.lines.push(`Swapped running mates after a leak: ${alt.name} in, ${old.name} out`); N.vp = { name: alt.name, state: alt.state, faction: alt.faction, office: alt.office, charisma: alt.charisma, risk: alt.risk }; if (alt.id != null) N.vp.id = alt.id; C.vp = alt; C.parts.vp = convVPValue(C, alt); convHist(alt.p, `Chosen as ${N.name}'s running mate after ${old.name} was dropped`); return `${old.name} is off the ticket by 2 a.m.; ${alt.name} is on it by breakfast. The networks call it chaos. The campaign calls it decisiveness.`; } },
       { key: 'hunt', label: 'Hunt the leaker', sub: 'Your people find things. 1 capital.', cost: 1, apply: () => { const ok = Math.random() < 0.5; if (ok) { C.unity = Math.max(0.5, C.unity - 0.08); C.parts.events += 0.1; return `It was a staffer for ${N.runnerUp ? lastName(N.runnerUp.p || { name: N.runnerUp.name }) : 'a rival campaign'}. You leak that, too. The story becomes the leak, not the file.`; } C.parts.events -= 0.3; return `Nothing. The leaker is a ghost, the file is still on television, and you spent a week's worth of favors on a dead end.`; } }] },
     { id: 'storm', title: 'A hurricane', text: `A Category 3 hurricane is bearing down on the ${pick(['Gulf Coast', 'Carolinas', 'Florida panhandle', 'Texas coast'])} as Night 2 opens. Pictures of boarded windows run next to pictures of the balloons.`, choices: [
       { key: 'cancel', label: 'Cancel the night', sub: 'Donate the airtime to relief. Lose a night of coverage.', apply: () => { C.parts.events -= 0.4; C.unity = Math.min(1, C.unity + 0.02); return `The hall goes dark for a night and the nominee tapes an appeal for the Red Cross. Respectful, responsible, and a night of free television gone.`; } },
@@ -520,7 +527,7 @@ function convEventPool(C) {
       { key: 'speak', label: 'Have the nominee address it from the podium', sub: 'A moment, if they can hold the room.', apply: () => { const ok = convRoll(N.charisma); C.parts.events += ok ? 0.4 : -0.3; return ok ? `${lastName(N.p)} walks back out alone: “They can clear the hall. They can't clear this country.” The line is on T-shirts by Night 4.` : `${lastName(N.p)} reads a statement that sounds like a statement. The moment passes.`; } }] },
     { id: 'donor', title: 'A donor scandal', text: `The host committee's biggest donor, a ${pick(['crypto billionaire', 'casino magnate', 'private-prison executive', 'hedge fund founder', 'pharmaceutical heir'])} who paid for the stage, is indicted on Night 2.`, choices: [
       { key: 'return', label: 'Return the money', sub: 'Clean hands. The committee is broke.', apply: () => { C.parts.events -= 0.1; C.unity = Math.min(1, C.unity + 0.05); return `The committee wires back ${ri(4, 12)} million dollars it does not have and cancels the Night 3 fireworks. The press notes the honor; the vendors note the IOUs.`; } },
-      { key: 'keep', label: 'Keep it and say nothing', sub: '50% it fades. 50% it does not.', apply: () => { const ok = Math.random() < 0.5; if (ok) { C.parts.events += 0.1; return `A two-day story. By Night 4 nobody can remember the donor's name.`; } C.parts.events -= 0.8; if (C.mine) S.mood -= 0.5; return `The indictment names the stage, the balloons and the nominee's hotel suite. “BOUGHT AND PAID FOR,” says the other side's ad, which is on the air before the balloons.`; } },
+      { key: 'keep', label: 'Keep it and say nothing', sub: '50% it fades. 50% it does not.', apply: () => { const ok = Math.random() < 0.5; if (ok) { C.parts.events += 0.1; return `A two-day story. By Night 4 nobody can remember the donor's name.`; } C.parts.events -= 0.8; if (C.mine) S.mood = clamp(S.mood - 0.5, -15, 15); return `The indictment names the stage, the balloons and the nominee's hotel suite. “BOUGHT AND PAID FOR,” says the other side's ad, which is on the air before the balloons.`; } },
       { key: 'blame', label: 'Blame the host committee', sub: 'Throw the locals under the bus.', apply: () => { C.parts.events -= 0.3; return `The campaign says it had no idea who paid for what, which is true and sounds false. The mayor of ${C.city} stops returning calls.`; } }] },
     { id: 'prompter', title: 'The teleprompter dies', text: `The teleprompter dies ${pick(['six minutes into', 'halfway through', 'at the climax of'])} the Night 2 headline speech. ${vpC().name} is staring at a blank screen in front of twenty million people.`, choices: [
       { key: 'adlib', label: 'Ad-lib', sub: 'Talent shows. So does its absence.', apply: () => { const ok = convRoll(vpC().charisma); C.parts.events += ok ? 0.8 : -1; return ok ? `${vpC().name} shrugs, puts the pages down and talks for fourteen minutes from the heart. It is the best speech of the week and the one everyone remembers.` : `${vpC().name} repeats the last line three times, thanks the wrong state and finishes four minutes early. The pundits are merciless.`; } },
@@ -530,7 +537,7 @@ function convEventPool(C) {
       { key: 'concede', label: 'Give in', sub: 'Unity +8%. Weakness −.', apply: () => { C.unity = Math.min(1, C.unity + 0.08); C.parts.events -= 0.3; return `The rules change passes on a voice vote and the insurgents claim victory. The nominee's team spends the night rewriting the Night 3 script.`; } },
       { key: 'ram', label: 'Ram it through on a voice vote', sub: 'Unity −10%. The chair hears what the chair wants.', apply: () => { C.unity = Math.max(0.5, C.unity - 0.1); C.parts.events += 0.1; return `“The ayes have it,” says the chair, over a roar of nays, and bangs the gavel through the boos. Order, of a kind.`; } },
       { key: 'deal', label: 'Cut a deal in the back room', sub: 'Everyone gets something. 1 capital.', cost: 1, apply: () => { C.unity = Math.min(1, C.unity + 0.1); return `You spend an hour in a freight elevator with three state chairs and a lawyer. The motion is withdrawn, two people get committee seats, and nobody ever learns why.`; } }] },
-    { id: 'rival', title: 'The other side\'s counter-programming', text: `The opposing whip, Sen. ${S.rival}, parks a “truth squad” press conference across the street from ${C.hall} every night at 6 p.m., with a different disgruntled ${party.slice(0, -1)} at the microphone each time.`, choices: [
+    { id: 'rival', title: 'The other side\'s counter-programming', ok: () => C.mine, text: `The opposing whip, Sen. ${S.rival}, parks a “truth squad” press conference across the street from ${C.hall} every night at 6 p.m., with a different disgruntled ${party.slice(0, -1)} at the microphone each time.`, choices: [
       { key: 'ignore', label: 'Ignore it', sub: 'Never punch down.', apply: () => `The truth squad plays to a shrinking pack of bored reporters. By Night 3 the cameras have stopped coming.` },
       { key: 'respond', label: 'Send the nominee\'s sharpest surrogate', sub: 'Fight fire with fire, on their turf.', apply: () => { const ok = Math.random() < 0.55; C.parts.events += ok ? 0.3 : -0.3; return ok ? `Your surrogate crashes the presser, takes the questions and leaves with the cameras. Sen. ${S.rival} is not amused.` : `The shouting match across the street becomes the story. Two whips yelling in a parking lot is not the convention anyone planned.`; } },
       { key: 'oppo', label: 'Drop some opposition research', sub: 'A story about Sen. ' + S.rival + '. 1 capital.', cost: 1, apply: () => { C.parts.events += 0.3; return `A story about Sen. ${S.rival}'s travel expenses lands on Night 2 and the truth squad spends Night 3 answering questions about it.`; } }] },
@@ -580,7 +587,7 @@ function convAutoEvent(C) {
 function convStakes(C) {
   const P = C.P, N = C.N, mood = convMoodOf(C.p), sen = seats(C.p);
   if (C.isPres) return `At stake: a second term. ${presTitle()} stands at ${P.approval}% approval${P.approval >= 50 ? ', a number an incumbent can win on' : P.approval >= 44 ? ', which is survivable with the right fall' : ', and no President has been re-elected from there without a miracle'}; the ${PARTY[C.p].short} hold ${sen} Senate seats.`;
-  if (C.holdsWH) return `At stake: holding the White House without the incumbent. ${presTitle()} leaves office at ${P.approval}% approval, ${P.approval >= 50 ? 'an asset the ticket will lean on' : 'a weight the ticket must carry'}; voters have not kept one party in the West Wing for a third term since 1988.`;
+  if (C.holdsWH) { const streak = S.whStreak || 1; return `At stake: holding the White House without the incumbent. ${presTitle()} leaves office at ${P.approval}% approval, ${P.approval >= 50 ? 'an asset the ticket will lean on' : 'a weight the ticket must carry'}; ${streak >= 2 ? `the ${PARTY[C.p].short} are asking for a ${convNth(streak + 1)} straight term, which voters rarely grant` : 'voters have not kept one party in the West Wing for a third term since 1988'}.`; }
   return `At stake: taking back the White House from ${presTitle()}'s ${PARTY[C.q].short}${P.approval < 45 ? `, who are defending a President at ${P.approval}%` : P.approval >= 52 ? `, who are defending a popular President (${P.approval}%)` : ''}. The ${PARTY[C.p].short} hold ${sen} Senate seats and a mood that is ${convMoodWord(mood)} (${fmt(mood)}).`;
 }
 function convOpeningScreen(C, next) {
@@ -612,10 +619,10 @@ function convWrapScreen(C, next) {
   const N = C.N, before = convMargin();
   C.bounce = convBounce(C);
   convStore(C);
-  const after = convMargin(), vpL = N.vp ? convLive(N.vp.name) : null;
+  const after = convMargin(), cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
   const body = [
-    `${C.city} — ${N.name} accepted the ${PARTY[C.p].name} nomination for President on the final night of a ${convUnityWord(C.unity)} convention${N.vp ? `, with ${N.vp.name} (${N.vp.office}, ${N.vp.state}) as the running mate` : ''}. ${C.speech ? C.speech.text.replace(/<[^>]+>/g, '') : ''}`,
-    `The platform ${C.planks.length ? `takes ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ')}` : 'says as little as possible'}; the campaign will run on ${TAG[C.theme][1].toLowerCase()}. ${C.keynote ? `${C.keynote.name} delivered the keynote.` : ''}`,
+    `${C.city} — ${N.name} accepted the ${PARTY[C.p].name} nomination for President on the final night of a convention that leaves the party ${convUnityWord(C.unity)}${N.vp ? `, with ${N.vp.name} (${N.vp.office}, ${N.vp.state}) as the running mate` : ''}. ${C.speech ? C.speech.text.replace(/<[^>]+>/g, '') : ''}`,
+    `The platform ${C.planks.length ? `calls for ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ')}` : 'says as little as possible'}; the campaign will run on ${TAG[C.theme][1].toLowerCase()}. ${C.keynote ? `${cap1(C.keynote.name)} delivered the keynote.` : ''}`,
     `The first post-convention poll gives the ticket a <b>${C.bounce >= 0 ? '+' : ''}${C.bounce.toFixed(1)}-point</b> bounce${C.bounce >= 4 ? ', the best since the networks started counting' : C.bounce <= 0 ? ', which is to say none' : ''}.${(l => l.length ? ' ' + l.join('. ') + '.' : '')(C.events.map((ev, i) => `${ev.title}: ${(C.lines.find(x => x.startsWith(ev.title + ': ')) || '').slice(ev.title.length + 2)}`).filter(x => !x.endsWith(': ')).slice(0, 2))}`,
   ];
   showModal(`${frontPage({ headline: convHeadline(C), sub: `${PARTY[C.p].short} ${C.unity >= 0.8 ? 'leave united' : 'leave with scars'}; the race for the White House is ${Math.abs(after) < 3 ? 'a dead heat' : after > 0 ? 'yours to lose' : 'theirs to lose'}.`, body, mood: C.bounce >= 2 ? 'dawn' : 'night', date: `${C.month === 'late July' ? 'July' : 'August'} ${C.year} · Convention edition` })}
@@ -627,7 +634,7 @@ function convWrapScreen(C, next) {
     ${convTicketHTML(C)}
     ${C.mine && C.bounce >= 5 ? '<p style="color:var(--gold2)"><b>🎈 Balloon Drop:</b> a bounce of five or more.</p>' : C.mine && C.bounce >= 3 ? '<p style="color:var(--gold2)">A bounce of three or more: +5 legacy.</p>' : ''}
     <div class="choices"><button class="btn primary big adv" id="convwrapgo">${C.month === 'late July' ? `On to the ${PARTY[C.q].name} convention` : 'Back to the Senate'}</button></div>`);
-  if (vpL && N.vp) convHist(vpL, `Accepted the ${PARTY[C.p].name} nomination for Vice President in ${C.city}`);
+  if (N.vp && C.vp) convHist(C.vp.p, `Accepted the ${PARTY[C.p].name} nomination for Vice President in ${C.city}`);
   if (C.mine) sfx.fanfare();
   $('#convwrapgo').onclick = next;
 }
@@ -657,7 +664,7 @@ function convTheirs(p, month, next) {
   // the running mate, weighted to the nominee's own preference
   C.vpField = convVPField(C);
   const pref = C.vpField.find(c => c.pref) || C.vpField[0];
-  convPickVP(C, Math.random() < 0.7 ? pref : pick(C.vpField));
+  convPickVP(C, Math.random() < (C.isPres ? 0.92 : 0.7) ? pref : pick(C.vpField));   // a sitting President almost always keeps the Vice President
   // the platform: the nominee's wing writes it, with a few concessions
   const nomFx = (FACTIONS[p].find(f => f[0] === N.faction) || [0, {}])[1];
   C.plankDefs.forEach((d, i) => { const w = nomFx[d.tag] || 0, r = Math.random(); convSetPlank(C, i, r < 0.2 ? 'vague' : w === 0 ? (r < 0.6 ? 'flank' : 'center') : (sgn(w) === d.fdir) === (r < 0.75) ? 'flank' : 'center'); });
@@ -667,7 +674,7 @@ function convTheirs(p, month, next) {
   const tone = pick(Object.keys(CONV_TONES)), speechText = convSpeech(C, tone);
   const show2 = () => {
     const before = convMargin(); C.bounce = convBounce(C); convStore(C); const after = convMargin();
-    const vpL = N.vp ? convLive(N.vp.name) : null; if (vpL) convHist(vpL, `Accepted the ${PARTY[p].name} nomination for Vice President in ${C.city}`);
+    if (N.vp && C.vp) convHist(C.vp.p, `Accepted the ${PARTY[p].name} nomination for Vice President in ${C.city}`);
     showModal(`${frontPage({ headline: convHeadline(C), sub: `Across the aisle, the ${PARTY[p].short} ${C.unity >= 0.8 ? 'leave ' + C.city + ' united' : 'leave ' + C.city + ' with scars'}. First poll: a ${C.bounce >= 0 ? '+' : ''}${C.bounce.toFixed(1)} bounce for their ticket.`, body: [`${C.city} — ${N.name} accepted the ${PARTY[p].name} nomination${N.vp ? ` and named ${N.vp.name} (${N.vp.office}, ${N.vp.state}) as running mate` : ''}. ${speechText.replace(/<[^>]+>/g, '')}`, `${rc ? rc.replace(/<[^>]+>/g, '') + ' ' : ''}${keyText.replace(/<[^>]+>/g, '')}`, `Their platform: ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ') || 'deliberately vague'}; their message is ${TAG[C.theme][1].toLowerCase()}. ${evs.length ? evs[0].ev.title + ': ' + evs[0].result.replace(/<[^>]+>/g, '') : ''}`], mood: 'night', date: `${month === 'late July' ? 'July' : 'August'} ${C.year} · Convention edition` })}
       <div class="kicker">${convKicker(C, 'The report card')}</div>
       <div class="conv-report">${convTicketHTML(C)}
