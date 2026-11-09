@@ -103,7 +103,10 @@ function genericBallot() { return clamp(50 + S.mood * 0.9 + (S.president.party =
 function rightTrack() { return clamp(Math.round(38 + (S.president.approval - 50) * 0.7 + (S.war && S.war.support < 45 ? -6 : 0) + (S.shutdown ? -8 : 0)), 12, 75); }
 function pulseTick() {
   S.pulse = S.pulse || [];
-  S.pulse.push({ lbl: `${season(S.career.bills || 1)[0]}${String(billYear(Math.max(1, S.career.bills))).slice(2)}`, ap: S.president.approval, gb: Math.round(genericBallot()), rt: rightTrack(), wh: S.president.party });
+  const tick = { lbl: `${season(S.career.bills || 1)[0]}${String(billYear(Math.max(1, S.career.bills))).slice(2)}`, ap: S.president.approval, gb: Math.round(genericBallot()), rt: rightTrack(), wh: S.president.party };
+  // the horse race: your ticket's two-way margin, every tick of a presidential year once there are nominees
+  if (billYear(Math.max(1, S.career.bills)) % 4 === 0 && pulseNominees()) tick.pm = +pulseMargin().toFixed(1);
+  S.pulse.push(tick);
   if (S.pulse.length > 40) S.pulse.shift();
   for (const t of TAGS) S.salience[t] = Math.max(0.5, (S.salience[t] || 1) * 0.85);
   if (S.bill) for (const [t, v] of Object.entries(S.bill.fx)) S.salience[t] = (S.salience[t] || 1) + Math.abs(v) * 0.6;
@@ -122,15 +125,140 @@ function lineChart(series, opts = {}) {
   }
   return svg + '</svg>';
 }
+
+/* ---------------- the Pulse: the race for the White House ---------------- */
+function pulseNominees() { const N = S.nominees; return !!(N && N.D && N.R && N.D.name && N.R.name); }
+// your ticket's two-way national margin: convMargin carries the decayed convention bounce and party unity
+function pulseMargin() {
+  if (typeof convMargin === 'function') return convMargin();
+  const s = presSetup(); return (s.inc === S.side ? 1 : -1) * s.base;
+}
+function pulseShares(m) { m = clamp(m, -40, 40); return { me: 47 + m / 2, them: 47 - m / 2, und: 6 }; }
+// the Electoral College at that national margin (presProjection's map, moved to the bounce-adjusted environment)
+function pulseProj(m) {
+  const s = presSetup(), sg = S.side === 'D' ? 1 : -1, by = {};
+  let evMine = 0;
+  const states = Object.keys(EV).map(c => { const x = { c, m: stateMarginD(c, sg * m, s.noms) * sg, ev: EV[c] }; by[c] = x; if (x.m > 0) evMine += x.ev; return x; });
+  return { states, by, evMine, noms: s.noms, battle: states.filter(x => Math.abs(x.m) < 8).sort((a, b) => b.ev - a.ev || Math.abs(a.m) - Math.abs(b.m)) };
+}
+function pulsePerson(n, p) { if (!n) return null; if (typeof campPersonOf === 'function') return campPersonOf(n); return n.p || (S.president.name === n.name ? S.president : null); }
+function pulseVpPerson(vp) {
+  if (!vp) return null;
+  const hit = (typeof campVpPerson === 'function' && campVpPerson(vp)) || vp.p; if (hit) return hit;
+  return [S.vp, ...S.members, ...Object.values(S.governors || {}), ...(S.reps || []), ...Object.values(S.cabinet || {}), ...(S.formers || [])].find(x => x && x.name === vp.name) || null;
+}
+function pulsePic(person, px = 52) { return person && person.seed != null ? portrait(person).replace('<svg', `<svg style="width:${px}px;height:${px}px;border-radius:50%;flex:none;display:inline-block;vertical-align:middle"`) : `<span style="font-size:30px;width:52px;text-align:center;flex:none">🇺🇸</span>`; }
+function pulseTicketHTML(p) {
+  const n = S.nominees[p], mine = p === S.side, person = pulsePerson(n, p), vp = n.vp, vpP = pulseVpPerson(vp);
+  const office = typeof campOffice === 'function' ? campOffice(n, p) : n.office || `${PARTY[p].name} nominee`;
+  const conv = typeof n.bounce === 'number' ? `<br><small>Convention${n.city ? ` in ${n.city}` : ''}: bounce ${n.bounce >= 0 ? '+' : '−'}${Math.abs(n.bounce).toFixed(1)}${n.unity != null ? ` · party ${Math.round(n.unity * 100)}% united` : ''}${n.theme && TAG[n.theme] ? ` · ${TAG[n.theme][0]} ${TAG[n.theme][1]}` : ''}</small>` : '';
+  return `<div class="tk" style="border-color:${PARTY[p].color}">${pulsePic(person)}<div style="min-width:0"><b style="color:${PARTY[p].color}">${n.name}</b>${mine ? ' <small style="color:var(--gold2)">· your ticket</small>' : ''}${person ? ` <a href="#" data-pprof="${p}" style="color:var(--gold2);font-size:11px">profile</a>` : ''}
+    <br><small style="color:var(--dim)">${office} · ${n.faction || PARTY[p].name}${n.del ? ` · ${n.del} delegates` : ''}</small>
+    <br><small>${vp ? `${vpP && vpP.seed != null ? pulsePic(vpP, 26) : '🎗'} with <b>${vp.name}</b>${vp.state ? ` of ${stName(vp.state)}` : ''}` : '<i style="color:var(--dim)">Running mate: to be named at the convention</i>'}</small>${conv}</div></div>`;
+}
+function pulsePollBar(m) {
+  const s = pulseShares(m), N = S.nominees, me = S.side, them = other(me);
+  const seg = (w, c, t, al) => `<div style="width:${w}%;background:${c};padding:5px 6px;text-align:${al};white-space:nowrap;overflow:hidden">${t}</div>`;
+  return `<div style="display:flex;border-radius:6px;overflow:hidden;font-size:12px;font-weight:800;color:#fff;margin:6px 0">${seg(s.me, PARTY[me].color, `${lastName(N[me])} ${s.me.toFixed(1)}`, 'left')}${seg(s.und, '#3a4250', '', 'center')}${seg(s.them, PARTY[them].color, `${s.them.toFixed(1)} ${lastName(N[them])}`, 'right')}</div>`;
+}
+function pulseRead(m, ev) {
+  const N = S.nominees, my = lastName(N[S.side]), their = lastName(N[other(S.side)]), lead = `${Math.abs(m).toFixed(1)}-point`;
+  if (m > 0 && ev < 270) return `<b>A split-decision nightmare.</b> ${my} leads the popular vote by a ${lead} margin and still comes up ${270 - ev} electoral votes short. The map, not the polls, decides this.`;
+  if (m < 0 && ev >= 270) return `<b>Losing the vote, winning the map.</b> ${my} trails nationally by ${Math.abs(m).toFixed(1)} but the battlegrounds hold: ${ev} electoral votes.`;
+  if (Math.abs(m) < 1.5 && ev >= 240 && ev <= 300) return `<b>A coin flip${ev >= 270 ? ', tilted your way' : ''}.</b> ${my} and ${their} are inside the margin of error, and ${my} sits at ${ev} electoral votes. ${ev >= 270 ? 'Every battleground is a must-hold.' : `${270 - ev} more and the White House is yours.`}`;
+  if (ev >= 330 && m >= 4) return `<b>Yours to lose.</b> ${my} is running away with it: a ${lead} lead and ${ev} electoral votes. ${their}'s people are already leaking their memoirs.`;
+  if (ev >= 290 && m >= 2) return `<b>Yours to lose.</b> A ${lead} lead and ${ev} electoral votes, with room to spare. One bad debate is all ${their} needs.`;
+  if (ev >= 270) return `<b>A narrow edge.</b> ${my} sits at ${ev} electoral votes${ev < 290 ? ', just over the line' : ''}, but a ${lead} lead is nothing to bank. Every battleground is a must-hold.`;
+  if (ev >= 250) return `<b>A coin flip.</b> ${my} is ${270 - ev} electoral votes from the White House. A good week in one big state flips the whole map.`;
+  if (ev >= 200) return `<b>An uphill fight.</b> ${my} needs ${270 - ev} more electoral votes, and the battlegrounds lean ${their}'s way.`;
+  return `<b>A long shot.</b> ${ev} electoral votes. ${my}'s campaign is quietly moving money into Senate races.`;
+}
+// the trend: this cycle's ticks (pm), labeled by season, plus today
+function pulseRaceTrend(m) {
+  const yy = String(electionYear(nextElectionK())).slice(2), seen = {};
+  const ticks = (S.pulse || []).filter(p => p.pm != null && p.lbl.slice(1) === yy).map(p => {
+    const sn = p.lbl[0] === 'F' ? 'Fall' : seen.S ? 'Summer' : 'Spring'; if (p.lbl[0] === 'S') seen.S = 1;
+    const s = pulseShares(p.pm); return { lbl: `After the ${sn.toLowerCase()} bill`, short: sn, me: s.me, them: s.them };
+  });
+  const s = pulseShares(m); ticks.push({ lbl: 'Today', short: 'Today', me: s.me, them: s.them });
+  if (typeof campChart === 'function') return campChart({ polls: ticks });
+  return lineChart([{ pts: ticks.map(t => t.me), color: PARTY[S.side].color, label: lastName(S.nominees[S.side]) }, { pts: ticks.map(t => t.them), color: PARTY[other(S.side)].color, label: lastName(S.nominees[other(S.side)]) }]);
+}
+function pulseRaceHTML() {
+  const year = electionYear(nextElectionK());
+  if (!pulseNominees()) {
+    const P = S.president;
+    return `<div class="presbox"><b>🇺🇸 The race for the White House · ${year}</b><p style="margin:6px 0">Presidential primaries open in the spring. ${P.terms < 2 ? `${presTitle()} is expected to seek a second term; the ${PARTY[other(P.party)].short} are auditioning challengers in Iowa diners.` : `${presTitle()} is term-limited: both nominations are wide open, and half the Senate has been spotted in New Hampshire.`}</p></div>`;
+  }
+  const m = pulseMargin(), P = pulseProj(m), me = S.side, N = S.nominees, chip = x => { const col = x.m >= 0 ? PARTY[me].color : PARTY[other(me)].color; return `<span class="bchip" style="border-color:${col}">${x.c} <small style="color:var(--dim)">${x.ev}</small> <b style="color:${col}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b></span>`; };
+  const map = usMap({
+    fill: c => { const x = P.by[c]; return x ? { c: PARTY[x.m >= 0 ? me : other(me)].color, op: 0.3 + Math.min(0.7, Math.abs(x.m) / 15) } : null; },
+    sub: c => P.by[c] ? `${EV[c]}` : '',
+    ring: c => P.by[c] && Math.abs(P.by[c].m) < 3 ? '#f6d27a' : null,
+    title: c => P.by[c] ? `${stName(c)} (${EV[c]} EV): ${P.by[c].m >= 0 ? lastName(N[me]) : lastName(N[other(me)])} +${Math.abs(P.by[c].m).toFixed(1)}` : stName(c),
+  });
+  return `<div class="presbox"><b>🇺🇸 The race for the White House · ${year}</b>${N.conventionsDone ? '' : ' <small style="color:var(--dim)">· the conventions are next</small>'}
+    <div class="ticket camp-tickets">${pulseTicketHTML(me)}<span class="vs">vs</span>${pulseTicketHTML(other(me))}</div>
+    <small style="color:var(--dim)">National poll, two-way · 6% undecided</small>${pulsePollBar(m)}
+    <p style="margin:6px 0">Electoral College: <b style="color:${P.evMine >= 270 ? 'var(--yes)' : 'var(--no)'}">${P.evMine}</b> for ${lastName(N[me])}, ${538 - P.evMine} for ${lastName(N[other(me)])} <small style="color:var(--dim)">(270 to win)</small>. ${pulseRead(m, P.evMine)}</p>
+    <div class="campmap" style="max-width:440px;margin:6px auto">${map}<small>Shaded by the projected margin · gold rings: within 3 points</small></div>
+    <div class="battle"><b>Battlegrounds</b> ${P.battle.map(chip).join('') || '<small style="color:var(--dim)">none within 8 points: this one isn\'t close</small>'}</div>
+    <b style="font-size:13px">The horse race</b>${pulseRaceTrend(m)}</div>`;
+}
+
+/* ---------------- the Pulse: the Senate outlook ---------------- */
+function pulseSenate() {
+  // right after an election S.election (last cycle's wave, promises, midterm campaign) lingers until the next bill: the outlook is for the next cycle, so leave it out
+  const E = S.election; S.election = null;
+  try { return pulseSenateCalc(); } finally { S.election = E; }
+}
+function pulseSenateCalc() {
+  const me = S.side, them = other(me), ups = S.members.filter(isUp);
+  // neutral race records; an independent incumbent stays in the race (as electionPrep has it) and keeps the seat ~55% of the time
+  const rows = ups.map(m => {
+    const ind = m.party === 'I' ? { name: m.name, incumbent: true, str: 36 } : null;
+    const p = raceChance({ m, retiring: false, cash: 0, noise: 0, primaried: false, bruised: false, ind, nominee: null, electability: 0 });
+    return { m, p, pThem: ind ? Math.max(0, 0.45 - p) : 1 - p };
+  });
+  const notUp = S.members.filter(m => !isUp(m) && m.party === me).length, notUpThem = S.members.filter(m => !isUp(m) && m.party === them).length;
+  const exp = notUp + rows.reduce((a, r) => a + r.p, 0), expThem = notUpThem + rows.reduce((a, r) => a + r.pThem, 0);
+  // the exact distribution of (your seats − theirs), one race at a time; control is more seats than theirs (isMajority: independents don't count, a tie isn't yours)
+  const n = rows.length; let dist = new Array(2 * n + 1).fill(0); dist[n] = 1;
+  for (const r of rows) { const nd = new Array(2 * n + 1).fill(0); dist.forEach((q, k) => { if (!q) return; nd[k + 1] += q * r.p; nd[k - 1] += q * r.pThem; nd[k] += q * Math.max(0, 1 - r.p - r.pThem); }); dist = nd; }
+  const d0 = notUp - notUpThem - n;
+  let pMaj = 0, pTie = 0; dist.forEach((q, k) => { if (k + d0 > 0) pMaj += q; else if (k + d0 === 0) pTie += q; });
+  return { rows, notUp, exp, expThem, pMaj, pTie, pres: isPresYear(nextElectionK()), pCtrl: pMaj, mineUp: ups.filter(m => m.party === me).length, indUp: ups.filter(m => m.party === 'I').length, close: rows.slice().sort((a, b) => Math.abs(a.p - 0.5) - Math.abs(b.p - 0.5)).slice(0, 5),
+    gains: rows.filter(r => r.m.party !== me).sort((a, b) => b.p - a.p).slice(0, 3).filter(r => r.p >= 0.15), risks: rows.filter(r => r.m.party === me).sort((a, b) => a.p - b.p).slice(0, 3).filter(r => r.p <= 0.85) };
+}
+function pulseSenateRow(r) { return `<div class="salrow"><span><b style="color:${PARTY[r.m.party].color}">${r.m.state}</b> ${r.m.name} <small style="color:var(--dim)">(${r.m.party})</small></span><span class="mbar" style="width:30%"><i style="width:${Math.round(r.p * 100)}%;background:${chanceColor(r.p)}"></i></span><b style="min-width:34px;text-align:right">${Math.round(r.p * 100)}%</b></div>`; }
+function pulseSenateHTML(O) {
+  const me = S.side, them = other(me), year = electionYear(nextElectionK()), seatsNow = seats(me), e = Math.round(O.exp), et = Math.round(O.expThem), ei = 100 - e - et;
+  const col = e > et ? 'var(--yes)' : e === et ? 'var(--gold2)' : 'var(--no)', theirsUp = O.rows.length - O.mineUp - O.indUp;
+  const tieVP = O.pres ? 'whoever wins the White House breaks the tied votes' : `${vpYours() ? 'your' : 'their'} Vice President${S.vp ? ` (${lastName(S.vp)})` : ''} still breaks tied votes`;
+  const read = O.pCtrl >= 0.85 ? `The ${PARTY[me].short} are heavy favorites to ${isMajority() ? 'keep' : 'take'} the Senate.` : O.pCtrl >= 0.6 ? `The ${PARTY[me].short} are favored, but a bad fall could cost them the gavel.` : O.pCtrl >= 0.4 ? 'The Senate is a toss-up: the majority runs through the closest five races below.' : O.pCtrl >= 0.15 ? `The ${PARTY[them].short} are favored. Your path to a majority needs an upset or two.` : `The math is brutal: the ${PARTY[me].short} would need a wave to ${isMajority() ? 'hold' : 'win'} the Senate.`;
+  return `<div class="presbox"><b>🏛 The Senate outlook · ${year}</b> <small style="color:var(--dim)">· ${O.rows.length} seats up: ${O.mineUp} yours, ${theirsUp} theirs${O.indUp ? `, ${O.indUp} independent` : ''}</small>
+    <div class="pulsecards">
+      <div class="pc"><small>Projected ${PARTY[me].name} seats</small><b style="color:${col}">~${e}</b> <small>vs ~${et} ${PARTY[them].short}${ei > 0 ? ` and ${ei} independent${ei > 1 ? 's' : ''}` : ''} · now ${seatsNow}, ${O.notUp} not up</small></div>
+      <div class="pc"><small>Chance of control</small><b style="color:${O.pCtrl >= 0.5 ? 'var(--yes)' : 'var(--no)'}">${Math.round(O.pCtrl * 100)}%</b> <small>More seats than the ${PARTY[them].short}. A tie (${Math.round(O.pTie * 100)}%) leaves you without the gavel, though ${tieVP}.</small></div>
+    </div><p style="margin:4px 0 8px">${read}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">
+      <div><b style="font-size:13px">The five closest races</b> <small style="color:var(--dim)">· your chance</small>${O.close.map(pulseSenateRow).join('')}</div>
+      <div><b style="font-size:13px">Most likely to flip</b>${O.gains.length ? `<small style="display:block;color:var(--yes)">Pickups for you</small>${O.gains.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim)">No real pickup chances yet.</small>'}${O.risks.length ? `<small style="display:block;color:var(--no);margin-top:4px">Your seats in danger</small>${O.risks.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim);margin-top:4px">None of your seats look shaky.</small>'}</div>
+    </div><small style="color:var(--dim)">Before retirements, primaries and campaign money. The closer the election, the less those move.</small></div>`;
+}
 function openPulse(back) {
   const P = S.president, gb = genericBallot(), rt = rightTrack(), pts = S.pulse || [];
   const sal = Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]), maxS = Math.max(...sal.map(x => x[1]), 1);
+  const presYr = isPresYear(nextElectionK()), race = presYr && pulseNominees(), O = pulseSenate();
+  const hm = race ? pulseMargin() : 0, hs = pulseShares(hm), N = S.nominees, me = S.side, dp = hs.me.toFixed(0) === hs.them.toFixed(0) && Math.abs(hm) >= 0.05 ? 1 : 0; // a lead never rounds into a tie
   const chyrons = [
+    `SENATE OUTLOOK: ~${Math.round(O.exp)} SEATS FOR THE ${PARTY[me].short.toUpperCase()} — ${Math.round(O.pCtrl * 100)}% CHANCE OF CONTROL`,
+    race ? `WHITE HOUSE: ${lastName(N[me]).toUpperCase()} ${hs.me.toFixed(dp)}, ${lastName(N[other(me)]).toUpperCase()} ${hs.them.toFixed(dp)} — ${pulseProj(hm).evMine} ELECTORAL VOTES FOR ${lastName(N[me]).toUpperCase()}` : presYr ? `THE ${electionYear(nextElectionK())} FIELD TAKES SHAPE: PRIMARIES OPEN IN THE SPRING` : '',
     P.approval >= 52 ? `${presTitle().toUpperCase()} RIDING HIGH AT ${P.approval}%` : P.approval <= 42 ? `${presTitle().toUpperCase()} SINKS TO ${P.approval}% — LOWEST YET` : `${presTitle().toUpperCase()} STUCK AT ${P.approval}%`,
-    S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : `GENERIC BALLOT: ${PARTY[S.side].short.toUpperCase()} ${gb >= 50 ? 'LEAD' : 'TRAIL'} ${Math.abs(gb - (100 - gb)).toFixed(0)} POINTS`,
+    S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : (gbm => gbm ? `GENERIC BALLOT: ${PARTY[S.side].short.toUpperCase()} ${gbm > 0 ? 'LEAD' : 'TRAIL'} BY ${Math.abs(gbm)} POINT${Math.abs(gbm) === 1 ? '' : 'S'}` : 'GENERIC BALLOT: DEAD EVEN')(+gb.toFixed(0) - +(100 - gb).toFixed(0)),
     `TOP ISSUE: ${TAG[sal[0][0]][1].toUpperCase()} — ${rt}% SAY COUNTRY ON RIGHT TRACK`,
     S.shutdown ? 'SHUTDOWN DRAGS ON — FEDERAL WORKERS MISS PAYCHECKS' : S.mood >= 3 ? `${PARTY[S.side].short.toUpperCase()} MOMENTUM BUILDS AHEAD OF ${electionYear(nextElectionK())}` : S.mood <= -3 ? `${PARTY[S.side].short.toUpperCase()} IN TROUBLE: VOTERS SOUR` : 'VOTERS SPLIT AS WASHINGTON GRIDLOCK GRINDS ON',
-  ];
+  ].filter(Boolean);
   const voices = shuffle(STATES.map(s => s[0])).slice(0, 3).map(code => {
     const t = pick(sal.slice(0, 3))[0];
     return `<p>“${pick(['All I care about is', 'Nobody in Washington is talking about', 'My whole town is worried about', 'I\'ll vote on one thing:', 'Fix'])} ${TAG[t][1].toLowerCase()}.” <small>— a voter in ${pick(HOMETOWNS[code])}, ${ST[code].name}</small></p>`;
@@ -144,28 +272,22 @@ function openPulse(back) {
       ${S.war ? `<div class="pc war"><small>⚔ War in ${S.war.place}</small><b>${S.war.support}% support</b></div>` : ''}
     </div>
     <div class="chyron">${chyrons.map(c => `<span>${c}</span>`).join('')}</div>
+    ${presYr ? pulseRaceHTML() : ''}
+    ${pulseSenateHTML(O)}
     <div class="pulsegrid"><div><b>Trends</b>${pts.length > 1 ? lineChart([{ pts: pts.map(p => p.ap), color: PARTY[P.party].color, label: 'Approval' }, { pts: pts.map(p => p.gb), color: '#e3b54a', label: 'Your party' }]) : '<p style="color:var(--dim)">Trends appear after your first bill.</p>'}</div>
       <div><b>What voters care about</b>${sal.map(([t, v]) => `<div class="salrow"><span>${TAG[t][0]} ${TAG[t][1]}</span><span class="mbar"><i style="width:${v / maxS * 100}%;background:#e3b54a"></i></span></div>`).join('')}<small style="color:var(--dim)">Bills on the top issues move public opinion more.</small></div></div>
     <div class="voices"><b>Voices from the states</b>${voices}</div>
-    <div class="choices"><button class="btn primary" id="pulseok">Back</button></div>`);
+    <div class="choices"><button class="btn primary adv" id="pulseok">Back</button></div>`);
   $('#pulseok').onclick = () => { if (back) back(); else hideModal(); };
+  $('#modal-card').querySelectorAll('[data-pprof]').forEach(a => a.onclick = e => { e.preventDefault(); const p = a.dataset.pprof, person = pulsePerson(S.nominees[p], p); if (person) profileModal(person, `${PARTY[p].name} nominee for President`, () => openPulse(back)); });
 }
 
 /* ---------------- between bills: the executive branch acts ---------------- */
 function worldNews() {
   const out = [], P = S.president;
   // war grinds on
-  if (S.war) {
-    const W = S.war; W.months += 4;
-    W.support = clamp(W.support - ri(2, 7) + ((S.cabinet.defense && S.cabinet.defense.competence) || 3) - 3, 5, 90);
-    if (P.party === W.party) P.approval += W.support >= 50 ? 0 : -1;
-    if (Math.random() < 0.12 + ((S.cabinet.defense && S.cabinet.defense.competence) || 3) * 0.02) {
-      const win = Math.random() < W.support / 100 + 0.1;
-      out.push(win ? `🕊️ <b>The war in ${W.place} ends in victory.</b> ${presTitle()}'s approval jumps.` : `🏳️ <b>U.S. forces withdraw from ${W.place}</b> after ${W.months} months. A bitter end.`);
-      if (P.party === W.party) P.approval += win ? 6 : -4;
-      S.war = null;
-    }
-  } else if (Math.random() < 0.07 && !S.pendingAUMF) {
+  if (S.war) out.push(...warTick());
+  else if (Math.random() < 0.07 && !S.pendingAUMF) {
     const [place, what] = pick(CRISES);
     S.crisis = { place, what };
   }
@@ -199,6 +321,70 @@ function worldNews() {
   if (Math.random() < 0.05) { const code = pick(Object.keys(S.governors)), g = S.governors[code]; if (g) { hist(g, 'Resigned as governor'); S.formers.push(g); governorSucceeded(code, 'resigned'); out.push(`🏛️ Gov. ${g.name} of ${ST[code].name} resigns; the lieutenant governor takes over.`); } }
   for (const f of HOOKS.worldNews) out.push(...(f() || []));
   return out;
+}
+
+/* ---------------- war: weariness, a Congress in revolt, and a hard stop ---------------- */
+function warIsWPR(d) { return !!(d && d.name && d.name.startsWith('War Powers')); }
+function warEnded() { const moot = warIsWPR(S.docket); if (moot) S.docket = null; S.war = null; return moot ? ' The War Powers vote on the docket is moot.' : ''; }
+function warTick() {
+  const W = S.war, P = S.president, out = [], weary = [], def = (S.cabinet.defense && S.cabinet.defense.competence) || 3, yours = P.party === S.side;
+  W.months += 4;
+  W.support = clamp(W.support - ri(2, 7) + def - 3, 5, 90);
+  if (P.party === W.party) P.approval += W.support >= 50 ? 0 : -1;
+  // war weariness: the President owns it, whoever started it
+  if (W.support < 40) {
+    const d = ri(1, 2);
+    P.approval = clamp(P.approval - d, 18, 82); S.mood = clamp(S.mood + (yours ? -0.3 : 0.3), -15, 15);
+    W.weary = (W.weary || 0) + 1;
+    if (W.weary % 2 === 1) weary.push(`⚔ <b>Month ${W.months} in ${W.place}: ${W.support}% support.</b> ${pick([`The war is eating ${presTitle()}'s approval (−${d}).`, `Another flag-draped homecoming at Dover; ${presTitle()} slips ${d} more.`, `Town halls turn ugly over ${W.place}. ${presTitle()} −${d}.`, `"What are we still doing there?" is the most-asked question in the focus groups. ${presTitle()} −${d}.`])} ${yours ? 'Your party is paying for it too.' : `The ${PARTY[S.side].short} gain a little ground.`}`);
+  }
+  // the old roll: victory, or a bitter withdrawal
+  if (Math.random() < 0.12 + def * 0.02) {
+    const win = Math.random() < W.support / 100 + 0.1;
+    if (P.party === W.party) P.approval += win ? 6 : -4;
+    hist(P, win ? `Declared victory in ${W.place} after ${W.months} months` : `Withdrew U.S. forces from ${W.place} after ${W.months} months`);
+    out.push((win ? `🕊️ <b>The war in ${W.place} ends in victory.</b> ${presTitle()}'s approval jumps.` : `🏳️ <b>U.S. forces withdraw from ${W.place}</b> after ${W.months} months. A bitter end.`) + warEnded());
+    return out;
+  }
+  // a hard stop: no President survives a sixth year of this
+  if (W.months >= 60) {
+    const place = W.place, n = W.months;
+    P.approval = clamp(P.approval - 4, 18, 82); S.mood = clamp(S.mood + (yours ? -1 : 1), -15, 15);
+    hist(P, `Withdrew U.S. forces from ${place} after ${n} months`);
+    out.push(`🏳️ <b>"It is time to come home."</b> In a ${pick(['somber Oval Office address', 'prime-time address from the Situation Room', 'speech at West Point'])}, ${presTitle()} announces the withdrawal of U.S. forces from ${place} after ${n} months and ${ri(900, 4800).toLocaleString()} American dead. No parade. ${presTitle()} −4; ${yours ? 'your party takes the hit' : `the ${PARTY[S.side].short} gain ground`}.${warEnded()}`);
+    return out;
+  }
+  out.push(...weary);
+  if (W.months >= 24 && W.support < 40) out.push(...warRevolt(W));
+  return out;
+}
+// Congress revolts: a War Powers Resolution forced onto the docket
+function warRevolt(W) {
+  const P = S.president, yours = P.party === S.side;
+  if (warIsWPR(S.docket) || S.pendingAUMF || (S.nominee && P.party === S.side && S.court.length < 9) || Math.random() >= 0.5) return [];
+  const doves = p => S.members.filter(m => m.party === p && !T(m, 'leader')).sort((a, b) => ((a.w && a.w.security) || 0) - ((b.w && b.w.security) || 0));
+  const inside = doves(P.party)[0], across = doves(other(P.party))[0];
+  if (!inside || !across) return [];
+  const n = ri(8, 15), who = `${sen(inside)} and ${sen(across)}`;
+  if (S.docket) return [`🏛 <b>Congress is restless.</b> ${who} are whipping a War Powers Resolution on ${W.place}. Your pick, the ${S.docket.name}, holds the floor for now; the next opening may not be yours.`];
+  const name = `War Powers Resolution on ${W.place}`;
+  S.docket = { name, forced: true, tpl: [name, `Order U.S. forces out of ${W.place} within 30 days. Congress has run out of patience.`, { security: -2, welfare: 1, taxes: 1 }] }; S.docketOffer = null;
+  W.revolts = (W.revolts || 0) + 1;
+  const when = (S.career.bills + 1) % 3 === 0 ? 'It comes to the floor right after the budget.' : 'It comes to the floor next.';
+  hist(inside, `Led a bipartisan revolt to force a War Powers vote on ${W.place}`); hist(across, `Co-sponsored the War Powers Resolution on ${W.place}`);
+  return [yours
+    ? `🏛 <b>Congress revolts, and it starts inside your own caucus:</b> ${sen(inside)} and ${n} other ${PARTY[P.party].name} senators join ${sen(across)} to force a War Powers vote on ${W.place} onto the docket. Month ${W.months}, ${W.support}% support. ${when} ${presTitle()} would rather sign a way out than lose a veto fight to their own party: pass it and the troops come home.`
+    : `🏛 <b>Congress revolts:</b> a bipartisan bloc led by ${who}, with ${n} of ${presTitle()}'s own party behind them, forces a War Powers vote on ${W.place} onto the docket. Month ${W.months}, ${W.support}% support. ${when} Pass it, beat the veto if it comes, and the troops come home.`];
+}
+function warCardHTML() {
+  const W = S.war; if (!W) return '';
+  const P = S.president, col = W.support >= 50 ? 'var(--yes)' : W.support >= 40 ? 'var(--gold2)' : 'var(--no)';
+  const status = warIsWPR(S.docket) ? `🏛 A War Powers Resolution is on the docket: ${S.docket.forced ? 'a bipartisan bloc forced it there' : 'you put it there'}. ${vpYours() ? `${presTitle()} will sign it if it passes` : 'Pass it and beat the veto'}, and the troops come home.`
+    : W.months >= 24 && W.support < 40 ? '🏛 Congress is restless: a War Powers vote could be forced onto the docket at any time.'
+    : W.support < 45 ? 'The public has turned against it.' : 'The country is behind it, for now.';
+  return `<div class="primnews"><b>⚔ War in ${W.place}</b> <small style="color:var(--dim)">· ${W.party === P.party ? `${presTitle()}'s war` : `inherited from a ${PARTY[W.party].name} administration`}${W.revolts ? ` · ${W.revolts} revolt${W.revolts > 1 ? 's' : ''} in Congress` : ''}</small>
+    <div class="salrow"><span>Month ${W.months} (year ${Math.floor(W.months / 12) + 1}) · public support <b style="color:${col}">${W.support}%</b></span><span class="mbar"><i style="width:${W.support}%;background:${col}"></i></span></div>
+    <p>${status}</p>${W.months >= 44 ? `<small style="color:var(--dim)">The Pentagon's planners admit privately that no President can hold this past month 60.</small>` : ''}</div>`;
 }
 
 // confirmation votes for the cabinet: projected votes, and you can whip for or against
@@ -272,6 +458,7 @@ function startWar(place, support) { S.war = { place, months: 0, support, party: 
 function forcedNext(n) {
   if (n % 3 === 0) return 'The yearly budget';
   if (S.pendingAUMF) return `War vote: Authorization for Use of Military Force in ${S.pendingAUMF}`;
+  if (S.docket && S.docket.forced) return `${S.docket.name}, forced onto the floor by a bipartisan bloc`;
   if (S.nominee && S.president.party === S.side && S.court.length < 9) return `Supreme Court confirmation: Judge ${S.nominee.name}`;
   return null;
 }
@@ -392,7 +579,7 @@ function openAdmin(back) {
   showModal(`<div class="kicker">The Administration</div><h2>${presTitle()}</h2>
     <div class="race"><span class="nomp">${portrait(P)}</span><span style="flex:1"><b style="color:${PARTY[P.party].color}">President ${P.name}</b> <small>(${P.party} · ${P.faction})</small><br><small>Approval ${P.approval}% · term ${P.terms}</small> · <a href="#" id="profP">profile</a></span></div>
     ${S.vp ? `<div class="race"><span class="nomp">${portrait(S.vp)}</span><span style="flex:1"><b>Vice President ${S.vp.name}</b><br><small>Breaks ties in the Senate${vpYours() ? ' for you' : ' against you'}</small> · <a href="#" id="profV">profile</a></span></div>` : ''}
-    ${S.war ? `<div class="primnews"><b>⚔ War in ${S.war.place}</b><p>Month ${S.war.months} · public support ${S.war.support}%. ${S.war.support < 45 ? 'The public is turning against it.' : 'The country is behind it, for now.'}</p></div>` : ''}
+    ${warCardHTML()}
     <hr><b>The Cabinet</b><div class="races" style="max-height:none">${rows}</div>
     ${eos.length ? `<hr><b>Recent executive orders</b>${eos.map(e => `<p style="margin:4px 0">🖋️ ${e.name} <small style="color:var(--dim)">(${e.party}, ${e.year}${e.sued ? ', challenged in court' : ''})</small></p>`).join('')}` : ''}
     <div class="choices"><button class="btn primary" id="adback">Back</button></div>`);
