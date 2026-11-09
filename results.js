@@ -39,7 +39,8 @@ function resBuildRecord(nd) {
   const gov = (nd.gov || []).map(r => ({ code: r.code, wParty: r.wParty, wName: r.wName, lParty: r.lParty, lName: r.lName, wPct: r1(r.wPct), lPct: r1(r.lPct), margin: r1(r.margin), flip: !!r.flip, open: !!r.open, inc: r.incumbent || null }));
   return { year: nd.year, side: S.side, wave: r1(nd.wave), waveSignal: r1(nd.waveSignal), president: { name: S.president.name, party: S.president.party, terms: S.president.terms || 1 }, pres, senate, house, gov,
     govBefore: nd.govBefore ? resCountBy(nd.govBefore) : null, govAfter: resCountBy(Object.fromEntries(Object.entries(S.governors || {}).map(([c, g]) => [c, g.party]))),
-    campaign: S.lastCampaign && S.lastCampaign.year === nd.year ? S.lastCampaign : null, conventions: S.conventions && S.conventions.year === nd.year ? S.conventions : null };
+    campaign: S.lastCampaign && S.lastCampaign.year === nd.year ? S.lastCampaign : null, conventions: S.conventions && S.conventions.year === nd.year ? S.conventions : null,
+    midterm: S.lastMidterm && S.lastMidterm.year === nd.year ? S.lastMidterm : null };
 }
 function archiveElection(nd) {
   try {
@@ -51,6 +52,8 @@ function archiveElection(nd) {
       if (pv !== rec.pres.winner) unlock('split');
       if (Object.entries(rec.pres.states).filter(([c, s]) => c !== 'DC' && (s[0] > s[1]) === (rec.pres.winner === 'D')).length >= 40) unlock('sweep40');
     }
+    const sb = rec.senate.before;
+    if (rec.midterm && sb && rec.president.party === rec.side && (rec.senate.after[rec.side] || 0) > (sb[rec.side] || 0)) unlock('midmaestro');
   } catch (e) { console.error('archiveElection failed', e); }
 }
 // the record for a night's data: the archived one if it is there, otherwise a fresh one
@@ -138,7 +141,7 @@ let RESX = null;
 function resExplorer(rec, back) {
   if (!rec) { if (back) back(); return; }
   rec = resNorm(rec);
-  const tabs = [rec.pres && 'pres', 'senate', 'house', rec.gov && rec.gov.length && 'gov', (rec.campaign || rec.conventions) && 'campaign', 'table'].filter(Boolean);
+  const tabs = [rec.pres && 'pres', 'senate', 'house', rec.gov && rec.gov.length && 'gov', (rec.campaign || rec.conventions || rec.midterm) && 'campaign', 'table'].filter(Boolean);
   RESX = { rec, tabs, tab: tabs[0], sort: null, sel: null, back, pdAt: Date.now() }; // pdAt: the click that trails the opening tap must not count
   let el = $('#night');
   if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
@@ -284,7 +287,7 @@ function resXGov(R, X) {
   return `<div class="res-grid"><div class="res-col">${left}${resCard('Every race', `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'margin', d: 1 })}</div>`)}</div><div class="res-col">${right}</div></div>`;
 }
 
-/* ---- Campaign (presidential years with a recorded fall campaign and conventions) ---- */
+/* ---- Campaign (presidential years with a recorded fall campaign and conventions; midterm years go to resXMidterm) ---- */
 // render whatever shape another module recorded, without assuming its fields
 function resAny(x) {
   if (x == null) return '';
@@ -331,6 +334,7 @@ function resEventRow(e) {
   return `<div class="res-debrow"><span><b>${e.title}</b>${e.choice ? `<br>Your call: <i>${e.choice}</i>` : ''}${e.effect ? ` · ${e.effect}` : ''}${e.result ? `<br><small style="color:var(--dim)">${e.result}</small>` : ''}</span></div>`;
 }
 function resXCampaign(R, X) {
+  if (R.midterm && !R.campaign) return resXMidterm(R, X);
   const C = R.campaign, V = R.conventions, side = R.side || S.side, P = R.pres;
   const cards = [];
   const nm = p => { const full = (C && C.tickets && C.tickets[p] && C.tickets[p].name) || (P && P.names && P.names[p]) || PARTY[p].short; return String(full).includes(' ') ? lastName({ name: String(full) }) : String(full); };
@@ -344,6 +348,39 @@ function resXCampaign(R, X) {
   if (C && (C.strategy || C.theme)) cards.push(resCard('Strategy', `<p class="res-narr">${C.strategy ? `Strategy: <b>${typeof C.strategy === 'object' ? resAny(C.strategy) : RES_STRAT[C.strategy] || C.strategy}</b>. ` : ''}${C.theme ? `Message: <b>${TAG[C.theme] ? `${TAG[C.theme][0]} ${TAG[C.theme][1]}` : C.theme}</b>.` : ''}</p>`));
   cards.push(resWaveCard(R));
   if (!cards.filter(Boolean).length) cards.push(resCard('', '<div class="res-empty">No campaign was recorded for this election.</div>'));
+  const half = Math.ceil(cards.length / 2);
+  return `<div class="res-grid"><div class="res-col">${cards.slice(0, half).join('')}</div><div class="res-col">${cards.slice(half).join('')}</div></div>`;
+}
+
+/* ---- Campaign, midterm years: the record midterm.js leaves in S.lastMidterm ---- */
+const RES_MID_STRAT = { defend: 'Defend the seats you hold', offense: 'Go on offense', nationalize: 'Nationalize the midterms', localize: 'All politics is local' };
+function resXMidterm(R, X) {
+  const M = R.midterm || {}, side = M.side || R.side || S.side, theirs = other(side), O = M.opp || {}, Sn = R.senate, cards = [];
+  const tg = t => TAG[t] ? `${TAG[t][0]} ${TAG[t][1]}` : (t || '—'), strat = k => RES_MID_STRAT[k] || k || '—', arr = a => Array.isArray(a) ? a.filter(x => x && typeof x === 'object') : [];
+  const polls = arr(M.polls).filter(p => p.seats != null), b = Sn.before || {}, a = Sn.after || {}, net = (a[side] || 0) - (b[side] || 0);
+  if (polls.length) {
+    const chart = typeof midSeatChart === 'function' ? midSeatChart(polls, side, { need: M.need || 51 }) : '';
+    cards.push(resCard('The Senate tracker', `${chart}<div class="res-chips">${polls.map(p => `<span class="res-chip">${p.short || p.lbl}: ${(+p.seats).toFixed(1)} seats${p.gb != null ? ` · GB ${(+p.gb).toFixed(1)}%` : ''}</span>`).join('')}</div>
+      <div class="nsub">Seats the ${PARTY[side].name} campaign was projected to hold, round by round, out of ${M.need || 51} needed for control. Final forecast ~${(+(M.seatsProjected != null ? M.seatsProjected : polls[polls.length - 1].seats)).toFixed(1)}; they ended with <b>${a[side] || 0}</b>.</div>`));
+  }
+  cards.push(resCard('The outcome', `<div class="res-wave mid-out"><div class="pc"><small>${PARTY[side].short} before</small><b>${b[side] != null ? b[side] : '—'}</b></div><div class="pc"><small>After</small><b style="color:${net > 0 ? 'var(--yes)' : net < 0 ? 'var(--no)' : 'var(--ink)'}">${a[side] || 0}</b></div><div class="pc"><small>Net</small><b>${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}</b></div><div class="pc"><small>House seats</small><b>${R.house.after ? `${R.house.after[side]}` : '—'}</b></div></div>
+    <div class="nsub">${resCnt(b)} → ${resCnt(a)} in the Senate${R.house.before ? `; House ${R.house.before[side]} → ${R.house.after[side]} for the ${PARTY[side].short}` : ''}. ${M.president ? `${PARTY[M.president.party].name} White House at ${M.president.approval}% approval on Election Eve${M.president.party === side ? ' — the midterm curse was yours to beat' : ' — the midterm curse was theirs'}.` : ''}${Sn.races.filter(r => r.flip).length ? ` Flips: ${Sn.races.filter(r => r.flip).map(r => `${resNm(r.code, r.wParty)}`).join(', ')}.` : ' No seat changed hands.'}</div>`));
+  const rows = [
+    `<div class="mid-res-row"><b>Message:</b> ${tg(M.message)}${M.msgHot ? ' — a top-two issue with voters (+0.8 in every race)' : ''}</div>`,
+    `<div class="mid-res-row"><b>Strategy:</b> ${strat(M.strategy)}</div>`,
+    M.auto ? '<div class="mid-res-row"><small style="color:var(--dim)">You let the campaign committee run part of the campaign.</small></div>' : '',
+    `<div class="mid-res-row"><b>The closing weekend:</b> ${M.adBuy ? `${M.adBuy} unit${M.adBuy > 1 ? 's' : ''} of national ads (${resSigned(cashEff(M.adBuy, 0.6))})` : 'no closing ad buy'}; ${M.gotv ? 'paid the turnout machine (+0.5)' : 'no turnout money'}</div>`,
+    arr(M.surrogates).length ? `<div class="mid-res-row"><b>Surrogates:</b> ${arr(M.surrogates).map(s => `${s.who} → ${s.code} (${resSigned(+s.pts || 0)})`).join(', ')}</div>` : '',
+    `<div class="mid-res-row"><b>Net campaign effect:</b> ${resSigned(+M.national || 0)} in every Senate race before state-by-state moves, ${resSigned(+M.houseAdj || 0)} for the House</div>`,
+  ].filter(Boolean).join('');
+  cards.push(resCard('Your campaign', rows));
+  const deb = arr(M.debates);
+  if (deb.length) cards.push(resCard('The Senate debates', `<div class="res-deb">${deb.map(d => `<div class="res-debrow"><span><b>${stName(d.code)}</b>${d.venue ? ` · <small style="color:var(--dim)">${d.venue}</small>` : ''}<br>${d.mine ? `${d.mine.charAt(0).toUpperCase() + d.mine.slice(1)} vs ${d.theirs}` : ''}${d.coached ? ' · 🎓 your coach' : ''}${d.oppCoached ? ' · their coach' : ''}${d.text ? `<br><small style="color:var(--dim)">${d.text}</small>` : ''}</span><span class="mg"><b style="color:${d.winner === side ? 'var(--yes)' : d.winner ? 'var(--no)' : 'var(--dim)'}">${d.winner === side ? 'Won' : d.winner ? 'Lost' : 'Draw'} ${resSigned(+d.result || 0)}</b></span></div>`).join('')}</div>`));
+  const evs = arr(M.events);
+  if (evs.length) cards.push(resCard('The midterm surprise', `<div class="res-deb">${evs.map(resEventRow).join('')}</div>`));
+  if (O.strategy || O.message) cards.push(resCard('The other side', `<div class="mid-res-row"><b>Message:</b> ${tg(O.message)}${O.msgHot ? ' (a top issue: −0.8 for you everywhere)' : ''}</div><div class="mid-res-row"><b>Strategy:</b> ${strat(O.strategy)}</div>
+    <div class="mid-res-row"><b>Debate coach:</b> ${O.coach ? stName(O.coach) : 'none'}</div><div class="mid-res-row"><b>Closing weekend:</b> ${arr(O.surrogates).map(s => `${s.who} → ${s.code}`).join(', ') || 'no surrogates'}; ${O.adBuy ? `${O.adBuy} unit${O.adBuy > 1 ? 's' : ''} of ads` : 'no ad buy'}; ${O.gotv ? 'paid turnout' : 'no turnout money'}</div>`));
+  cards.push(resWaveCard(R));
   const half = Math.ceil(cards.length / 2);
   return `<div class="res-grid"><div class="res-col">${cards.slice(0, half).join('')}</div><div class="res-col">${cards.slice(half).join('')}</div></div>`;
 }
