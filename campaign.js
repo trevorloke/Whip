@@ -84,12 +84,12 @@ function campaignStateD(c, noms) {
   let pl = 0;
   for (const p of ['D', 'R']) {
     const n = noms[p]; if (!n || !n.planks || !n.planks.length) continue;
-    const sg = p === 'D' ? 1 : -1, hostile = p === 'D' ? st.lean >= 10 : st.lean <= -10;
+    const sg = p === 'D' ? 1 : -1, swing = Math.abs(st.lean) < 10;
     for (const k of n.planks) {
       if (!k || !st.voter[k.tag]) continue;
       const v = st.voter[k.tag];
       pl += sg * v * 0.6;                                   // attention to what this state cares about
-      if (k.dir === 1 && hostile) pl -= sg * 0.3 * Math.abs(v); // a flank plank plays badly deep in enemy territory
+      if (k.dir === 1 && swing) pl -= sg * 0.3 * Math.abs(v);   // the base's plank costs swing voters where the race is competitive
     }
   }
   return d + clamp(pl, -2.5, 2.5);
@@ -137,23 +137,26 @@ function campPoll(lbl, und, truth) {
 // the tracker: both tickets over the fall, with the moments labeled and the end labels kept apart
 function campChart(C) {
   const mine = S.side, noms = campNoms(), pts = C.polls, n = pts.length;
-  const W = 640, H = 210, pl = 36, pr = 118, pt = 16, pb = 30, short = s => s.length > 11 ? s.slice(0, 10) + '…' : s;
+  // phones: a smaller canvas, bigger type and every other round label, so the chart stays legible at 290px wide
+  const narrow = window.innerWidth < 640;
+  const W = narrow ? 380 : 640, H = narrow ? 180 : 210, pl = narrow ? 34 : 36, pr = narrow ? 120 : 118, pt = 16, pb = 30, fs = narrow ? 11.5 : 10, fe = narrow ? 13 : 11.5;
+  const short = s => s.length > (narrow ? 8 : 11) ? s.slice(0, narrow ? 7 : 10) + '…' : s;
   const vals = pts.flatMap(p => [p.me, p.them]);
   let lo = Math.floor((Math.min(...vals) - 3) / 5) * 5, hi = Math.ceil((Math.max(...vals) + 3) / 5) * 5;
   if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = Math.floor((mid - 10) / 5) * 5; hi = lo + 20; }
   const x = i => pl + (n < 2 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (n - 1)), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb);
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart camp-chart">`;
-  for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="10" fill="#6b7587" text-anchor="end">${v}%</text>`;
-  pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/><text x="${x(i)}" y="${H - 8}" font-size="10" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${p.short || p.lbl}</text>`; });
+  for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}%</text>`;
+  pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/>${!narrow || n <= 5 || (n - 1 - i) % 2 === 0 ? `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${p.short || p.lbl}</text>` : ''}`; });
   const series = [{ k: 'me', color: PARTY[mine].color, label: campLast(noms[mine]) }, { k: 'them', color: PARTY[other(mine)].color, label: campLast(noms[other(mine)]) }];
   const last = pts[n - 1], ends = series.map(s => y(last[s.k]));
   if (Math.abs(ends[0] - ends[1]) < 15) { const d = (15 - Math.abs(ends[0] - ends[1])) / 2; if (ends[0] <= ends[1]) { ends[0] -= d; ends[1] += d; } else { ends[0] += d; ends[1] -= d; } }
   series.forEach((s, si) => {
     svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(p[s.k])}`).join(' ')}"/>`;
     pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(p[s.k])}" r="${i === n - 1 ? 4.5 : 2.5}" fill="${s.color}"><title>${p.lbl}: ${s.label} ${p[s.k].toFixed(1)}%</title></circle>`; });
-    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="11.5" fill="${s.color}" font-weight="800">${short(s.label)} ${last[s.k].toFixed(1)}%</text>`;
+    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="${fe}" fill="${s.color}" font-weight="800">${short(s.label)} ${last[s.k].toFixed(1)}%</text>`;
   });
-  if (last.tp) svg += `<text x="${W - pr + 8}" y="${H - pb - 2}" font-size="10" fill="${PARTY.I.color}" font-weight="700">${short(C.thirdParty ? lastName(C.thirdParty) || C.thirdParty.name : 'Ind.')} ${last.tp.toFixed(1)}%</text>`;
+  if (last.tp) svg += `<text x="${W - pr + 8}" y="${H - pb - 2}" font-size="${fs}" fill="${PARTY.I.color}" font-weight="700">${short(C.thirdParty ? lastName(C.thirdParty) || C.thirdParty.name : 'Ind.')} ${last.tp.toFixed(1)}%</text>`;
   return svg + '</svg>';
 }
 function campStartPolls() {
@@ -383,8 +386,8 @@ function campDebate(which, mineKey, prep, theirsKey, city, theirPrep) {
   if (CAMP_DEBATE[mineKey].beats === theirsKey) { score += 1.0; how = `${CAMP_DEBATE[mineKey].name} beat ${CAMP_DEBATE[theirsKey].name.toLowerCase()}`; }
   else if (CAMP_DEBATE[theirsKey].beats === mineKey) { score -= 1.0; how = `${CAMP_DEBATE[theirsKey].name} beat ${CAMP_DEBATE[mineKey].name.toLowerCase()}`; }
   else { score += (campCharisma(my) - campCharisma(their)) * 1.5; how = mineKey === theirsKey ? `both came to ${CAMP_DEBATE[mineKey].name.toLowerCase()}, so stage presence decided it` : 'the game plans cancelled out and stage presence decided it'; }
-  if (prep) score += 0.7;
-  if (theirPrep) score -= 0.7;
+  if (prep) score += 0.5;
+  if (theirPrep) score -= 0.5;
   const prepNote = prep && theirPrep ? '; both camps had drilled for days' : prep ? '; debate camp showed' : theirPrep ? `; ${campLast(their)}'s preparation showed` : '';
   score += gauss() * 0.8;
   const result = clamp(score, -3, 3), winner = result > 0.4 ? mine : result < -0.4 ? other(mine) : null;
@@ -428,8 +431,8 @@ function campVpDebate() {
 function campDebateVerdict(rec) { const noms = campNoms(); return rec.winner ? `${campLast(noms[rec.winner])} won, ${rec.snap}% in the snap poll (${campNum(rec.result)})` : `a draw (${campNum(rec.result)})`; }
 function campDebateDecisionsHTML(ui, again) {
   const cap = S.career.capital;
-  const prep = ui.prep != null ? campPickHTML(ui.prep ? '🎓 Debate camp (1 capital)' : '🎲 Wing it', 'prep', ui.prep ? 'Three days of mock debates: +0.7 to the result.' : 'The nominee trusts their instincts.')
-    : `<div class="camp-opts"><button class="btn" data-choice="prep:1" ${cap < 1 ? 'disabled' : ''}><span>🎓 Debate camp${again ? ' again' : ''}<small>Three days of mock debates with a stand-in opponent: +0.7 to the result. Costs 1 capital (you have ${cap}).</small></span></button><button class="btn" data-choice="prep:0"><span>🎲 Wing it<small>Keep your capital for the Senate; trust the nominee's instincts.</small></span></button></div>`;
+  const prep = ui.prep != null ? campPickHTML(ui.prep ? '🎓 Debate camp (1 capital)' : '🎲 Wing it', 'prep', ui.prep ? 'Three days of mock debates: +0.5 to the result.' : 'The nominee trusts their instincts.')
+    : `<div class="camp-opts"><button class="btn" data-choice="prep:1" ${cap < 1 ? 'disabled' : ''}><span>🎓 Debate camp${again ? ' again' : ''}<small>Three days of mock debates with a stand-in opponent: +0.5 to the result. Costs 1 capital (you have ${cap}).</small></span></button><button class="btn" data-choice="prep:0"><span>🎲 Wing it<small>Keep your capital for the Senate; trust the nominee's instincts.</small></span></button></div>`;
   const deb = ui.deb ? campPickHTML(`${CAMP_DEBATE[ui.deb].icon} ${CAMP_DEBATE[ui.deb].name}`, 'deb', `${CAMP_DEBATE[ui.deb].blurb} Beats ${CAMP_DEBATE[CAMP_DEBATE[ui.deb].beats].name.toLowerCase()}, loses to ${CAMP_DEBATE[CAMP_DEBATE[ui.deb].loses].name.toLowerCase()}.`)
     : `<div class="camp-opts">${Object.entries(CAMP_DEBATE).map(([k, d]) => `<button class="btn" data-choice="deb:${k}"><span>${d.icon} ${d.name}<small>${d.blurb} Beats <b>${CAMP_DEBATE[d.beats].name}</b>, loses to <b>${CAMP_DEBATE[d.loses].name}</b>.</small></span></button>`).join('')}</div>`;
   return `<div class="camp-dec"><h3>1. Preparation</h3>${prep}</div><div class="camp-dec"><h3>2. The game plan</h3><p>Rock, paper, scissors with podiums: a mismatch is decided by the plans, a matched pair by stage presence, and chance has a vote. The result lands between −3 and +3 nationally.</p>${deb}</div>`;
@@ -885,7 +888,7 @@ function campSurrogatesHTML(P) {
   const targets = campTargets(P).slice().sort((a, b) => Math.abs(a.m) - Math.abs(b.m));
   const rows = pool.map(m => {
     const a = assigned.find(s => s.id === m.id), home = P.by[m.state] && Math.abs(P.by[m.state].m) < 8;
-    const tags = [T(m, 'leader') ? 'faction leader' : '', m.star ? '⭐ convention star' : '', (m.rec || 0) >= 4 ? 'popular at home' : '', home ? `home state ${m.state} is a battleground` : ''].filter(Boolean).join(' · ');
+    const tags = [T(m, 'leader') ? 'faction leader' : '', m.star ? '⭐ rising star' : '', (m.rec || 0) >= 4 ? 'popular at home' : '', home ? `home state ${m.state} is a battleground` : ''].filter(Boolean).join(' · ');
     let ctl;
     if (a) ctl = `<span class="camp-surgo">→ <b>${a.code}</b> ${stName(a.code)} <small>+1.2</small> <a href="#" data-camp="unsur:${m.id}">✕</a></span>`;
     else if (pending && pending.id === m.id) ctl = `<span class="camp-surgo"><i>choose a state below</i> <a href="#" data-camp="cancelsur">cancel</a></span>`;
@@ -971,7 +974,7 @@ function campEveScreen() {
       ${frontPage({ headline: hl, sub: `${P.evMine} electoral votes projected for ${campLast(my)}, ${P.evTheirs} for ${campLast(their)}; ${toss.length} state${toss.length === 1 ? '' : 's'} inside the margin of error.`, mood: lead >= 0 ? 'dawn' : 'night', date: `November ${campYear()} · Election Eve`,
         body: [`WASHINGTON — The final national poll of polls has ${Math.abs(lead) < 1 ? 'a dead heat' : `${campLast(leader)} ahead by ${Math.abs(lead).toFixed(1)}`}: ${campLast(my)} ${last.me.toFixed(1)}%, ${campLast(their)} ${last.them.toFixed(1)}%${last.tp ? `, ${C.thirdParty.name} ${last.tp.toFixed(1)}%` : ''}, with ${last.und.toFixed(0)}% still undecided.`,
           toss.length ? `The toss-ups: ${toss.map(x => `${stName(x.c)} (${x.ev})`).join(', ')}. ${campPath(P).replace(/<[^>]+>/g, '')}` : `Not a single state is inside the margin of error. ${campPath(P).replace(/<[^>]+>/g, '')}`,
-          `"${quote}" said a senior ${PARTY[mine].name} strategist who asked not to be named. ${C.surrogates.length ? `${C.surrogates.length} ${PARTY[mine].name} senators barnstormed battlegrounds in the final weekend.` : ''}`,
+          `"${quote.replace(/\.$/, ',')}" said a senior ${PARTY[mine].name} strategist who asked not to be named. ${C.surrogates.length ? `${C.surrogates.length} ${PARTY[mine].name} senator${C.surrogates.length === 1 ? '' : 's'} barnstormed battlegrounds in the final weekend.` : ''}`,
           C.opp && C.opp.surrogates ? `${their.name}'s campaign closed with ${C.opp.surrogates.length ? `${C.opp.surrogates.length} senators barnstorming ${C.opp.surrogates.map(s => stName(s.code)).join(', ')}` : 'no surrogates on the road'}, ${C.opp.adBuy ? 'a late ad blitz' : 'its airtime already spent'} and ${C.opp.gotv ? 'a paid turnout operation' : 'a shoestring turnout operation'}.` : ''].filter(Boolean) })}
       ${C.autoLog.length ? `<div class="camp-autolog"><b>While you were whipping, the campaign manager:</b>${C.autoLog.map(t => `<div>• ${t}</div>`).join('')}</div>` : ''}
       <div class="camp-card"><div class="camp-ch"><b>📋 The fall campaign in review</b><span>${campYear()}</span></div>${campRecapHTML(C)}</div>
@@ -1001,7 +1004,7 @@ function campAutoRun() {
     else if (C.stage === 'r2') { C.round = 1; const r = campApplyR2(); note(`First debate in ${r.city}: ${campDebateVerdict(r)}.`); }
     else if (C.stage === 'r3') { C.round = 2; const r = campApplyR3(); const vp = C.debates.find(d => d.round === 'vp'); if (vp) note(`Running mates' debate: ${vp.winner === S.side ? 'won' : vp.winner ? 'lost' : 'a wash'} (${campNum(vp.result)}).`); note(`Second debate in ${r.city}: ${campDebateVerdict(r)}.${C.momentum ? ' Momentum (+0.5).' : ''}`); }
     else if (C.stage === 'r4') { C.round = 3; campApplyR4(null); note(`October surprise, <span class="camp-hl">${C.lastOutcome.title}</span>: ${C.lastOutcome.choice}${C.lastOutcome.effect ? ` (${C.lastOutcome.effect})` : ''}.`); }
-    else if (C.stage === 'r5') { C.round = 4; campApplyR5(); note(`Final weekend: ${C.surrogates.map(s => `${lastName({ name: s.name })} → ${s.code}`).join(', ') || 'no surrogates'}; ${C.adBuy ? `${C.adBuy} unit${C.adBuy > 1 ? 's' : ''} of late ads (${campNum(cashEff(C.adBuy, 0.7))})` : 'no late ads'}; ${C.gotv ? 'paid the turnout machine (+0.5)' : 'kept the capital'}.`); if (C.opp) note(`Their closing weekend: ${campOppLine(C.opp)}.`); }
+    else if (C.stage === 'r5') { C.round = 4; if (!C.ui || !C.ui.poolIds) C.ui = campR5UI(); if (C.ui.ad == null && S.election.cash >= 1) C.ui.ad = 1; campApplyR5(); note(`Final weekend: ${C.surrogates.map(s => `${lastName({ name: s.name })} → ${s.code}`).join(', ') || 'no surrogates'}; ${C.adBuy ? `${C.adBuy} unit${C.adBuy > 1 ? 's' : ''} of late ads (${campNum(cashEff(C.adBuy, 0.7))})` : 'no late ads'}; ${C.gotv ? 'paid the turnout machine (+0.5)' : 'kept the capital'}.`); if (C.opp) note(`Their closing weekend: ${campOppLine(C.opp)}.`); }
   }
   sfx.up();
   campEveScreen();

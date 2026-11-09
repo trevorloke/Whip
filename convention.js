@@ -82,6 +82,8 @@ function convOfficeOf(p) {
   const r = (S.reps || []).find(x => x.name === p.name); if (r) return `Representative (${r.district})`;
   return p.office || 'Former official';
 }
+// an office with its state, without saying the state twice ("Senator from Texas", but "Representative (SC-04), SC")
+function convOfficeAt(office, st) { const o = office || 'Nominee'; return st && ST[st] && o.includes(ST[st].name) ? o : `${o}, ${st}`; }
 // a fully fleshed-out person for a name the save only knows as a string
 function convMakePerson(party, name, state, faction, age) {
   const x = newPerson(party, state && ST[state] ? state : pick(STATES)[0], { age: age || ri(45, 68) });
@@ -119,7 +121,7 @@ function convEnsureNominees() {
 function convMargin() {
   const s = presSetup(); let m = (s.inc === S.side ? 1 : -1) * s.base;
   const N = S.nominees || {};
-  for (const p of ['D', 'R']) if (N[p] && typeof N[p].bounce === 'number') m += (p === S.side ? 1 : -1) * N[p].bounce;
+  for (const p of ['D', 'R']) if (N[p] && typeof N[p].bounce === 'number') m += (p === S.side ? 1 : -1) * (0.5 * N[p].bounce + 3 * ((N[p].unity == null ? 1 : N[p].unity) - 1));   // what the fall campaign actually carries (campaignEffects)
   return m;
 }
 function convShares(m) { const und = 6; m = clamp(m, -40, 40); return { me: (100 - und) / 2 + m / 2, them: (100 - und) / 2 - m / 2, und }; }
@@ -137,9 +139,16 @@ function convHallHTML(C, big) {
 function convTicketHTML(C) {
   const N = C.N, vp = N.vp, vpP = vp ? (C.vp && C.vp.name === vp.name && C.vp.p) || convLive(vp.name) || convMakePerson(C.p, vp.name, vp.state, vp.faction) : null;
   return `<div class="conv-ticket" style="border-color:${PARTY[C.p].color}"><div class="conv-tk">${portrait(N.p)}<div><small>For President</small><b>${N.name}</b><span>${N.office} · ${N.faction}</span></div></div>
-    ${vpP ? `<div class="conv-tk">${portrait(vpP)}<div><small>For Vice President</small><b>${vp.name}</b><span>${vp.office || convOfficeOf(vpP)} · ${vp.state} (${EV[vp.state] || 3} EV)</span></div></div>` : '<div class="conv-tk"><div><small>For Vice President</small><b>To be announced</b></div></div>'}</div>`;
+    ${vpP ? `<div class="conv-tk">${portrait(vpP)}<div><small>For Vice President</small><b>${vp.name}</b><span>${convOfficeAt(vp.office || convOfficeOf(vpP), vp.state)} (${EV[vp.state] || 3} EV)</span></div></div>` : '<div class="conv-tk"><div><small>For Vice President</small><b>To be announced</b></div></div>'}</div>`;
 }
 function convKicker(C, phase) { return `${C.year} ${PARTY[C.p].name} National Convention · ${phase}`; }
+// repaint the screen the player is on without losing their place: showModal scrolls the card to the top, which is right
+// for a new screen but not for a redraw after a vet, a plank, a ballot or an event choice (same kicker and headline)
+function convShow(html) {
+  const card = $('#modal-card'), sc = card.scrollTop, key = () => `${(card.querySelector('.kicker') || {}).textContent}|${(card.querySelector('h2') || {}).textContent}`, was = key();
+  showModal(html);
+  if (key() === was) card.scrollTop = Math.min(sc, Math.max(0, card.scrollHeight - card.clientHeight));
+}
 function convCity(p) {
   const pool = CONV_CITIES.filter(c => !CONV_TAKEN.includes(c[0]));
   const w = pool.map(c => Math.max(0.5, 9 - Math.abs(ST[c[1]].lean)) + (Math.sign(ST[c[1]].lean) === (p === 'R' ? 1 : -1) ? 1.5 : 0));
@@ -158,7 +167,7 @@ function convState(p, month) {
     keynote: null, vpField: null, deal: false, ballots: [], brokered: false, speech: null, events: [], evDone: 0, nEvents: Math.random() < 0.5 ? 2 : 1, bounce: null };
 }
 function convBounce(C) {
-  const parts = C.parts, raw = 1 + (C.unity - 0.75) * 4 + parts.ballots + parts.vp + parts.platform + parts.keynote + parts.speech + parts.events + gauss() * 0.4;
+  const parts = C.parts, raw = 1.2 + (C.unity - 0.75) * 4 + parts.ballots + parts.vp + parts.platform + parts.keynote + parts.speech + parts.events + gauss() * 0.4;
   return Math.round(clamp(raw, -2, 6) * 10) / 10;
 }
 
@@ -253,7 +262,7 @@ function convVPScreen(C, next) {
     const cards = F.map((c, i) => `<div class="conv-vp ${c.pref ? 'pref' : ''}" style="--pc:${PARTY[C.p].color}">${portrait(c.p)}<div class="conv-vpbody"><b>${c.pref ? '★ ' : ''}${c.name}</b><small>${c.office} · ${c.state} · ${EV[c.state] || 3} EV · ${c.faction} · age ${ageOf(c.p)}</small>
         <ul>${convVPBrings(C, c).map(b => `<li>${b}</li>`).join('')}<li>${c.vetted ? `<b style="color:${c.risk >= 0.55 ? 'var(--no)' : c.risk >= 0.25 ? 'var(--gold2)' : 'var(--yes)'}">Vetting: ${convRiskWord(c.risk)}</b> · ${c.risk >= 0.55 ? c.riskStory : c.risk >= 0.25 ? `${c.riskStory}; survivable, probably` : 'the file is boring: a parking ticket in 2009 and a fondness for karaoke'}` : '<span style="color:var(--dim)">Hidden risk: unknown until vetted</span>'}</li></ul>
         <div class="conv-vpbtns">${c.vetted ? '' : `<button class="btn ghost" data-choice="vet:${i}" ${broke ? 'disabled' : ''}>Vet<small>1 capital</small></button>`}<button class="btn ${c.pref ? 'primary' : ''}" data-choice="vp:${i}" ${!c.pref && broke ? 'disabled' : ''}>${c.pref ? (C.deal ? 'Honor the deal' : C.isPres && c.kind === 'vp' ? 'Keep on the ticket' : 'Pick (nominee\'s choice)') : C.isPres && pref.kind === 'vp' ? 'Dump the VP for them' : 'Pick'}${c.pref ? '' : '<small>1 capital' + (C.isPres && pref.kind === 'vp' ? ', unity −10%' : C.deal ? ', breaks the deal' : '') + '</small>'}</button></div></div></div>`).join('');
-    showModal(`<div class="kicker">${convKicker(C, 'The running mate')}</div><h2>Night 2 · Who runs with ${lastName(N.p)}?</h2>${convHallHTML(C)}
+    convShow(`<div class="kicker">${convKicker(C, 'The running mate')}</div><h2>Night 2 · Who runs with ${lastName(N.p)}?</h2>${convHallHTML(C)}
       <p>${C.deal ? `<b>The deal is done:</b> ${pref.name}'s delegates put ${lastName(N.p)} over the top, and the price was the second slot on the ticket.` : C.isPres ? `${presTitle()} is inclined to keep Vice President ${S.vp ? S.vp.name : pref.name}. Dumping a sitting Vice President is a story for a week and a wound for a season.` : `${N.name} has a short list of four. The nominee's own favorite is marked ★ and costs you nothing; steering them to someone else takes <b>1 capital</b>.`} Vetting a name (1 capital) reveals what the opposition will find in the fall. You have <b style="color:var(--gold2)">${S.career.capital}</b> capital.</p>
       <div class="conv-vpgrid">${cards}</div>
       <div class="choices"><button class="btn primary big adv" id="convvpgo">${C.deal ? `Honor the deal: ${pref.name} for Vice President` : C.isPres && pref.kind === 'vp' ? `Keep Vice President ${pref.name} on the ticket` : `Go with the nominee's choice: ${pref.name}`}</button></div>`);
@@ -281,7 +290,7 @@ function convPickVP(C, c) {
   if (C.deal && c.kind !== 'runnerUp') { C.unity = Math.max(0.5, C.unity - 0.15); C.lines.push(`Broke the convention deal with ${pref ? pref.name : 'the runner-up'}`); }
   C.parts.vp = convVPValue(C, c);
   convHist(c.p, `Chosen as ${N.name}'s running mate`);
-  C.lines.push(`Running mate: ${c.name} (${c.office}, ${c.state})`);
+  C.lines.push(`Running mate: ${c.name} (${convOfficeAt(c.office, c.state)})`);
   if (C.mine) sfx.up();
 }
 
@@ -299,8 +308,8 @@ function convDefaultTheme(C) {
 // settle a plank: 'flank' | 'center' | 'vague'
 function convSetPlank(C, i, how) {
   const d = C.plankDefs[i]; C.plankChoice[i] = how;
-  if (how === 'flank') { C.unity = Math.min(1, C.unity + 0.05); C.parts.platform -= 0.3; C.planks.push({ tag: d.tag, dir: d.fdir }); }
-  else if (how === 'center') { C.unity = Math.max(0.5, C.unity - 0.05); C.parts.platform += 0.3; C.planks.push({ tag: d.tag, dir: d.cdir }); }
+  if (how === 'flank') { C.unity = Math.min(1, C.unity + 0.05); C.parts.platform -= 0.2; C.planks.push({ tag: d.tag, dir: d.fdir }); }
+  else if (how === 'center') { C.unity = Math.max(0.5, C.unity - 0.05); C.parts.platform += 0.2; C.planks.push({ tag: d.tag, dir: d.cdir }); }
   else if (Math.random() < 0.2) { C.parts.platform -= 1; C.unity = Math.max(0.5, C.unity - 0.03); d.fight = true; C.lines.push(`Floor fight over the ${TAG[d.tag][1]} plank`); }
   C.lines.push(`${TAG[d.tag][1]} plank: ${how}`);
 }
@@ -311,9 +320,9 @@ function convPlatformScreen(C, next) {
     const allSet = C.plankChoice.every(Boolean), fights = C.plankDefs.filter(d => d.fight);
     const planks = C.plankDefs.map((d, i) => { const ch = C.plankChoice[i]; return `<div class="conv-plank ${ch ? 'set' : ''}"><div class="conv-ptitle">${TAG[d.tag][0]} <b>${TAG[d.tag][1]}</b> <small>· the ${convFlank(C.p)} vs. the ${MODERATE[C.p]} · the nominee's draft: ${nomDefault(d)}</small></div>
         ${ch ? `<div class="conv-pset">${ch === 'flank' ? `<b>The base's version:</b> ${d.flank}` : ch === 'center' ? `<b>The center's version:</b> ${d.center}` : `<b>Left vague:</b> “We believe in a ${TAG[d.tag][1].toLowerCase()} policy that works for every American.”${d.fight ? ' <span style="color:var(--no)">The flank forced a 40-minute floor fight anyway; cable ran the shouting on a loop.</span>' : ''}`}</div>`
-        : `<div class="conv-pvers"><button class="btn" data-choice="plank:${i}:flank"><span><b>${convFlank(C.p)}:</b> ${d.flank}<small>The base's taste · unity +5% · swing voters −</small></span></button><button class="btn" data-choice="plank:${i}:center"><span><b>${MODERATE[C.p]}:</b> ${d.center}<small>Reaches the middle · unity −5% · swing voters +</small></span></button></div><button class="btn ghost" data-choice="plank:${i}:vague">Leave it vague<small>No effect, unless the flank forces a floor fight (20%: bounce −1)</small></button>`}</div>`; }).join('');
+        : `<div class="conv-pvers"><button class="btn" data-choice="plank:${i}:flank"><span><b>${convFlank(C.p)}:</b> ${d.flank}<small>The base's taste · unity +5% · swing voters −</small></span></button><button class="btn" data-choice="plank:${i}:center"><span><b>${MODERATE[C.p]}:</b> ${d.center}<small>Reaches the middle · unity −5% · swing voters +</small></span></button></div><button class="btn ghost" data-choice="plank:${i}:vague">Leave it vague<small>Unity holds, but the fall campaign has no plank to run on: states that care about this issue get nothing from it. 20%: the flank forces a floor fight (bounce −1)</small></button>`}</div>`; }).join('');
     const themeRow = allSet ? `<div class="conv-theme"><b>Which plank headlines the campaign?</b> <small style="color:var(--dim)">The campaign's central message; the fall campaign runs on it.</small><div class="conv-themebtns">${C.planks.length ? C.planks.map(pl => `<button class="btn ${C.theme === pl.tag ? 'on' : ''}" ${C.theme ? 'disabled' : ''} data-choice="theme:${pl.tag}">${TAG[pl.tag][0]} ${TAG[pl.tag][1]}</button>`).join('') : `<span style="color:var(--dim)">Every plank is vague; the campaign will run on ${TAG[convDefaultTheme(C)][1]}, the party's old favorite.</span>`}</div></div>` : '';
-    showModal(`<div class="kicker">${convKicker(C, 'The platform')}</div><h2>Night 3 · The platform fight</h2>${convHallHTML(C)}
+    convShow(`<div class="kicker">${convKicker(C, 'The platform')}</div><h2>Night 3 · The platform fight</h2>${convHallHTML(C)}
       <p>Three planks split the ${convFlank(C.p)} from the ${MODERATE[C.p]}. The base's version buys unity and costs you with swing voters; the center's version does the reverse. ${convUnityHTML(C.unity)}</p>
       <div class="conv-planks">${planks}</div>${themeRow}
       <div class="choices"><button class="btn primary big adv" id="convplatgo">${allSet ? (C.theme || !C.planks.length ? 'Adopt the platform' : `Adopt the platform; run on ${TAG[convDefaultTheme(C)][1]}`) : 'Adopt the platform as the nominee\'s team drafted it'}</button></div>`);
@@ -370,7 +379,7 @@ function convRollCall(C, next) {
         <button class="btn" data-choice="ballot:deal" ${R.name === P.name ? 'disabled' : ''}><span>Broker a ticket: ${lastName(R.p)} releases the delegates for the VP slot<small>${R.name === P.name ? 'A sitting President will not take the second slot.' : 'Settles it now. Unity +10%. The running mate is decided for you.'}</small></span></button>
         <button class="btn ghost" data-choice="ballot:floor"><span>Let the floor fight it out<small>Anything can happen. The spectacle costs the party on television (bounce −).</small></span></button></div>`;
     const resultBox = result ? `<div class="conv-result" style="border-color:${PARTY[C.p].color}"><b>${C.N.name} is the ${PARTY[C.p].name} nominee for President</b>, on the ${convNth(b.n)} ballot, ${convNum(result === 'L' ? L.del : R.del)} delegates to ${convNum(result === 'L' ? R.del : L.del)}. ${result === 'R' ? `The primary leader is beaten on the floor; ${lastName(L.p)}'s delegates file out of the hall in silence.` : `${lastName(R.p)} ${C.deal ? 'is on the ticket' : 'concedes from the floor and asks for the vote to be made unanimous'}.`}${C.mine && brokeredBy ? ' <b style="color:var(--gold2)">You brokered it.</b>' : ''}</div><div class="choices"><button class="btn primary big adv" id="convrcgo">On to the running mate</button></div>` : '';
-    showModal(`<div class="kicker">${convKicker(C, 'The roll call')}</div><h2>Night 2 · A contested convention</h2>${convHallHTML(C)}
+    convShow(`<div class="kicker">${convKicker(C, 'The roll call')}</div><h2>Night 2 · A contested convention</h2>${convHallHTML(C)}
       <p>Nobody left the primaries with a majority. ${L.name} arrived with <b>${convNum(C.ballots[0].L)}</b> delegates, ${R.name} with <b>${convNum(C.ballots[0].R)}</b>, and <b>${convNum(C.ballots[0].U)}</b> ${third[0] ? `pledged to ${third[0].name}, who finished third and is listening to offers` : 'uncommitted'}. <b>${convNum(C.need)}</b> wins. ${C.mine ? 'The whip of the Senate caucus is the most useful person in the building: delegations take your calls.' : ''}</p>
       <div class="conv-ballots">${C.ballots.map(tally).join('')}</div>${convUnityHTML(C.unity)}${choices}${resultBox}`);
     const card = $('#modal-card');
@@ -451,7 +460,7 @@ function convSpeech(C, tone) {
     `<b>It lands.</b> ${applause} applause breaks by the networks' count. “${quote}” leads every morning show, and the ${tone === 'fighting' ? 'base is roaring' : tone === 'unity' ? 'runner-up\'s delegates are on their feet' : 'undecideds in the focus groups turned their dials up'}.`,
     `<b>The speech of a career.</b> The hall is on its feet for four straight minutes after “${quote}”. It trends worldwide before the first balloon drops; the other party's war room goes quiet. Even the hostile anchors use the word “presidential.”`,
   ][tier];
-  C.parts.speech = [-1.2, 0.4, 1.4, 2.4][tier];
+  C.parts.speech = [-1.2, 0.4, 1.2, 1.8][tier];
   if (tone === 'unity' && tier >= 2) C.unity = Math.min(1, C.unity + 0.05);
   C.speech = { tone, tier, quote, text };
   C.lines.push(`Acceptance speech (${CONV_TONES[tone][0].toLowerCase()}): ${['fell flat', 'fine', 'landed', 'a triumph'][tier]}`);
@@ -466,7 +475,7 @@ function convPrimeTimeScreen(C, next) {
     const speechPart = !keyText ? '' : speechText ? `<div class="conv-result" style="border-color:${PARTY[C.p].color}"><b>Night 4 · The acceptance speech:</b> ${speechText}</div><div class="choices"><button class="btn primary big adv" id="convptgo">Drop the balloons</button></div>`
       : `<p><b>Night 4.</b> ${N.name} steps up to accept. The speechwriters have four drafts. ${lastName(N.p)}'s charisma: <b>${N.charisma >= 1.2 ? 'electric' : N.charisma >= 1.05 ? 'solid' : N.charisma >= 0.9 ? 'uneven' : 'wooden'}</b>. The party is <b>${convMoodWord(convMoodOf(C.p))}</b> and <b>${convUnityWord(C.unity)}</b>; pick the tone that fits the room.</p>
         <div class="choices">${Object.entries(CONV_TONES).map(([k, t]) => `<button class="btn" data-choice="tone:${k}"><span><b>${t[0]}</b> · ${t[1]}<small>“${t[2][0].replace('{city}', C.city).replace('{theme}', TAG[C.theme || convDefaultTheme(C)][1].toLowerCase())}”</small></span></button>`).join('')}</div>`;
-    showModal(`<div class="kicker">${convKicker(C, 'Prime time')}</div><h2>Nights 3 and 4 · Prime time</h2>${convHallHTML(C)}${keyPart}${speechPart}`);
+    convShow(`<div class="kicker">${convKicker(C, 'Prime time')}</div><h2>Nights 3 and 4 · Prime time</h2>${convHallHTML(C)}${keyPart}${speechPart}`);
     const card = $('#modal-card');
     card.querySelectorAll('[data-choice^="key:"]').forEach(b => b.onclick = () => { if (keyText) return; const o = opts.find(x => x.key === b.dataset.choice.slice(4)); if (!o) return; keyText = convKeynote(C, o); if (C.mine) (C.parts.keynote >= 0 ? sfx.up : sfx.down)(); draw(); });
     card.querySelectorAll('[data-choice^="tone:"]').forEach(b => b.onclick = () => { if (speechText || !keyText) return; speechText = convSpeech(C, b.dataset.choice.slice(5)); if (C.mine) (C.speech.tier >= 2 ? sfx.fanfare : sfx.down)(); draw(); });
@@ -565,7 +574,7 @@ function convEventScreen(C, next) {
   const night = C.evDone === 0 ? 'Night 2' : 'Night 3';
   let result = null, chosen = null;
   const draw = () => {
-    showModal(`<div class="kicker">${convKicker(C, 'Breaking news')}</div><h2>${night} · ${ev.title}</h2>${convHallHTML(C)}
+    convShow(`<div class="kicker">${convKicker(C, 'Breaking news')}</div><h2>${night} · ${ev.title}</h2>${convHallHTML(C)}
       <div class="conv-event"><p>${ev.text}</p></div>
       ${result ? `<div class="conv-result" style="border-color:${PARTY[C.p].color}"><b>${chosen.label}.</b> ${result}</div>${convUnityHTML(C.unity)}<div class="choices"><button class="btn primary big adv" id="convevgo">Continue</button></div>`
         : `<div class="choices">${ev.choices.map(c => `<button class="btn" data-choice="ev:${c.key}" ${c.cost && S.career.capital < c.cost ? 'disabled' : ''}><span>${c.label}<small>${c.sub}</small></span></button>`).join('')}</div>`}`);
@@ -621,7 +630,7 @@ function convWrapScreen(C, next) {
   convStore(C);
   const after = convMargin(), cap1 = s => s.charAt(0).toUpperCase() + s.slice(1);
   const body = [
-    `${C.city} — ${N.name} accepted the ${PARTY[C.p].name} nomination for President on the final night of a convention that leaves the party ${convUnityWord(C.unity)}${N.vp ? `, with ${N.vp.name} (${N.vp.office}, ${N.vp.state}) as the running mate` : ''}. ${C.speech ? C.speech.text.replace(/<[^>]+>/g, '') : ''}`,
+    `${C.city} — ${N.name} accepted the ${PARTY[C.p].name} nomination for President on the final night of a convention that leaves the party ${convUnityWord(C.unity)}${N.vp ? `, with ${N.vp.name} (${convOfficeAt(N.vp.office, N.vp.state)}) as the running mate` : ''}. ${C.speech ? C.speech.text.replace(/<[^>]+>/g, '') : ''}`,
     `The platform ${C.planks.length ? `calls for ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ')}` : 'says as little as possible'}; the campaign will run on ${TAG[C.theme][1].toLowerCase()}. ${C.keynote ? `${cap1(C.keynote.name)} delivered the keynote.` : ''}`,
     `The first post-convention poll gives the ticket a <b>${C.bounce >= 0 ? '+' : ''}${C.bounce.toFixed(1)}-point</b> bounce${C.bounce >= 4 ? ', the best since the networks started counting' : C.bounce <= 0 ? ', which is to say none' : ''}.${(l => l.length ? ' ' + l.join('. ') + '.' : '')(C.events.map((ev, i) => `${ev.title}: ${(C.lines.find(x => x.startsWith(ev.title + ': ')) || '').slice(ev.title.length + 2)}`).filter(x => !x.endsWith(': ')).slice(0, 2))}`,
   ];
@@ -675,7 +684,7 @@ function convTheirs(p, month, next) {
   const show2 = () => {
     const before = convMargin(); C.bounce = convBounce(C); convStore(C); const after = convMargin();
     if (N.vp && C.vp) convHist(C.vp.p, `Accepted the ${PARTY[p].name} nomination for Vice President in ${C.city}`);
-    showModal(`${frontPage({ headline: convHeadline(C), sub: `Across the aisle, the ${PARTY[p].short} ${C.unity >= 0.8 ? 'leave ' + C.city + ' united' : 'leave ' + C.city + ' with scars'}. First poll: a ${C.bounce >= 0 ? '+' : ''}${C.bounce.toFixed(1)} bounce for their ticket.`, body: [`${C.city} — ${N.name} accepted the ${PARTY[p].name} nomination${N.vp ? ` and named ${N.vp.name} (${N.vp.office}, ${N.vp.state}) as running mate` : ''}. ${speechText.replace(/<[^>]+>/g, '')}`, `${rc ? rc.replace(/<[^>]+>/g, '') + ' ' : ''}${keyText.replace(/<[^>]+>/g, '')}`, `Their platform: ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ') || 'deliberately vague'}; their message is ${TAG[C.theme][1].toLowerCase()}. ${evs.length ? evs[0].ev.title + ': ' + evs[0].result.replace(/<[^>]+>/g, '') : ''}`], mood: 'night', date: `${month === 'late July' ? 'July' : 'August'} ${C.year} · Convention edition` })}
+    showModal(`${frontPage({ headline: convHeadline(C), sub: `Across the aisle, the ${PARTY[p].short} ${C.unity >= 0.8 ? 'leave ' + C.city + ' united' : 'leave ' + C.city + ' with scars'}. First poll: a ${C.bounce >= 0 ? '+' : ''}${C.bounce.toFixed(1)} bounce for their ticket.`, body: [`${C.city} — ${N.name} accepted the ${PARTY[p].name} nomination${N.vp ? ` and named ${N.vp.name} (${convOfficeAt(N.vp.office, N.vp.state)}) as running mate` : ''}. ${speechText.replace(/<[^>]+>/g, '')}`, `${rc ? rc.replace(/<[^>]+>/g, '') + ' ' : ''}${keyText.replace(/<[^>]+>/g, '')}`, `Their platform: ${C.planks.map(pl => `${pl.dir > 0 ? 'more' : 'less'} on ${TAG[pl.tag][1].toLowerCase()}`).join(', ') || 'deliberately vague'}; their message is ${TAG[C.theme][1].toLowerCase()}. ${evs.length ? evs[0].ev.title + ': ' + evs[0].result.replace(/<[^>]+>/g, '') : ''}`], mood: 'night', date: `${month === 'late July' ? 'July' : 'August'} ${C.year} · Convention edition` })}
       <div class="kicker">${convKicker(C, 'The report card')}</div>
       <div class="conv-report">${convTicketHTML(C)}
         <div class="conv-rgrid">

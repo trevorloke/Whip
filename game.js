@@ -323,6 +323,7 @@ function needNum() { const B = S.bill; return B.super || (vpYours() ? 50 : 51); 
 
 function startBill() {
   const c = S.career;
+  S.election = null; // the election is over once the next bill starts; presSetup() must not read last cycle's wave at the next conventions
   const n = c.bills + 1;
   let landmark = n % 5 === 0;
   let tpl, sup = 0, nomination = false, budget = false, aumf = null, wpr = false;

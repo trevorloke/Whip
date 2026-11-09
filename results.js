@@ -180,7 +180,7 @@ function resXRender() {
 const resCard = (title, html, cls = '') => `<div class="res-card ${cls}">${title ? `<div class="lh">${title}</div>` : ''}${html}</div>`;
 const resKpi = (label, value, sub = '') => `<div class="res-kpi"><small>${label}</small><b>${value}</b>${sub ? `<i>${sub}</i>` : ''}</div>`;
 const resRow = (code, left, right, on) => `<div class="res-row ${on ? 'on' : ''}" data-code="${code}">${left}<span class="mg">${right}</span></div>`;
-const resPv = (dn, d, rn, r, i, iLabel) => { const tot = d + r + (i || 0) || 1; return `<div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">${dn} ${pct(d / tot * 100)}</div>${i ? `<div style="width:${i / tot * 100}%;background:${PARTY.I.color}" title="${iLabel || ''}">${pct(i / tot * 100)}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">${pct(r / tot * 100)} ${rn}</div></div>`; };
+const resPv = (dn, d, rn, r, i, iLabel) => { const tot = d + r + (i || 0) || 1; return `<div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">${dn} ${pct(d / tot * 100)}</div>${i ? `<div style="width:${i / tot * 100}%;background:${PARTY.I.color}" title="${iLabel || ''}">${i / tot >= 0.07 ? pct(i / tot * 100) : ''}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">${pct(r / tot * 100)} ${rn}</div></div>`; };
 function resSelDetail(R, code) {
   if (!code) return '';
   const P = R.pres, bits = [];
@@ -280,8 +280,8 @@ function resXGov(R, X) {
   const left = `${resCard('', `<div class="res-h">${G.length} GOVERNORS' RACES</div><div class="res-dek">${flips.length} flipped${b ? ` · ${resCnt(b)} → <b>${resCnt(a)}</b>` : a ? ` · now ${resCnt(a)}` : ''}</div>${map}<div class="nsub">Shade = margin · gold ring and FLIP: a mansion that changed parties · click a state</div>`)}
     ${a ? resCard('The nation\'s governors', resSnakeHTML([].concat(...['D', 'I', 'R'].map(p => Array.from({ length: Math.max(0, (a[p] || 0) - G.filter(g => g.wParty === p).length) }, () => ({ p, m: 99 })))).concat(G.map(g => ({ p: g.wParty, m: g.margin, flip: g.flip, code: g.code, title: `${stName(g.code)}: ${g.wName} (${g.wParty}) +${g.margin.toFixed(1)}` }))), 26, 50, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span> · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 26 is a majority of the 50 governors · races decided this year sorted by margin`)) : ''}`;
   const right = `${resSelDetail(R, X.sel)}${resCard(`Mansions that flipped · ${flips.length}`, flips.length ? `<div class="res-list">${flips.map(g => resRow(g.code, `<span><b>${g.code}</b> ${stName(g.code)} · ${resNm(g.wName, g.wParty)} ${g.open ? 'wins the open seat' : `unseats Gov. ${g.lName}`}</span>`, resMarginTag(g.wParty, g.margin), X.sel === g.code)).join('')}</div>` : '<div class="nsub">No governorship changed hands.</div>')}
-    ${resCard('Every race', `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'margin', d: 1 })}</div>`)}`;
-  return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${right}</div></div>`;
+    `;
+  return `<div class="res-grid"><div class="res-col">${left}${resCard('Every race', `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'margin', d: 1 })}</div>`)}</div><div class="res-col">${right}</div></div>`;
 }
 
 /* ---- Campaign (presidential years with a recorded fall campaign and conventions) ---- */
@@ -299,21 +299,21 @@ const RES_STRAT = { rust: 'the Rust Belt', sun: 'the Sun Belt', expand: 'expand 
 function resPollChart(polls, side, names) {
   const pts = (polls || []).filter(p => p && p.me != null && p.them != null), n = pts.length;
   if (n < 2) return '';
-  const W = 640, H = 210, pl = 36, pr = 118, pt = 16, pb = 30;
+  const narrow = window.innerWidth < 640, W = narrow ? 380 : 640, H = narrow ? 180 : 210, pl = narrow ? 34 : 36, pr = narrow ? 120 : 118, pt = 16, pb = 30, fs = narrow ? 11.5 : 10, fe = narrow ? 13 : 11.5;
   const vals = pts.flatMap(p => [+p.me, +p.them]);
   let lo = Math.floor((Math.min(...vals) - 3) / 5) * 5, hi = Math.ceil((Math.max(...vals) + 3) / 5) * 5;
   if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = Math.floor((mid - 10) / 5) * 5; hi = lo + 20; }
   const x = i => pl + i * (W - pl - pr) / (n - 1), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb);
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart res-pollchart">`;
-  for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="10" fill="#6b7587" text-anchor="end">${v}%</text>`;
-  pts.forEach((p, i) => { svg += `<text x="${x(i)}" y="${H - 8}" font-size="10" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${String(p.short || p.lbl || '').slice(0, 14)}</text>`; });
+  for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}%</text>`;
+  pts.forEach((p, i) => { if (narrow && n > 5 && (n - 1 - i) % 2) return; svg += `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${String(p.short || p.lbl || '').slice(0, 14)}</text>`; });
   const series = [{ k: 'me', color: PARTY[side].color, label: names[side] }, { k: 'them', color: PARTY[other(side)].color, label: names[other(side)] }];
   const last = pts[n - 1], ends = series.map(s => y(+last[s.k]));
   if (Math.abs(ends[0] - ends[1]) < 15) { const d = (15 - Math.abs(ends[0] - ends[1])) / 2; if (ends[0] <= ends[1]) { ends[0] -= d; ends[1] += d; } else { ends[0] += d; ends[1] -= d; } }
   series.forEach((s, si) => {
     svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(+p[s.k])}`).join(' ')}"/>`;
     pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(+p[s.k])}" r="${i === n - 1 ? 4.5 : 2.5}" fill="${s.color}"><title>${p.lbl || ''}: ${s.label} ${(+p[s.k]).toFixed(1)}%</title></circle>`; });
-    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="11.5" fill="${s.color}" font-weight="800">${s.label} ${(+last[s.k]).toFixed(1)}%</text>`;
+    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="${fe}" fill="${s.color}" font-weight="800">${s.label} ${(+last[s.k]).toFixed(1)}%</text>`;
   });
   return svg + '</svg>';
 }
@@ -362,7 +362,7 @@ function resXTable(R, X) {
       gov: gov[c] ? { v: gov[c].wName, h: `${resNm(gov[c].wName, gov[c].wParty)} +${gov[c].margin.toFixed(1)}${gov[c].flip ? ' <span class="call flip">FLIP</span>' : ''}` } : null } }; });
   const fill = c => { if (P && P.states[c]) { const m = resPresM(P, c), s = shade(m > 0 ? 'D' : 'R', m); return { c: s.fill, op: s.op }; } if (sen[c]) { const s = shade(sen[c][0].wParty, sen[c][0].margin); return { c: s.fill, op: s.op }; } if (by[c] && by[c][1]) { const sh = by[c][0] / by[c][1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 }; } return null; };
   const map = usMap({ cls: 'res-map', fill, sub: c => P && P.states[c] ? `${EV[c]}` : sen[c] ? sen[c][0].wParty : '', ring: c => X.sel === c ? '#fff' : null, attr: c => codes.includes(c) ? `data-code="${c}"` : '', title: c => stName(c) });
-  return `<div class="res-grid"><div class="res-col">${resCard(P ? 'The map, by presidential margin' : 'The map, by Senate result', map + '<div class="nsub">Click a row in the table (or a state) to highlight it here.</div>')}${resSelDetail(R, X.sel)}</div>
+  return `<div class="res-grid res-grid-table"><div class="res-col">${resCard(P ? 'The map, by presidential margin' : 'The map, by Senate result', map + '<div class="nsub">Click a row in the table (or a state) to highlight it here.</div>')}${resSelDetail(R, X.sel)}</div>
     <div class="res-col">${resCard(`Every state · ${codes.length}`, `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'state', d: 1 })}</div>`)}</div></div>`;
 }
 
@@ -392,7 +392,7 @@ function resAlmanac(back) {
     const g = resCountBy(Object.fromEntries(Object.entries(S.governors || {}).map(([c, x]) => [c, x.party])));
     const hm = houseMaj();
     body = `<div class="res-stand">
-      <div class="res-card"><div class="lh">The Senate</div>${balanceBar()}<p>${isMajority() ? `Your ${PARTY[S.side].short} hold the majority` : `The ${PARTY[other(S.side)].short} hold the majority`} · ${seats('I')} independent${seats('I') === 1 ? '' : 's'} · next election ${electionYear(nextElectionK())} (Class ${classUp(nextElectionK())})</p></div>
+      <div class="res-card"><div class="lh">The Senate</div>${balanceBar()}<p>${isMajority() ? `Your ${PARTY[S.side].short} hold the majority` : seats(S.side) === seats(other(S.side)) ? `A ${seats('D')}–${seats('R')} tie; the ${PARTY[other(S.side)].short} organize the chamber` : `The ${PARTY[other(S.side)].short} hold the majority`} · ${seats('I')} independent${seats('I') === 1 ? '' : 's'} · next election ${electionYear(nextElectionK())} (Class ${classUp(nextElectionK())})</p></div>
       <div class="res-card"><div class="lh">The House</div><div class="balance"><div style="width:${S.house.D / 435 * 100}%;background:${PARTY.D.color}">D ${S.house.D}</div><div style="width:${S.house.R / 435 * 100}%;background:${PARTY.R.color}">R ${S.house.R}</div></div><p>${PARTY[hm].short} majority · Speaker's margin ${Math.abs(S.house.D - S.house.R)} seats</p></div>
       <div class="res-card"><div class="lh">Governors</div><div class="balance"><div style="width:${g.D * 2}%;background:${PARTY.D.color}">D ${g.D}</div>${g.I ? `<div style="width:${g.I * 2}%;background:${PARTY.I.color}">${g.I}</div>` : ''}<div style="width:${g.R * 2}%;background:${PARTY.R.color}">R ${g.R}</div></div><p>${g.D > g.R ? 'Democrats' : g.R > g.D ? 'Republicans' : 'Neither party'} hold${g.D === g.R ? '' : ''} most of the nation's mansions</p></div>
       <div class="res-card"><div class="lh">The Supreme Court</div><p style="font-size:16px;color:var(--ink)"><b>${courtLabel()}</b></p><p>${S.court.length} justices seated · ${courtCount('R') > courtCount('D') ? 'a Republican-appointed majority' : courtCount('D') > courtCount('R') ? 'a Democratic-appointed majority' : 'evenly split'}</p></div>

@@ -8,7 +8,7 @@
 .camp-tk .camp-noport{display:flex;align-items:center;justify-content:center;font-size:24px}
 .camp-tkn{display:flex;align-items:center;gap:8px;font-size:15px;flex-wrap:wrap}
 .camp-tkn a{color:var(--gold2);font-size:11px}
-.camp-you{font-size:9px;letter-spacing:1.5px;text-transform:uppercase;background:var(--gold);color:#1a1405;padding:2px 6px;border-radius:4px;font-weight:800}
+.camp-you{font-size:10px;letter-spacing:1.5px;text-transform:uppercase;background:var(--gold);color:#1a1405;padding:2px 6px;border-radius:4px;font-weight:800}
 .camp-tk small{display:block;color:var(--dim);font-size:11px;line-height:1.45}
 .camp-tk small b{color:var(--ink)}
 
@@ -108,3 +108,4 @@
 .camp-recap div:last-child{border-bottom:none;color:var(--gold2)}
 .camp-autolog{background:#141821;border-left:3px solid var(--gold);padding:8px 12px;border-radius:0 8px 8px 0;margin:10px 0;font-size:12px;line-height:1.6}
 .cdet .camp-recap{margin-top:4px}
+@media (max-width:640px){.camp-tickets .vs{flex-basis:100%;text-align:center;margin:-2px 0}}

@@ -6,7 +6,7 @@
 #night .ntabs{flex-wrap:wrap}
 #night .nmapwrap{min-width:0}
 .res-banner{--pc:var(--gold);position:relative;overflow:hidden;margin:12px 0 2px;padding:12px 18px;border-radius:12px;border:1px solid var(--pc);
-  background:linear-gradient(90deg,color-mix(in srgb,var(--pc) 38%,#0b0e14),#0f1420 70%);box-shadow:0 10px 30px #0008,inset 0 0 0 1px #ffffff12;animation:res-in .5s ease-out}
+  background:linear-gradient(90deg,color-mix(in srgb,var(--pc) 38%,#0b0e14),#0f1420 70%);box-shadow:0 10px 30px #0008,inset 0 0 0 1px #ffffff12}
 .res-banner::before{content:'';position:absolute;left:0;top:0;bottom:0;width:7px;background:var(--pc)}
 .res-banner.close{--pc:var(--gold);border-style:dashed}
 .res-banner.close .res-bhead{color:var(--gold2)}
@@ -41,7 +41,7 @@
 .res-tick{display:grid;grid-template-columns:88px 52px 1fr;gap:8px;align-items:center;padding:5px 6px;border-bottom:1px dashed #1f2735;font-size:12px;cursor:pointer;border-radius:5px}
 .res-tick:hover{background:#1c2434}
 .res-tt{color:var(--gold2);font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
-.res-tk{font-size:9px;letter-spacing:1px;font-weight:800;text-align:center;padding:2px 0;border-radius:4px;background:#232a35;color:var(--dim)}
+.res-tk{font-size:10px;letter-spacing:1px;font-weight:800;text-align:center;padding:2px 0;border-radius:4px;background:#232a35;color:var(--dim)}
 .res-tk.pres{background:#2a2412;color:var(--gold2)} .res-tk.senate{background:#1f3a2b;color:var(--yes)} .res-tk.house{background:#1d2a44;color:#8fb3ff} .res-tk.gov{background:#2e2840;color:#d5c6ff}
 .res-tb b{font-weight:800}
 
@@ -66,6 +66,8 @@
 .res-xtabs .btn{padding:7px 13px;font-weight:700}
 .res-grid{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(320px,1fr);gap:14px;margin-top:12px}
 @media (max-width:1100px){.res-grid{grid-template-columns:1fr}}
+.res-grid.res-grid-table{grid-template-columns:1fr}
+.res-grid-table .res-card .usmap{max-width:720px;margin:0 auto}
 .res-col{display:flex;flex-direction:column;gap:12px;min-width:0}
 .res-card{background:#141924;border:1px solid var(--line);border-radius:12px;padding:12px 14px;min-width:0}
 .res-card .lh{margin-bottom:8px}

@@ -54,7 +54,7 @@ function evtFixLeaders() {
   }
 }
 // moderates in states that lean hard the other way are the ones who switch parties
-function evtSwitchCands(party) { return S.members.filter(m => m.party === party && m.faction === MODERATE[party] && !T(m, 'loyal') && evtLeanAdv(m.state, other(party)) >= 8); }
+function evtSwitchCands(party) { return S.members.filter(m => m.party === party && m.faction === MODERATE[party] && !T(m, 'loyal') && !evtOnTicket(m) && evtLeanAdv(m.state, other(party)) >= 8); }
 function evtFlipParty(m, live) {
   const from = m.party, to = other(from);
   m.party = to; m.faction = MODERATE[to];
@@ -89,7 +89,7 @@ EVENTS.push(
     ] };
   } },
   // an independent names their price
-  { id: 'evt_indcause', w: 0.8, make: () => {
+  { id: 'evt_indcause', w: 0.8, cond: () => !S.bill.nomination, make: () => {
     const m = randOf(x => x.party === 'I' && x.cause && !x.b.dealt && !x.b.absent && !isLockedYes(x)); if (!m) return null;
     const t = m.cause[1];
     return { title: `${lastName(m)} Names a Price`, text: `${sen(m)}, who answers to no whip, stops you by the candy desk: write <b>${m.cause[0]}</b> into the bill (${TAG[t][1]} +1) and their vote is yours. No capital, no favors, just the ink — and everyone else's math changes too.`, choices: [
@@ -121,7 +121,7 @@ EVENTS.push(
   { id: 'evt_report', w: 0.9, cond: () => !S.bill.nomination, make: () => {
     const B = S.bill, good = Math.random() < 0.5;
     if (good) {
-      const farm = S.members.filter(m => m.w.rural > 0.6 && !isLockedYes(m) && !m.b.absent), bn = ri(40, 180);
+      const farm = S.members.filter(m => ST[m.state].voter.rural >= 1.5 && !isLockedYes(m) && !m.b.absent), bn = ri(40, 180);
       return { title: `GAO: Bill Saves $${bn} Billion`, paper: 'dawn', text: `The Government Accountability Office finds the ${B.name} would save taxpayers <b>$${bn} billion</b> over ten years. Page ${ri(140, 260)}, footnote ${ri(4, 19)}: most of the savings come out of farm programs. The ${farm.length} farm-state senators have read the footnote.`, choices: [
         { t: 'Lead with the headline', s: `Opinion +8 · farm-state senators −6`, f: B => { B.opinion += 8; evtWarm(farm, -6); log(`"$${bn} billion in savings" leads the news (+8). Farm country notices the footnote (−6).`, 'good'); } },
         { t: 'Get ahead of the footnote', s: '1 action · opinion +4, farm-state senators −2', f: B => { B.ap -= 1; B.opinion += 4; evtWarm(farm, -2); log('You briefed the farm-state offices before the press did (+4, −2).', 'good'); } },
@@ -221,7 +221,7 @@ EVENTS.push(
     ] };
   } },
   // the Ledger's editorial board weighs in
-  { id: 'evt_editorial', w: 0.8, make: () => {
+  { id: 'evt_editorial', w: 0.8, cond: () => !S.bill.nomination, make: () => {
     const B = S.bill, pro = Math.random() < 0.5 + (B.opinion - 50) / 200, swing = S.members.filter(m => T(m, 'swing') && !isLockedYes(m) && !m.b.absent);
     return { title: pro ? 'The Ledger: Pass It' : 'The Ledger: A Bad Bill, Badly Written', paper: pro ? 'dawn' : 'storm', text: `<i>From the editorial board.</i> ${pro ? `The ${B.name} is imperfect, as all laws are, but the Senate has spent ${B.day} day${B.day > 1 ? 's' : ''} proving it can still do hard things. <b>Senators should pass it.</b>` : `The ${B.name} was written in a hurry by people who will not read it. It rewards the loud and bills the quiet. <b>Senators should send it back.</b>`} Every office in the building gets the paper.`, choices: pro ? [
       { t: 'Reprint it in every state', s: '1 action · opinion +9, swing-state senators +4', f: B => { B.ap -= 1; B.opinion += 9; evtWarm(swing, 4); log('The editorial ran in 40 newspapers by your arrangement (+9).', 'good'); } },
@@ -236,14 +236,14 @@ EVENTS.push(
     const B = S.bill, nation = pick(EVT_NATIONS), leader = pick(['Prime Minister', 'President', 'Chancellor']), sec = (B.fx.security || 0) > 0;
     const vain0 = S.members.filter(m => (T(m, 'vain') || T(m, 'ambitious')) && !isLockedYes(m) && !m.b.absent), vain = vain0.length ? vain0 : shuffle(evtMine()).slice(0, 3);
     return { title: `${leader} of ${nation} Addresses Congress`, paper: 'dawn', text: `The ${leader} of ${nation} addresses a joint session at noon; the floor is closed for the speech and every senator wants a photo in the receiving line. ${sec ? 'The speech praises American resolve — and your bill is about exactly that.' : 'Nobody will talk about your bill for a day.'}`, choices: [
-      { t: 'Work the receiving line', s: `1 action · camera-hungry senators +6`, f: B => { B.ap -= 1; evtWarm(vain, 6); log(`You worked the receiving line: ${vain.length} camera-hungry senators glowed (+6).`, 'good'); } },
+      { t: 'Work the receiving line', s: `1 action · camera-hungry senators +6`, f: B => { B.ap -= 1; evtWarm(vain, 6); log(vain.length ? `You worked the receiving line: ${vain.length} camera-hungry senators glowed (+6).` : 'You worked the receiving line, but every camera-hungry senator was already committed.', vain.length ? 'good' : 'sys'); } },
       { t: 'Skip the speech and whip', s: 'Opinion −2 (it looked rude)', f: B => { B.opinion -= 2; log(`You skipped the ${leader}'s speech. The Ledger noticed (−2).`, 'bad'); } },
       ...(sec ? [{ t: 'Tie the bill to the alliance', s: 'Opinion +6 · Defense & Border salience +1', f: B => { B.opinion += 6; evtSal('security', 1); log(`"${nation} is watching." Your bill became a test of resolve (+6).`, 'good'); } }] : []),
     ] };
   } },
   // a staffer leaks
   { id: 'evt_leak', w: 0.7, make: () => {
-    return { title: 'Your Whip Count Leaks', text: `A ${pick(['24-year-old legislative correspondent', 'disgruntled scheduler', 'former intern now at a lobbying shop'])} on your staff hands the Ledger your whip count, complete with margin notes ("<i>${pick(['greedy — give pork', 'thin-skinned, DO NOT TWIST', 'owes us, remind him', 'vain: photo op'])}</i>"). Scrutiny +20 either way.`, choices: [
+    return { title: 'Your Whip Count Leaks', text: `A ${pick(['24-year-old legislative correspondent', 'disgruntled scheduler', 'former intern now at a lobbying shop'])} on your staff hands the Ledger your whip count, complete with margin notes ("<i>${pick(['greedy — give pork', 'thin-skinned, DO NOT TWIST', 'owes us, remind him', 'vain: photo op'])}</i>"). Scrutiny is going up either way; the only question is how much.`, choices: [
       { t: 'Fire the leaker publicly', s: 'Scrutiny +10 net · your caucus −2 (nervous)', f: B => { B.scrutiny += 10; evtWarm(evtMine(), -2); log('You fired the leaker on camera. Your colleagues wonder what else is in the notebook (−2).', 'bad'); } },
       { t: 'Circle the wagons', s: 'Scrutiny +20 · opinion −4', f: B => { B.scrutiny += 20; B.opinion -= 4; log('"No comment on internal documents." The leak dominated the day (−4).', 'bad'); } },
       { t: 'Leak a better count back', s: 'Scrutiny +25 · opinion +5', f: B => { B.scrutiny += 25; B.opinion += 5; log('Your counter-leak showed a bill cruising to passage. It isn\'t, yet (+5).', 'sys'); } },
@@ -263,13 +263,14 @@ EVENTS.push(
   } },
   // news from the front
   { id: 'evt_warnews', w: 1, cond: () => !!S.war, make: () => {
-    const W = S.war, B = S.bill, bad = Math.random() < 0.6, sec = (B.fx.security || 0) > 0, hawks = S.members.filter(m => m.w.security > 0.4 && !isLockedYes(m) && !m.b.absent), doves = S.members.filter(m => m.w.security < -0.4 && !isLockedYes(m) && !m.b.absent);
+    const W = S.war, B = S.bill, bad = Math.random() < 0.6, sec = (B.fx.security || 0) > 0, bySec = S.members.filter(m => !isLockedYes(m) && !m.b.absent).sort((a, b) => b.w.security - a.w.security), hawks = bySec.slice(0, 16), doves = bySec.slice(-8).filter(m => m.w.security < 0);
     const n = ri(3, 19);
+    const fxs = sec ? `hawks ${bad ? '+8' : '+5'}, doves ${bad ? '−6' : '−2'}` : bad ? 'hawks −4' : '';
     const apply = () => { W.support = clamp(W.support + (bad ? -ri(3, 8) : ri(3, 8)), 5, 90); evtSal('security', 2); if (sec) { evtWarm(hawks, bad ? 8 : 5); evtWarm(doves, bad ? -6 : -2); } else evtWarm(hawks, bad ? -4 : 0); };
     return { title: bad ? `${n} Americans Killed in ${W.place}` : `Breakthrough in ${W.place}`, paper: bad ? 'night' : 'dawn', text: bad ? `A ${pick(['roadside bomb', 'drone strike on a forward base', 'helicopter crash', 'ambush outside the capital'])} kills ${n} U.S. service members in ${W.place}, month ${W.months} of the war. Flags come down to half-staff; ${sec ? 'hawks say your bill is how you honor them' : 'nobody is in the mood for your bill'}.` : `U.S. forces take ${pick(['the provincial capital', 'the last rebel stronghold', 'the port', 'the mountain passes'])} in ${W.place} with light casualties. ${presTitle()} declares "the tide has turned."${sec ? ' Hawks want to press the advantage in your bill.' : ''}`, choices: [
-      { t: bad ? 'A moment of silence, then press on' : 'Congratulate the troops', s: sec ? `Hawks ${bad ? '+8' : '+5'}, doves ${bad ? '−6' : '−2'}` : bad ? 'Hawks −4' : 'No effect on the bill', f: () => { apply(); log(bad ? `${n} dead in ${W.place}. The Senate paused (war support ${W.support}%).` : `Good news from ${W.place} (war support ${W.support}%).`, 'sys'); } },
-      { t: 'Tie the bill to the troops', s: `1 action · opinion ${sec ? '+6' : '−3'}`, f: B => { apply(); B.ap -= 1; B.opinion += sec ? 6 : -3; log(sec ? 'You made the bill about the troops (+6).' : 'You tried to make the bill about the troops. It isn\'t (−3).', sec ? 'good' : 'bad'); } },
-      { t: 'Call for a war debate', s: `Vote slips a day · war support −2${W.party !== S.side ? ' · opinion +3' : ''}`, f: B => { apply(); evtSlip(B); W.support = clamp(W.support - 2, 5, 90); if (W.party !== S.side) B.opinion += 3; log(`A day of war debate; the vote slips to Day ${B.days}.`, 'sys'); } },
+      { t: bad ? 'A moment of silence, then press on' : 'Congratulate the troops', s: fxs ? fxs.charAt(0).toUpperCase() + fxs.slice(1) : 'No effect on the bill', f: () => { apply(); log(bad ? `${n} dead in ${W.place}. The Senate paused (war support ${W.support}%).` : `Good news from ${W.place} (war support ${W.support}%).`, 'sys'); } },
+      { t: 'Tie the bill to the troops', s: `1 action · opinion ${sec ? '+6' : '−3'}${fxs ? ' · ' + fxs : ''}`, f: B => { apply(); B.ap -= 1; B.opinion += sec ? 6 : -3; log(sec ? 'You made the bill about the troops (+6).' : 'You tried to make the bill about the troops. It isn\'t (−3).', sec ? 'good' : 'bad'); } },
+      { t: 'Call for a war debate', s: `Vote slips a day · war support −2${W.party !== S.side ? ' · opinion +3' : ''}${fxs ? ' · ' + fxs : ''}`, f: B => { apply(); evtSlip(B); W.support = clamp(W.support - 2, 5, 90); if (W.party !== S.side) B.opinion += 3; log(`A day of war debate; the vote slips to Day ${B.days}.`, 'sys'); } },
     ] };
   } },
   // the Supreme Court rules mid-fight
@@ -299,7 +300,7 @@ EVENTS.push(
       if (done) return; done = true;
       S.formers = S.formers || [];
       hist(m, dies ? `Died in office at ${age}` : `Resigned from the Senate`);
-      S.formers.push({ ...m, b: undefined });
+      if (!dies) S.formers.push({ ...m, b: undefined });
       const line = vacateSeat(m, reason), nm = S.members[m.id];
       evtFreshB(nm); evtFixLeaders();
       S.lastVacancy = { id: m.id, name: nm.name, old: m.name, reason, bill: S.bill.n };
@@ -415,10 +416,10 @@ EVENTS.push(
     ] };
   } },
   // a unanimous-consent objection (majority only)
-  { id: 'evt_uc', w: 0.8, cond: () => isMajority(), make: () => {
+  { id: 'evt_uc', w: 0.8, cond: () => isMajority() && !S.bill.nomination, make: () => {
     const m = randOf(x => side(x) === 'opp' && !x.b.absent && !isLockedYes(x)); if (!m) return null;
     const t = evtFavTag(m);
-    return { title: `${lastName(m)} Objects`, text: `You ask unanimous consent to skip the reading of the ${S.bill.name} and go straight to debate. "<b>Objection,</b>" says ${sen(m)}, and the clerk begins reading all ${ri(300, 1800)} pages aloud. ${lastName(m)} wants a vote on a ${TAG[t][1]} amendment.`, choices: [
+    return { title: `${lastName(m)} Objects`, text: `You ask unanimous consent to skip the reading of the ${S.bill.name} and go straight to debate. "<b>Objection,</b>" says ${sen(m)}, and the clerk begins reading all ${evtN(ri(300, 1800))} pages aloud. ${lastName(m)} wants a vote on a ${TAG[t][1]} amendment.`, choices: [
       { t: 'Give them their amendment vote', s: `${TAG[t][1]} +1 for everyone · ${lastName(m)} +12`, f: () => { evtApplyFx(`${lastName(m)} amendment (${TAG[t][1]})`, { [t]: 1 }); evtWarm([m], 12); log(`${sen(m)}'s amendment got a vote and passed (+12).`, 'sys'); } },
       { t: 'Let the clerk read', s: 'Lose 1 action', f: B => { B.ap -= 1; log(`The clerk read for ${ri(5, 11)} hours. ${sen(m)} smirked.`, 'bad'); } },
       { t: 'Lean on them', s: `1 capital · ${lastName(m)} +8, relationship −1`, can: () => S.career.capital >= 1, f: () => { S.career.capital--; evtWarm([m], 8); m.rel -= 1; log(`You leaned on ${sen(m)}. The objection vanished (+8, relationship −1).`, 'sys'); } },
@@ -430,7 +431,7 @@ EVENTS.push(
     const fence = S.members.filter(m => Math.abs(support(m)) < 15 && !isLockedYes(m) && !m.b.absent && m.party !== 'I').sort((a, b) => (b.faction === V.faction ? 1 : 0) - (a.faction === V.faction ? 1 : 0));
     return { title: `Vice President ${lastName(V)} Moves In`, paper: 'dawn', text: `Vice President ${V.name} sets up in the ceremonial office off the floor "for as long as it takes," ready to break a tie${vf ? ` — and to twist a few arms of fellow ${vf}. ${fac.length} of your senators share the VP's faction` : ''}.`, choices: [
       { t: 'Send the VP to a fence-sitter', s: `1 action · ${fence[0] ? sen(fence[0]) : 'nobody'} +12${vf ? ', VP\'s faction +4' : ''}`, can: () => fence.length > 0, f: B => { B.ap -= 1; evtWarm([fence[0]], 12); evtWarm(fac.filter(m => m !== fence[0]), 4); log(`Vice President ${lastName(V)} worked ${sen(fence[0])} (+12).`, 'good'); } },
-      { t: 'Keep the VP in the chair', s: `Your caucus +2${vf ? ', VP\'s faction +4' : ''}`, f: () => { evtWarm(evtMine(), 2); evtWarm(fac, 4); log(`The Vice President presides. Your caucus stands a little straighter (+2).`, 'good'); } },
+      { t: 'Keep the VP in the chair', s: `Your caucus +2${vf ? ', VP\'s faction +4 more' : ''}`, f: () => { evtWarm(evtMine(), 2); evtWarm(fac, 4); log(`The Vice President presides. Your caucus stands a little straighter (+2).`, 'good'); } },
     ] };
   } },
   // the opposing White House counter-offers (their White House)
@@ -444,11 +445,11 @@ EVENTS.push(
     ] };
   } },
   // the shutdown bites (while the government is shut)
-  { id: 'evt_shutdown', w: 1, cond: () => S.shutdown > 0, make: () => {
+  { id: 'evt_shutdown', w: 1, cond: () => S.shutdown > 0 || (S.history || []).slice(-2).some(h => /Budget$/.test(h.name) && !h.won && S.evtStopgap !== h.n), make: () => {
     const B = S.bill, day = ri(9, 31), yours = vpYours();
     return { title: `Shutdown, Day ${day}`, paper: 'storm', text: `Day ${day} of the government shutdown: TSA lines stretch out the terminal doors at ${pick(['Atlanta', 'O\'Hare', 'Dulles', 'DFW'])}, ${evtN(ri(300, 800))},000 federal workers miss a paycheck, and the national parks are closed. Both parties blame each other; voters blame everyone.`, choices: [
       { t: 'Blame the other side', s: 'Opinion +3 · national mood −0.3', f: B => { B.opinion += 3; evtMood(-0.3); log('You blamed the other side for the shutdown (+3).'); } },
-      { t: 'Propose a stopgap', s: `1 capital · shutdown ends a bill early · ${yours ? 'President\'s approval +2' : 'opinion +4'}`, can: () => S.career.capital >= 1, f: B => { S.career.capital--; S.shutdown = Math.max(0, S.shutdown - 1); if (yours) evtApproval(2); else B.opinion += 4; log('Your stopgap reopens the government sooner.', 'good'); } },
+      { t: 'Propose a stopgap', s: `1 capital · shutdown ends a bill early · ${yours ? 'President\'s approval +2' : 'opinion +4'}`, can: () => S.career.capital >= 1, f: B => { S.career.capital--; S.shutdown = Math.max(0, S.shutdown - 1); S.evtStopgap = ((S.history || []).slice(-2).find(h => /Budget$/.test(h.name) && !h.won) || {}).n; if (yours) evtApproval(2); else B.opinion += 4; log('Your stopgap reopens the government sooner.', 'good'); } },
       { t: 'Hold firm', s: 'Opinion −4 · your caucus loyalists +4', f: B => { B.opinion -= 4; evtWarm(evtMine().filter(m => T(m, 'loyal')), 4); log('You held firm on the shutdown. The base cheered; nobody else did (−4).', 'bad'); } },
     ] };
   } },
@@ -507,7 +508,7 @@ function evtNewsOppScandal() {
 // a governor goes down
 function evtNewsGovIndicted() {
   if (Math.random() >= 0.02) return [];
-  const code = pick(Object.keys(S.governors || {})); if (!code) return [];
+  const code = pick(Object.keys(S.governors || {}).filter(c => !evtOnTicket(S.governors[c]))); if (!code) return [];
   const g = S.governors[code]; S.formers = S.formers || [];
   hist(g, 'Indicted on federal corruption charges; resigned as Governor'); S.formers.push(g);
   governorSucceeded(code, 'was indicted');

@@ -55,6 +55,8 @@ function runHouse(swingSide) {
 /* ---------------- the Presidency, by electoral vote ---------------- */
 // the presidential race, shared by the campaign trail's projection and the real count
 const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment'], FLANKS = ['Progressives', 'Freedom Caucus'];
+// the presidential map's pivotal states, recentered so a tied national environment is a coin flip (the Senate and House keep ST[].lean)
+const PRES_LEAN_ADJ = { MI: -2, PA: -2, WI: -2, NV: -2, AZ: -1, GA: -1, NC: -1 };
 function nightFallbackName() { let nm = fullName(); for (let i = 0; i < 20 && lastName({ name: nm }) === lastName(S.president); i++) nm = fullName(); return nm; }
 function presSetup() {
   const P = S.president, inc = P.party, N = S.nominees || {}, E = S.election || {};
@@ -62,7 +64,7 @@ function presSetup() {
   const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: nightFallbackName(), R: nightFallbackName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
   const noms = { D: nom('D'), R: nom('R') };
   S.whStreak = S.whStreak || 1;
-  const q = p => (noms[p].charisma - 1) * 6 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
+  const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
   // the fall campaign (campaign.js) adds its national effects here, from your ticket's point of view
   base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 1.2) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0));
@@ -70,7 +72,7 @@ function presSetup() {
   return { inc, running, noms, base };
 }
 function stateMarginD(c, envD, noms) {
-  let dm = -stLean(c) + envD;
+  let dm = -(stLean(c) + (PRES_LEAN_ADJ[c] || 0)) * 1.5 + envD; // the state table is compressed: spread it so a +8 national margin is ~350 EV, not 412
   if (noms.D.state === c) dm += 4; if (noms.R.state === c) dm -= 4;            // home-state advantage
   if (noms.D.vp && noms.D.vp.state === c) dm += 2; if (noms.R.vp && noms.R.vp.state === c) dm -= 2;
   if (typeof campaignStateD === 'function') dm += campaignStateD(c, noms); // planks, focus states, surrogates (campaign.js)
@@ -117,12 +119,39 @@ function runPres() {
   const vps = { D: noms.D.vp ? { name: noms.D.vp.name, state: noms.D.vp.state || null } : null, R: noms.R.vp ? { name: noms.R.vp.name, state: noms.R.vp.state || null } : null };
   const offices = { D: noms.D.office || (noms.D.p === P ? 'President' : null), R: noms.R.office || (noms.R.p === P ? 'President' : null) };
   const ev = `${Math.max(evD, evR)}–${Math.min(evD, evR)}`, evTxt = houseVote ? ' by the House after a 269–269 Electoral College deadlock' : `, ${ev} in the Electoral College`;
-  if (noms[loser].p) hist(noms[loser].p, houseVote ? 'Lost the presidential election in the House after a 269–269 Electoral College deadlock' : `Lost the presidential election, ${Math.min(evD, evR)}–${Math.max(evD, evR)} in the Electoral College`, year);
+  // the live record behind a nominee or running mate, by name: after a save/load the record's `p` is a detached copy,
+  // and someone who left office in this very count (a term-limited governor, a retiring senator) is already among the formers
+  const liveOf = (n, p) => { if (!n || !n.name) return null; if (P.name === n.name) return P; if (S.vp && S.vp.name === n.name) return S.vp;
+    return S.members.find(m => m.name === n.name && (!p || m.party === p)) || Object.values(S.governors || {}).find(g => g && g.name === n.name) || Object.values(S.cabinet || {}).find(c => c && c.name === n.name) || (S.reps || []).find(r => r.name === n.name) || (S.formers || []).find(f => f && f.name === n.name) || n.p || null; };
+  const loserP = liveOf(noms[loser], loser);
+  if (loserP) hist(loserP, houseVote ? 'Lost the presidential election in the House after a 269–269 Electoral College deadlock' : `Lost the presidential election, ${Math.min(evD, evR)}–${Math.max(evD, evR)} in the Electoral College`, year);
   let what, extra = [];
-  if (winner === inc && running) { P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President${evTxt}`, year); what = `${presTitle()} wins a second term.`; }
+  // the running mate takes office: out of the Senate, a governor's mansion, the cabinet or the House
+  const seatVP = N => {
+    const vm = S.members.find(m => m.name === N.vp.name);
+    const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === N.vp.name);
+    const cabPost = Object.keys(S.cabinet || {}).find(k => S.cabinet[k] && S.cabinet[k].name === N.vp.name);
+    const live = vm || liveOf(N.vp, null);
+    S.vp = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, N.vp.state), { name: N.vp.name, faction: N.vp.faction || pick(FACTIONS[winner])[0] });
+    hist(S.vp, 'Elected Vice President', year);
+    if (vm) extra.push(vacateSeat(vm, 'was elected Vice President'));
+    if (govCode) { governorSucceeded(govCode, 'was elected Vice President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
+    if (cabPost && !S.pendingCabinet) S.cabinetVacancy = cabPost;
+  };
+  // nobody holds two offices: the President and Vice President come off the House list and the formers' list
+  const tidy = () => { const taken = x => x && (x.name === S.president.name || (S.vp && x.name === S.vp.name)); S.reps = (S.reps || []).filter(r => !taken(r)); S.formers = (S.formers || []).filter(f => !taken(f)); };
+  if (winner === inc && running) {
+    P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President${evTxt}`, year); what = `${presTitle()} wins a second term.`;
+    const NV = noms[winner].vp;
+    if (NV && NV.name && !(S.vp && S.vp.name === NV.name)) {   // the convention dumped the Vice President for a new running mate
+      const old = S.vp; seatVP(noms[winner]);
+      if (old) { hist(old, 'Left office as Vice President', year); S.formers = (S.formers || []).concat([{ ...old, b: undefined }]); extra.push(`${S.vp.name} succeeds ${old.name} as Vice President.`); }
+      tidy();
+    }
+  }
   else {
-    const oldT = presTitle(), N = noms[winner];
-    const person = N.p ? { ...N.p } : newPerson(winner, pick(STATES)[0]);
+    const oldT = presTitle(), N = noms[winner], live = liveOf(N, winner);
+    const person = live ? { ...live, b: undefined } : newPerson(winner, pick(STATES)[0]);
     // the winner leaves their old job
     const sen = S.members.find(m => m.name === person.name && m.party === winner);
     if (sen) extra.push(vacateSeat(sen, 'was elected President'));
@@ -130,15 +159,9 @@ function runPres() {
     if (govCode) { governorSucceeded(govCode, 'was elected President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
     hist(person, `Elected President of the United States${evTxt}`, year);
     S.president = { ...person, name: person.name, party: winner, faction: N.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1 };
-    if (N.vp) {
-      const vm = S.members.find(m => m.name === N.vp.name);
-      const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === N.vp.name);
-      const live = vm || (S.vp && S.vp.name === N.vp.name ? S.vp : null) || (govCode ? S.governors[govCode] : null) || Object.values(S.cabinet || {}).find(c => c && c.name === N.vp.name) || (S.reps || []).find(r => r.name === N.vp.name) || null;
-      S.vp = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, N.vp.state), { name: N.vp.name, faction: N.vp.faction || pick(FACTIONS[winner])[0] });
-      hist(S.vp, 'Elected Vice President', year);
-      if (vm) extra.push(vacateSeat(vm, 'was elected Vice President'));
-      if (govCode) { governorSucceeded(govCode, 'was elected Vice President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
-    } else { S.vp = newPerson(winner, pick(STATES)[0]); hist(S.vp, 'Elected Vice President', year); }
+    if (N.vp) seatVP(N);
+    else { S.vp = newPerson(winner, pick(STATES)[0]); hist(S.vp, 'Elected Vice President', year); }
+    tidy();
     S.pendingCabinet = true;
     what = (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].short.replace(/s$/, '')} ${N.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${N.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
     if (winner !== inc) S.vacancyBlocked = false;
@@ -350,7 +373,7 @@ function popularVote(T) {
     const P = N.pres; let d = 0, r = 0, i = 0;
     for (const s of Object.values(P.states)) { const rp = reporting({ call: s.call }); d += s.dVotes * rp; r += s.rVotes * rp; i += (s.iVotes || 0) * rp; }
     const tot = d + r + i || 1;
-    return `<b>Popular vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">${P.names.D} ${pct(d / tot * 100)}</div>${i ? `<div style="width:${i / tot * 100}%;background:${PARTY.I.color}">${pct(i / tot * 100)}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">${pct(r / tot * 100)} ${P.names.R}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)} votes</span>${i ? `<span style="color:${PARTY.I.color}">${P.names.I} (I) ${nfmt(i)}</span>` : ''}<span>${nfmt(r)} votes</span></div>${resPopCallout(P, (T || tallies()).pres, d, r, i)}`;
+    return `<b>Popular vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">${P.names.D} ${pct(d / tot * 100)}</div>${i ? `<div style="width:${i / tot * 100}%;background:${PARTY.I.color}">${i / tot >= 0.07 ? pct(i / tot * 100) : ''}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">${pct(r / tot * 100)} ${P.names.R}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)} votes</span>${i ? `<span style="color:${PARTY.I.color}">${P.names.I} (I) ${nfmt(i)}</span>` : ''}<span>${nfmt(r)} votes</span></div>${resPopCallout(P, (T || tallies()).pres, d, r, i)}`;
   }
   if (N.tab === 'house') {
     const H = N.house; let d = 0, r = 0;
@@ -367,7 +390,7 @@ function popularVote(T) {
     return `<b>Governors' races, all votes</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>
       <div class="nsub">Mansions flipped so far: ${gf.length ? gf.map(x => `<b style="color:${PARTY[x.wParty].color}">${x.code}</b>`).join(', ') : 'none'}${gb ? ` · Before: D ${gb.D} – R ${gb.R}` : ''}</div>`;
   }
-  return `<b>Senate vote, all races</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div>${ind ? `<div style="width:${ind / tot * 100}%;background:${PARTY.I.color}">I ${pct(ind / tot * 100)}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>
+  return `<b>Senate vote, all races</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 100)}</div>${ind ? `<div style="width:${ind / tot * 100}%;background:${PARTY.I.color}">${ind / tot >= 0.07 ? 'I ' + pct(ind / tot * 100) : ''}</div>` : ''}<div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 100)}</div></div>
     <div class="nsub">Flips so far: ${flips.length ? flips.map(x => `<b style="color:${PARTY[x.wParty].color}">${x.code}</b>`).join(', ') : 'none'} · Before: D ${N.before.D} – R ${N.before.R}${N.before.I ? ` – I ${N.before.I}` : ''}</div>`;
 }
 
