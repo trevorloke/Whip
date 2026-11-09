@@ -33,10 +33,18 @@ function evtApplyFx(name, fx) {
   B.applied.push(name);
   for (const m of S.members) m.b.last = support(m) - before.get(m.id);
 }
-// a senator who arrives mid-bill needs the per-bill state everyone else got at startBill
+// a senator who arrives mid-bill needs the per-bill state everyone else got at startBill, including the
+// calibration offset startBill folded into everyone's mood (the average of the others' moods recovers it)
 function evtFreshB(m) {
-  m.b = { bonus: 0, mood: rnd(-12, 12), intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: has('pollster') ? rnd(-14, 14) : null, last: 0 };
+  const others = S.members.filter(x => x !== m && x.b && typeof x.b.mood === 'number');
+  const off = others.length ? others.reduce((a, x) => a + x.b.mood, 0) / others.length : 0;
+  m.b = { bonus: 0, mood: rnd(-12, 12) + off, intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: has('pollster') ? rnd(-14, 14) : null, last: 0 };
   if (T(m, 'leader') && m.party !== 'I') { m.b.intel = true; m.knownTraits = true; m.b.start = leaderStance(m); }
+}
+// a senator on a presidential ticket (or in the primaries) can't die, resign or switch parties on the floor
+function evtOnTicket(m) {
+  const N = S.nominees; if (!N) return false;
+  return ['D', 'R'].some(p => N[p] && (N[p].name === m.name || (N[p].vp && N[p].vp.name === m.name) || (N[p].runnerUp && N[p].runnerUp.name === m.name)));
 }
 function evtFixLeaders() {
   if (!S.bill) return;
@@ -169,8 +177,8 @@ EVENTS.push(
   // the House moves its own bill
   { id: 'evt_housebill', w: 0.8, cond: () => !S.bill.nomination, make: () => {
     const B = S.bill, hm = houseMaj(), yours = hm === S.side, blocs = HOUSE_FAC[hm], big = blocs.slice().sort((a, b) => b[1] - a[1])[0][0], modc = blocs[blocs.length - 1][0];
-    const pr = PARTY[hm].prior, t = Object.keys(pr).sort((a, b) => pr[b] - pr[a])[0];
-    return { title: `The House Passes Its Own Version`, text: `The ${PARTY[hm].name} House passes a rival ${B.name.split(' ').slice(0, 2).join(' ')} bill, ${ri(220, 250)}–${ri(180, 210)}, ${yours ? 'with far more ' + TAG[t][1] + ' in it. The Speaker wants the Senate to take the House text.' : 'built to embarrass you. The Speaker says the Senate bill is "dead on arrival" in the House.'}`, choices: yours ? [
+    const pr = PARTY[hm].prior, t = Object.keys(pr).sort((a, b) => pr[b] - pr[a])[0], ay = ri(218, 250), nv = ri(0, 6);
+    return { title: `The House Passes Its Own Version`, text: `The ${PARTY[hm].name} House passes a rival ${B.name.split(' ').slice(0, 2).join(' ')} bill, ${ay}–${435 - ay - nv}, ${yours ? 'with far more ' + TAG[t][1] + ' in it. The Speaker wants the Senate to take the House text.' : 'built to embarrass you. The Speaker says the Senate bill is "dead on arrival" in the House.'}`, choices: yours ? [
       { t: 'Take the House language', s: `${TAG[t][1]} +1 for everyone · House odds up`, f: B => { evtApplyFx(`House language (${TAG[t][1]})`, { [t]: 1 }); B.hw[big] = (B.hw[big] || 0) + 1; log(`You pre-conferenced with the Speaker: ${TAG[t][1]} +1, House odds up.`, 'sys'); } },
       { t: 'Insist on the Senate text', s: `Your caucus +3 (Senate pride) · opinion −2 (a party at war with itself)`, f: B => { evtWarm(evtMine(), 3); B.opinion -= 2; log(`You told the Speaker the Senate writes its own bills. Your caucus liked that (+3); the papers called it a feud (−2).`, 'sys'); } },
     ] : [
@@ -206,7 +214,7 @@ EVENTS.push(
     const m = randOf(x => isUp(x) && !x.retireNudge && !isLockedYes(x) && !x.b.absent && x.party !== 'I'); if (!m) return null;
     const d = (Math.random() < 0.5 ? -1 : 1) * ri(10, 25), yours = side(m) === 'you';
     const announce = () => { m.retireNudge = true; m.b.intel = true; m.knownTraits = true; hist(m, 'Announced retirement from the Senate'); evtWarm([m], d); };
-    return { title: `${lastName(m)} Won't Seek Re-election`, paper: 'dawn', text: `${sen(m)}, ${ageOf(m)}, announces from ${m.hometown} that ${electionYear(nextElectionK())} will be the end: "<b>${pick(['It\'s time to go home.', 'I\'ve done what I came to do.', 'This place isn\'t what it was.', 'My grandchildren don\'t know my face.'])}</b>" With no voters left to fear, ${lastName(m)} is free to vote their conscience on your bill — whatever that turns out to be.`, choices: [
+    return { title: `${lastName(m)} Won't Seek Re-election`, paper: 'dawn', text: `${sen(m)}, ${ageOf(m)}, announces from ${m.hometown || ST[m.state].name} that ${electionYear(nextElectionK())} will be the end: "<b>${pick(['It\'s time to go home.', 'I\'ve done what I came to do.', 'This place isn\'t what it was.', 'My grandchildren don\'t know my face.'])}</b>" With no voters left to fear, ${lastName(m)} is free to vote their conscience on your bill — whatever that turns out to be.${yours ? ` And ${ST[m.state].name} becomes an open seat your party must defend.` : ''}`, choices: [
       { t: 'Toast their career on the floor', s: `Relationship +1 · their true position is revealed`, f: () => { announce(); m.rel += 1; log(`${sen(m)} is retiring and now ${d > 0 ? 'likes' : 'hates'} your bill a little more (${fmt(d)}).`, d > 0 ? 'good' : 'bad'); } },
       { t: 'Ask for one last favor', s: `1 capital · +15 on top of wherever they land`, can: () => S.career.capital >= 1, f: () => { announce(); S.career.capital--; evtWarm([m], 15); log(`${sen(m)}, retiring, grants you one last favor (${fmt(d + 15)} all told).`, 'good'); } },
       ...(yours ? [] : [{ t: 'Court the open seat', s: `Your party's mood +0.5 (an open ${ST[m.state].name} seat)`, f: () => { announce(); evtMood(0.5); log(`${ST[m.state].name} is an open seat next year (${fmt(d)} on this bill).`, 'sys'); } }]),
@@ -226,8 +234,8 @@ EVENTS.push(
   // a foreign leader's visit
   { id: 'evt_foreign', w: 0.6, make: () => {
     const B = S.bill, nation = pick(EVT_NATIONS), leader = pick(['Prime Minister', 'President', 'Chancellor']), sec = (B.fx.security || 0) > 0;
-    const vain = S.members.filter(m => T(m, 'vain') && !isLockedYes(m) && !m.b.absent);
-    return { title: `${leader} of ${nation.replace(/^the /, 'the ')} Addresses Congress`, paper: 'dawn', text: `The ${leader} of ${nation} addresses a joint session at noon; the floor is closed for the speech and every senator wants a photo in the receiving line. ${sec ? 'The speech praises American resolve — and your bill is about exactly that.' : 'Nobody will talk about your bill for a day.'}`, choices: [
+    const vain0 = S.members.filter(m => (T(m, 'vain') || T(m, 'ambitious')) && !isLockedYes(m) && !m.b.absent), vain = vain0.length ? vain0 : shuffle(evtMine()).slice(0, 3);
+    return { title: `${leader} of ${nation} Addresses Congress`, paper: 'dawn', text: `The ${leader} of ${nation} addresses a joint session at noon; the floor is closed for the speech and every senator wants a photo in the receiving line. ${sec ? 'The speech praises American resolve — and your bill is about exactly that.' : 'Nobody will talk about your bill for a day.'}`, choices: [
       { t: 'Work the receiving line', s: `1 action · camera-hungry senators +6`, f: B => { B.ap -= 1; evtWarm(vain, 6); log(`You worked the receiving line: ${vain.length} camera-hungry senators glowed (+6).`, 'good'); } },
       { t: 'Skip the speech and whip', s: 'Opinion −2 (it looked rude)', f: B => { B.opinion -= 2; log(`You skipped the ${leader}'s speech. The Ledger noticed (−2).`, 'bad'); } },
       ...(sec ? [{ t: 'Tie the bill to the alliance', s: 'Opinion +6 · Defense & Border salience +1', f: B => { B.opinion += 6; evtSal('security', 1); log(`"${nation} is watching." Your bill became a test of resolve (+6).`, 'good'); } }] : []),
@@ -266,11 +274,12 @@ EVENTS.push(
   } },
   // the Supreme Court rules mid-fight
   { id: 'evt_scotus', w: 0.6, cond: () => !S.bill.nomination && S.court.length >= 5, make: () => {
-    const B = S.bill, t = evtFxTop(B.fx), mine = courtCount(S.side) > courtCount(other(S.side)), n = S.court.length;
+    const B = S.bill, t = evtFxTop(B.fx), n = S.court.length, tied = courtCount(S.side) === courtCount(other(S.side));
+    const mine = tied ? Math.random() < 0.5 : courtCount(S.side) > courtCount(other(S.side));
     const maj = Math.min(n, Math.max(Math.ceil((n + 1) / 2), mine ? courtCount(S.side) : courtCount(other(S.side))));
     const cases = { economy: 'a sweeping challenge to federal regulatory power', environment: 'the EPA\'s authority over power-plant emissions', security: 'warrantless searches at the border', welfare: 'a state\'s Medicaid work requirements', rural: 'federal control of Western water rights', urban: 'local rent-control laws', taxes: 'the constitutionality of a wealth tax', tech: 'liability for what platforms recommend' };
     const flank = evtMine().filter(m => m.faction === EVT_FLANK[S.side]);
-    return { title: `Supreme Court Rules ${maj}–${n - maj}`, paper: mine ? 'dawn' : 'storm', text: `Mid-fight, the Court (${courtLabel()}) hands down ${cases[t]}. The ${mine ? PARTY[S.side].name : PARTY[other(S.side)].name} appointees carry the day, and the opinion lands squarely on your bill's ${TAG[t][1]} provisions: <b>${mine ? 'it blesses your approach' : 'it cuts the legs out from under you'}</b>.`, choices: mine ? [
+    return { title: `Supreme Court Rules ${maj}–${n - maj}`, paper: mine ? 'dawn' : 'storm', text: `Mid-fight, the Court (${courtLabel()}) hands down ${cases[t]}. The ${mine ? PARTY[S.side].name : PARTY[other(S.side)].name} appointees carry the day${tied ? ' with a single crossover vote' : ''}, and the opinion lands squarely on your bill's ${TAG[t][1]} provisions: <b>${mine ? 'it blesses your approach' : 'it cuts the legs out from under you'}</b>.`, choices: mine ? [
       { t: 'Make the ruling your argument', s: '1 action · opinion +9, your caucus +4', f: B => { B.ap -= 1; B.opinion += 9; evtWarm(evtMine(), 4); log(`"Even the Supreme Court agrees." (+9)`, 'good'); } },
       { t: 'Take the win quietly', s: 'Opinion +5', f: B => { B.opinion += 5; log('The Court\'s ruling helped your bill (+5).', 'good'); } },
     ] : [
@@ -281,7 +290,7 @@ EVENTS.push(
   } },
   // a death or resignation (rare): the governor appoints a successor
   { id: 'evt_death', w: 0.15, make: () => {
-    const dies = Math.random() < 0.55, pool = S.members.filter(m => !isLockedYes(m) && !m.b.absent && m.party !== 'I');
+    const dies = Math.random() < 0.55, pool = S.members.filter(m => !isLockedYes(m) && !m.b.absent && m.party !== 'I' && !evtOnTicket(m));
     const m = dies ? (pick(pool.filter(x => ageOf(x) >= 68)) || pick(pool)) : pick(pool); if (!m) return null;
     const gov = S.governors[m.state], age = ageOf(m);
     const reason = dies ? pick(['died in office', 'died suddenly of a heart attack', 'died after a short illness']) : pick(['resigned to become ambassador to Ireland', 'resigned under a federal indictment', 'resigned to run a foundation', 'resigned, citing exhaustion']);
@@ -297,22 +306,22 @@ EVENTS.push(
       log(evtPlain(line), 'sys'); toast(`${nm.name} is sworn in for ${ST[m.state].name}.`);
     };
     const govLine = gov ? `Gov. ${gov.name} (${gov.party}) ${gov.party !== m.party ? '<b>will name a successor from the other party</b>' : 'will name a successor'}` : 'A successor will be named';
-    return { title: dies ? `Senator ${lastName(m)} Dies at ${age}` : `${lastName(m)} Resigns`, paper: dies ? 'night' : 'storm', text: dies ? `${sen(m)}, ${evtMemberOf(m)} who came to the Senate in ${(m.history.find(h => /U\.S\. Senate/.test(h.t)) || { y: billYear(1) }).y}, ${reason} overnight. The chamber falls silent; a black drape goes over the desk. ${govLine} to the ${ST[m.state].name} seat.` : `${sen(m)} ${reason}, effective immediately. ${govLine} to the ${ST[m.state].name} seat${gov && gov.party !== m.party ? ' — the seat flips' : ''}.`, choices: dies ? [
+    return { title: dies ? `Senator ${lastName(m)} Dies at ${age}` : `${lastName(m)} Resigns`, paper: dies ? 'night' : 'storm', text: dies ? `${sen(m)}, ${evtMemberOf(m)} who came to the Senate in ${((m.history || []).find(h => /U\.S\. Senate/.test(h.t)) || { y: billYear(1) }).y}, ${reason} overnight. The chamber falls silent; a black drape goes over the desk. ${govLine} to the ${ST[m.state].name} seat.` : `${sen(m)} ${reason}, effective immediately. ${govLine} to the ${ST[m.state].name} seat${gov && gov.party !== m.party ? ' — the seat flips' : ''}.`, choices: dies ? [
       { t: 'Adjourn in their memory', s: 'The Senate loses the day · the vote slips a day', f: B => { vacate(); B.ap = 0; evtSlip(B); log(`The Senate adjourned for Sen. ${lastName(m)}. The vote slips to Day ${B.days}.`, 'sys'); } },
       { t: 'A moment of silence, then back to work', s: 'Opinion −4: it looks cold', f: B => { vacate(); B.opinion -= 4; log('You pressed on through the mourning. It looked cold (−4).', 'bad'); } },
     ] : [
-      { t: 'Thank them for their service', s: `${gov ? `Gov. ${lastName(gov)}` : 'The governor'} names the successor`, f: () => vacate() },
+      { t: /indictment/.test(reason) ? 'Say as little as possible' : 'Thank them for their service', s: `${gov ? `Gov. ${lastName(gov)}` : 'The governor'} names the successor`, f: () => vacate() },
       { t: 'Call the governor about the pick', s: '1 capital · the appointee arrives known, relationship +1', can: () => S.career.capital >= 1, f: () => { vacate(); S.career.capital--; const nm = S.members[m.id]; nm.rel += 1; nm.b.intel = true; nm.knownTraits = true; log(`You had a word with the governor. ${nm.name} arrives owing you a small one.`, 'good'); } },
     ] };
   } },
   // a party switch (rare)
   { id: 'evt_switch', w: 0.15, make: () => {
-    const cands = evtSwitchCands('D').concat(evtSwitchCands('R')).filter(m => !isLockedYes(m) && !m.b.absent);
+    const cands = evtSwitchCands('D').concat(evtSwitchCands('R')).filter(m => !isLockedYes(m) && !m.b.absent && !evtOnTicket(m));
     const m = pick(cands); if (!m) return null;
     const from = m.party, to = other(from), toYou = to === S.side, dA = seats('D') + (to === 'D' ? 1 : -1), rA = seats('R') + (to === 'R' ? 1 : -1);
     let done = false;
     const flip = () => { if (done) return; done = true; evtFlipParty(m, true); evtMood(toYou ? 1 : -1); if (toYou) unlock('evt_switch'); log(`${sen(m)} switched parties. The Senate is now ${dA}D–${rA}R${seats('I') ? `–${seats('I')}I` : ''}.`, toYou ? 'good' : 'bad'); };
-    return { title: `${lastName(m)} Switches Parties`, paper: toYou ? 'dawn' : 'storm', text: `At a hastily called press conference in ${m.hometown}, ${sen(m)}, ${evtMemberOf(m)} from a state that is ${leanLabel(ST[m.state].lean)}, announces they are leaving the ${PARTY[from].short} for the ${PARTY[to].short}: "<b>${pick(['I didn\'t leave the party. The party left me.', 'My state deserves a senator whose calls get returned.', 'I\'ve voted with them for two years. I might as well caucus with them.', 'This isn\'t about me. It\'s about ' + ST[m.state].name + '.'])}</b>" The Senate will stand ${dA}D–${rA}R.`, choices: toYou ? [
+    return { title: `${lastName(m)} Switches Parties`, paper: toYou ? 'dawn' : 'storm', text: `At a hastily called press conference in ${m.hometown || ST[m.state].name}, ${sen(m)}, ${evtMemberOf(m)} from a state that is ${leanLabel(ST[m.state].lean)}, announces they are leaving the ${PARTY[from].short} for the ${PARTY[to].short}: "<b>${pick(['I didn\'t leave the party. The party left me.', 'My state deserves a senator whose calls get returned.', 'I\'ve voted with them for two years. I might as well caucus with them.', 'This isn\'t about me. It\'s about ' + ST[m.state].name + '.'])}</b>" The Senate will stand ${dA}D–${rA}R.`, choices: toYou ? [
       { t: 'Welcome them with a committee seat', s: '1 capital · relationship +2 · national mood +1', can: () => S.career.capital >= 1, f: () => { flip(); S.career.capital--; m.rel += 2; } },
       { t: 'A handshake and a back-row desk', s: 'They join · national mood +1', f: () => flip() },
     ] : [
@@ -402,7 +411,7 @@ EVENTS.push(
     return { title: 'Majority Fills the Amendment Tree', text: `The ${PARTY[other(S.side)].name} leader fills the amendment tree with placeholder amendments, blocking yours: ${unused().map(a => a.name).join(', ')}. In the minority, the floor is theirs.`, choices: [
       { t: 'Accept it', s: 'Your amendments are dead · opinion +2 (you look reasonable)', f: B => { unused().forEach(a => a.used = true); B.opinion += 2; log('Your amendments died in the tree (+2 for grace).', 'bad'); } },
       { t: 'Force a vote to table', s: '2 capital · keep your amendments', can: () => S.career.capital >= 2, f: () => { S.career.capital -= 2; log('You won a vote to clear the tree. Your amendments live.', 'good'); } },
-      { t: 'Trade: keep one', s: 'All but one amendment withdrawn', f: () => { const u = unused(); u.slice(1).forEach(a => a.used = true); log(`You kept the ${u[0].name}; the rest are gone.`, 'sys'); } },
+      { t: 'Trade: keep one', s: 'All but one amendment withdrawn', can: () => unused().length >= 2, f: () => { const u = unused(); u.slice(1).forEach(a => a.used = true); log(`You kept the ${u[0].name}; the rest are gone.`, 'sys'); } },
     ] };
   } },
   // a unanimous-consent objection (majority only)
@@ -444,7 +453,7 @@ EVENTS.push(
     ] };
   } },
   // leadership calls in the pledge you made between bills
-  { id: 'evt_pledge_due', w: 0.6, weight: () => 40, cond: () => !!S.evtPledge && !S.bill.nomination, make: () => {
+  { id: 'evt_pledge_due', w: 0.6, weight: () => 500, cond: () => !!S.evtPledge && !S.bill.nomination, make: () => {
     const pr = PARTY[S.side].prior, t = Object.keys(pr).sort((a, b) => pr[b] - pr[a])[0], loyal = evtMine().filter(m => T(m, 'loyal')), lead = isMajority() ? 'Majority Leader' : 'Minority Leader';
     const clear = () => { S.evtPledge = null; };
     return { title: 'Leadership Calls In Your Pledge', paper: 'night', text: `The ${lead} reminds you of the folder you took between bills. Leadership wants its <b>${TAG[t][1]}</b> language in the ${S.bill.name}, tonight, no questions. A pledge is a pledge — or it isn't.`, choices: [
@@ -453,7 +462,7 @@ EVENTS.push(
     ] };
   } },
   // excerpts from the book you signed between bills leak
-  { id: 'evt_bookleak', w: 0.6, weight: () => 40, cond: () => !!S.bookScrutiny, make: () => {
+  { id: 'evt_bookleak', w: 0.6, weight: () => 500, cond: () => !!S.bookScrutiny, make: () => {
     const clear = () => { S.bookScrutiny = null; };
     const title = pick(['Counting to Fifty-One', 'The Cloakroom Diaries', 'Whip Hand', 'Arms I Have Twisted']);
     return { title: 'Your Memoir Leaks', paper: 'storm', text: `Excerpts from <i>${title}</i>, your forthcoming memoir, leak to the Ledger: candid chapters on earmarks, on "the senator who cried," and on exactly how the sausage gets made. Scrutiny +30.`, choices: [
@@ -614,15 +623,17 @@ HOOKS.worldNews.push(...[evtNewsEcon, evtNewsOppScandal, evtNewsGovIndicted, evt
 /* =====================================================================
    3. MOMENTS between bills — HOOKS.interlude (steps that must call next() once)
    ===================================================================== */
+// the "Between bills" part of a kicker becomes a pill (the text content stays the same)
+const evtKicker = k => `<div class="kicker">${k.replace(/^Between bills/, '<span class="evt-pill">Between bills</span>')}</div>`;
 // a screen of choices: buttons carry data-choice; pick(k) runs after a click
 function evtScreen({ kicker, h2, paper, body, choices, pick: onPick }) {
-  showModal(`<div class="kicker">${kicker}</div>${paper ? frontPage(paper) : `<h2>${h2}</h2>${body || ''}`}${paper && body ? body : ''}<div class="choices">${choices.map(c => `<button class="btn ${c.cls || ''}" data-choice="${c.k}" ${c.dis ? 'disabled' : ''}>${c.t}${c.s ? `<small>${c.s}</small>` : ''}</button>`).join('')}</div>`);
+  showModal(`${evtKicker(kicker)}${paper ? frontPage(paper) : `<h2>${h2}</h2>${body || ''}`}${paper && body ? body : ''}<div class="choices">${choices.map(c => `<button class="btn ${c.cls || ''}" data-choice="${c.k}" ${c.dis ? 'disabled' : ''}>${c.t}${c.s ? `<small>${c.s}</small>` : ''}</button>`).join('')}</div>`);
   $('#modal-card').querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { sfx.click(); onPick(b.dataset.choice); });
 }
 // the result screen; its .adv button calls next() exactly once
 function evtAfter(next, kicker, h2, lines) {
   let done = false;
-  showModal(`<div class="kicker">${kicker}</div><h2>${h2}</h2><div class="evt-card">${lines.map(l => `<p>${l}</p>`).join('')}</div><div class="choices"><button class="btn primary big adv" id="evt-adv">Continue</button></div>`);
+  showModal(`${evtKicker(kicker)}<h2>${h2}</h2><div class="evt-card">${lines.map(l => `<p>${l}</p>`).join('')}</div><div class="choices"><button class="btn primary big adv" id="evt-adv">Continue</button></div>`);
   $('#evt-adv').onclick = () => { if (done) return; done = true; sfx.click(); next(); };
 }
 const EVT_MOMENTS = [
