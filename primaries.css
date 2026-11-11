@@ -1,0 +1,51 @@
+/* Floor Fight — styles for the presidential primaries. Loaded after style.css. */
+.prim-banner{--pc:var(--gold);position:relative;margin:8px 0;padding:10px 16px 10px 20px;border-radius:10px;border:1px solid var(--pc);background:linear-gradient(90deg,color-mix(in srgb,var(--pc) 32%,#0b0e14),#0f1420 75%)}
+.prim-banner::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;border-radius:10px 0 0 10px;background:var(--pc)}
+.prim-banner small{display:block;font-size:11px;letter-spacing:2px;text-transform:uppercase;color:#e8e3d6;opacity:.85}
+.prim-banner b{display:block;font-family:var(--serif);font-weight:900;font-size:clamp(20px,3vw,28px);line-height:1.15;color:#fff;margin:2px 0}
+.prim-banner span{font-size:13px;color:#e8e3d6}
+.prim-news{background:#141821;border:1px solid var(--line);border-radius:8px;padding:6px 10px;margin:8px 0;font-size:13px}
+.prim-news p{margin:4px 0}
+.prim-note{background:#2a2110;border:1px solid #e3b54a66;border-radius:8px;padding:6px 10px;font-size:13px}
+.prim-results{display:grid;grid-template-columns:1fr;gap:10px;margin:8px 0}
+.prim-rcol.list{max-height:240px;overflow-y:auto}
+.prim-rcol{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-width:0}
+.prim-rcol>b{display:block;margin-bottom:4px;font-size:13px}
+.prim-srow{cursor:pointer;border-radius:5px;padding:4px 6px;align-items:center}
+.prim-srow span:last-child{white-space:nowrap}
+@media (max-width:640px){.prim-srow{flex-direction:column;align-items:flex-start}.prim-srow span:last-child{white-space:normal;text-align:left}}
+.prim-srow:hover{background:#1c2232}
+.prim-srow.on{background:#232b3f;outline:1px solid var(--gold)}
+.prim-detail{min-width:0}
+.prim-dh{display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;margin-bottom:6px}
+.prim-dh b{font-family:var(--serif);font-size:18px}
+.prim-dh span{font-size:12px;color:var(--dim)}
+.prim-tag{display:inline-block;font-size:10px;font-weight:800;letter-spacing:1px;padding:1px 6px;border-radius:4px}
+.prim-tag.up{background:#e3b54a;color:#1a1405}
+.prim-tag.ph{background:#a78bfa;color:#140f24}
+.prim-dh .prim-tag{color:#1a1405}
+.prim-table{width:100%;border-collapse:collapse;font-size:12px}
+.prim-table th{text-align:left;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);padding:4px 6px;border-bottom:1px solid var(--line)}
+.prim-table td{padding:5px 6px;border-bottom:1px dashed #2a3242;vertical-align:middle}
+.prim-table tr.win td{font-weight:700}
+.prim-table .dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px}
+.prim-table .check{color:var(--yes)}
+.prim-table td.beat{color:var(--yes)} .prim-table td.miss{color:var(--no)}
+.prim-table td small{color:inherit;opacity:.8}
+.prim-bar{display:block;height:4px;background:#232b3f;border-radius:2px;margin-top:3px;min-width:60px}
+.prim-bar i{display:block;height:100%;border-radius:2px}
+.prim-hqcand{display:flex;gap:10px;align-items:center;flex-wrap:wrap;background:#141821;border:2px solid var(--gold);border-radius:10px;padding:8px 12px;margin:6px 0}
+.prim-res{display:flex;flex-direction:column;align-items:center;min-width:64px}
+.prim-res b{font-size:20px;color:var(--gold2)}
+.prim-res small{font-size:10px;color:var(--dim);text-transform:uppercase;letter-spacing:1px}
+.prim-hq{overflow-x:auto;background:#141821;border:1px solid var(--line);border-radius:8px;padding:4px 6px;margin:8px 0}
+.prim-table.hq td.prim-sp{font-size:11px}
+.prim-acts{display:flex;gap:4px;flex-wrap:wrap}
+.prim-acts .btn{padding:4px 8px;font-size:11px}
+.prim-acts .btn small{display:inline;margin-left:4px}
+.prim-hqrow{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
+.prim-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.prim-tags .btn{padding:5px 10px;font-size:12px}
+.prim-tags .btn.on{border-color:var(--gold);color:var(--gold2)}
+.prim-you{font-size:10px;letter-spacing:1px;background:var(--gold);color:#1a1405;padding:1px 6px;border-radius:4px}
+.cand2.prim-mine{border-width:2px}

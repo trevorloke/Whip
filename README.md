@@ -100,13 +100,22 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   draw challengers from their flank. Protect them, back the challenger, or
   meddle in the other party's primaries.
 - **Presidential primaries.** In the spring of each presidential year both
-  parties hold primaries state by state, from Iowa through June, with delegates,
-  polls and dropouts. Senators, House members, governors, cabinet secretaries
-  and the Vice President run. Rank up to three candidates: your endorsement goes
-  to your highest-ranked candidate still running. Watch the other party's race
-  too. You can undermine your own party's President and recruit a primary
-  challenger. Dropouts release their delegates, so a clinch is the norm and a
-  contested convention the exception.
+  parties hold primaries state by state, from Iowa through June, with fields
+  of two to nine candidates: senators, governors, House members, cabinet
+  secretaries, the Vice President, former officials and outsiders. **Endorse a
+  candidate and you run their campaign**: before each contest you spend their
+  days on the ground and their war chest on ads, pick the message, go negative
+  on a rival, dial for dollars, call in favors from the party's governors and
+  senators, and set the debate strategy. Every contest night reports full
+  results for every state: raw vote totals for every candidate, shares,
+  delegates and how each did against the final poll, with upsets, photo
+  finishes, momentum, money and dropouts. A sitting President draws a
+  challenger when their approval sags (rarely near 50%, almost always near
+  30%, when the challenger can take them out, and a President may even bow
+  out), and you can run the challenger. You can also undermine your own
+  President and recruit one. Watch the other party's race too. Dropouts release
+  their delegates, so a clinch is the norm and a contested convention the
+  exception.
 - **The conventions.** Each party holds a national convention in the summer,
   the out-party first. At yours you call the hall to order, pick the **running
   mate** from four candidates (a primary rival for unity, a swing-state senator,
