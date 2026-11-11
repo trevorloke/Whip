@@ -130,8 +130,8 @@ const isTrait = p => PERKS[p][3] === 'trait';
 /* ---------------- House caucuses ---------------- */
 // [name, share of the party's House seats, issue tilt]
 const HOUSE_FAC = {
-  D: [['Progressive Caucus', 0.42, { welfare: 1, environment: 1, urban: 0.5, taxes: -0.6, security: -0.5 }], ['New Democrat Coalition', 0.33, { tech: 1, economy: 0.6, taxes: 0.3 }], ['Labor Caucus', 0.12, { economy: 1, welfare: 0.8, environment: -0.4 }], ['Blue Dog Coalition', 0.13, { security: 0.8, taxes: 0.6, rural: 0.6, environment: -0.5 }]],
-  R: [['Freedom Caucus', 0.18, { taxes: 1.4, welfare: -1, security: 0.5 }], ['Republican Study Committee', 0.42, { economy: 1, security: 0.8, tech: 0.4 }], ['America First Caucus', 0.25, { rural: 1, welfare: 0.5, economy: 0.5, tech: -0.6 }], ['Main Street Caucus', 0.15, { environment: 0.6, welfare: 0.5, taxes: -0.3 }]],
+  D: [['Progressive Caucus', 0.42, { welfare: 1, environment: 1, urban: 0.5, taxes: -0.6, security: -0.5 }], ['New Democrat Coalition', 0.33, { tech: 1, economy: 0.6, taxes: 0.3 }], ['Labor Caucus', 0.11, { economy: 1, welfare: 0.8, environment: -0.4 }], ['Blue Dog Coalition', 0.09, { security: 0.8, taxes: 0.6, rural: 0.6, environment: -0.5 }], ['Conservative Democratic Caucus', 0.05, { security: 1, taxes: 0.9, rural: 0.9, welfare: -0.3, environment: -0.8 }]],
+  R: [['Freedom Caucus', 0.18, { taxes: 1.4, welfare: -1, security: 0.5 }], ['Republican Study Committee', 0.42, { economy: 1, security: 0.8, tech: 0.4 }], ['America First Caucus', 0.25, { rural: 1, welfare: 0.5, economy: 0.5, tech: -0.6 }], ['Main Street Caucus', 0.11, { environment: 0.6, welfare: 0.5, taxes: -0.3 }], ['Progressive Republican Caucus', 0.04, { environment: 1, welfare: 0.9, urban: 0.6, taxes: -0.7 }]],
 };
 
 /* ---------------- independents ---------------- */

@@ -54,7 +54,7 @@ function runHouse(swingSide) {
 
 /* ---------------- the Presidency, by electoral vote ---------------- */
 // the presidential race, shared by the campaign trail's projection and the real count
-const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment'], FLANKS = ['Progressives', 'Freedom Caucus'];
+const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment', 'Conservative Democrats', 'Progressive Republicans'], FLANKS = ['Progressives', 'Freedom Caucus'];
 // the presidential map's pivotal states, recentered so a tied national environment is a coin flip (the Senate and House keep ST[].lean)
 const PRES_LEAN_ADJ = { MI: -2, PA: -2, WI: -2, NV: -2, AZ: -1, GA: -1, NC: -1 };
 function nightFallbackName() { let nm = fullName(); for (let i = 0; i < 20 && lastName({ name: nm }) === lastName(S.president); i++) nm = fullName(); return nm; }

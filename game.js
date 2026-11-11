@@ -30,11 +30,13 @@ const PARTY = {
   I: { name: 'Independent', short: 'Independents', color: '#a78bfa', prior: {} },
 };
 const FACTIONS = {
-  D: [['Progressives', { welfare: 1, environment: 1, urban: 0.5, taxes: -0.6, security: -0.5 }], ['New Democrats', { tech: 1, economy: 0.6, taxes: 0.3 }], ['Labor Democrats', { economy: 1, welfare: 0.8, environment: -0.4 }], ['Blue Dogs', { security: 0.8, taxes: 0.6, rural: 0.6, environment: -0.5 }]],
-  R: [['Freedom Caucus', { taxes: 1.4, welfare: -1, security: 0.5 }], ['Establishment', { economy: 1, security: 0.8, tech: 0.4 }], ['Populists', { rural: 1, welfare: 0.5, economy: 0.5, tech: -0.6 }], ['GOP Moderates', { environment: 0.6, welfare: 0.5, taxes: -0.3 }]],
+  D: [['Progressives', { welfare: 1, environment: 1, urban: 0.5, taxes: -0.6, security: -0.5 }], ['New Democrats', { tech: 1, economy: 0.6, taxes: 0.3 }], ['Labor Democrats', { economy: 1, welfare: 0.8, environment: -0.4 }], ['Blue Dogs', { security: 0.8, taxes: 0.6, rural: 0.6, environment: -0.5 }], ['Conservative Democrats', { security: 1, taxes: 0.9, rural: 0.9, welfare: -0.3, environment: -0.8, urban: -0.4 }]],
+  R: [['Freedom Caucus', { taxes: 1.4, welfare: -1, security: 0.5 }], ['Establishment', { economy: 1, security: 0.8, tech: 0.4 }], ['Populists', { rural: 1, welfare: 0.5, economy: 0.5, tech: -0.6 }], ['GOP Moderates', { environment: 0.6, welfare: 0.5, taxes: -0.3 }], ['Progressive Republicans', { environment: 1, welfare: 0.9, urban: 0.6, tech: 0.4, taxes: -0.7, security: -0.3 }]],
   I: [['Independents', {}]],
 };
 const MODERATE = { D: 'Blue Dogs', R: 'GOP Moderates' };
+// the cross-pressured wings: Democrats from deep-red states, Republicans from deep-blue ones
+const CROSS = { D: 'Conservative Democrats', R: 'Progressive Republicans' };
 
 /* ---------------- states ---------------- */
 // code, name, partisan lean (positive = Republican, approx.), local issues
@@ -211,8 +213,9 @@ function newSenator(party, state, cls, id, forceFaction) {
   let faction;
   if (forceFaction) faction = forceFaction;
   else if (party === 'I') faction = 'Independents';
-  else if (adv < 0 || (adv < 4 && Math.random() < 0.5)) faction = MODERATE[party];
-  else faction = pick(FACTIONS[party].filter(f => f[0] !== MODERATE[party]))[0];
+  else if (adv < -4 && Math.random() < 0.6) faction = CROSS[party];
+  else if (adv < 0 || (adv < 4 && Math.random() < 0.5)) faction = Math.random() < 0.3 ? CROSS[party] : MODERATE[party];
+  else faction = pick(FACTIONS[party].filter(f => f[0] !== MODERATE[party] && f[0] !== CROSS[party]))[0];
   const fx = FACTIONS[party].find(f => f[0] === faction)[1];
   const w = {};
   for (const t of TAGS) w[t] = clamp(0.8 * (PARTY[party].prior[t] || 0) + (fx[t] || 0) + 0.5 * st.voter[t] + rnd(-0.6, 0.6) + (party === 'I' ? rnd(-0.8, 0.8) : 0), -2, 2);
@@ -240,13 +243,13 @@ function buildSenate() {
       parties.push({ code, cls, lean, p: Math.random() < pR ? 'R' : 'D' });
     }
   });
-  // you start with a narrow 51-seat majority
+  // you start in the minority: 47 seats against 51, with two independents from the other side
   const mine = S.side;
   const adv = o => (mine === 'R' ? o.lean : -o.lean);
   let count = parties.filter(o => o.p === mine).length;
   const byFriendly = parties.slice().sort((a, b) => adv(b) - adv(a));
-  while (count < 51) { const o = byFriendly.find(o => o.p !== mine); o.p = mine; count++; }
-  while (count > 51) { const o = byFriendly.slice().reverse().find(o => o.p === mine); o.p = other(mine); count--; }
+  while (count < 47) { const o = byFriendly.find(o => o.p !== mine); o.p = mine; count++; }
+  while (count > 47) { const o = byFriendly.slice().reverse().find(o => o.p === mine); o.p = other(mine); count--; }
   // two independents, from the other side, in competitive states
   shuffle(parties.filter(o => o.p !== mine && Math.abs(o.lean) <= 8)).slice(0, 2).forEach(o => o.p = 'I');
   parties.forEach((o, i) => {
@@ -258,6 +261,12 @@ function buildSenate() {
     hist(m, `Joined the ${m.faction}`, last - terms * 6);
     S.members.push(m);
   });
+  // every wing has a few senators to start: the most cross-pressured members join the cross-pressured wing
+  for (const p of ['D', 'R']) {
+    const adv = m => (p === 'R' ? 1 : -1) * ST[m.state].lean;
+    const need = 4 - S.members.filter(m => m.party === p && m.faction === CROSS[p]).length;
+    S.members.filter(m => m.party === p && m.faction !== CROSS[p]).sort((a, b) => adv(a) - adv(b)).slice(0, Math.max(0, need)).forEach(m => { const h = m.history.find(x => /^Joined the /.test(x.t)), of = (FACTIONS[p].find(f => f[0] === m.faction) || [0, {}])[1], nf = FACTIONS[p].find(f => f[0] === CROSS[p])[1]; for (const t of TAGS) m.w[t] = clamp(m.w[t] - (of[t] || 0) + (nf[t] || 0), -2, 2); m.faction = CROSS[p]; if (h) h.t = `Joined the ${CROSS[p]}`; });
+  }
   assignBosses();
   layoutSeats();
 }
@@ -268,7 +277,7 @@ function newCareer(sidePick) {
     career: { bills: 0, wins: 0, losses: 0, streak: 0, best: 0, capital: 5, confidence: 5, perks: [] },
     rival: pick(RIVAL_FIRST) + ' ' + pick(LAST), members: [], log: [], history: [],
   };
-  S.president = newPresident(sidePick);
+  S.president = newPresident(other(sidePick)); // the other side holds the White House
   S.prep = {}; S.warchest = 0; S.approps = 0; S.shutdown = 0;
   S.houseLeaders = makeHouseLeaders();
   S.house = { [sidePick]: ri(220, 226) }; S.house[other(sidePick)] = 435 - S.house[sidePick];
@@ -661,7 +670,7 @@ const ACTIONS = {
   },
   prescall: {
     label: 'Call from the President', desc: () => `${presTitle()} (approval ${S.president.approval}%) personally asks for their vote. ${presCallMax()} per bill. Fellow ${S.president.faction} listen hardest.`, cost: () => 1,
-    ok: () => S.president.party === S.side && S.bill.presCalls < presCallMax(),
+    ok: () => S.president.party === S.side && S.bill.presCalls < presCallMax() && (S.whRel || 0) > -3,
     run(m) {
       spend(1); S.bill.presCalls++;
       const d = (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * Math.max(0.4, 1 - (S.undermine || 0) * 0.12) * diminish(m);
@@ -905,7 +914,7 @@ function presStage() {
   const B = S.bill;
   if (Math.random() < vetoOdds()) {
     sfx.gavel();
-    $('#vres').innerHTML = `<div class="verdict lose">VETOED</div><p style="text-align:center">${presTitle()} vetoes the ${B.name}: "This bill is wrong for America."<br><span style="color:var(--dim)">An override needs <b>67</b> senators and two-thirds of the House (House odds ~${Math.round(houseOverrideOdds() * 100)}% if the Senate gets there). You'd get one more day to whip it.</span></p>
+    $('#vres').innerHTML = `<div class="verdict lose">VETOED</div><p style="text-align:center">${presTitle()} vetoes the ${B.name}: ${S.president.party === S.side ? '"I will not be dictated to by the Senate." A veto from your own party\'s President, payback for the feud.' : '"This bill is wrong for America."'}<br><span style="color:var(--dim)">An override needs <b>67</b> senators and two-thirds of the House (House odds ~${Math.round(houseOverrideOdds() * 100)}% if the Senate gets there). You'd get one more day to whip it.</span></p>
       <div class="choices"><button class="btn primary big" id="ovr">Fight for an override (1 more day, 67 votes)</button><button class="btn ghost" id="die">Let it die</button></div>`;
     $('#ovr').onclick = () => {
       hideModal();
@@ -943,6 +952,7 @@ function settle(won, detail, headline, isLaw) {
   } else {
     c.losses++; c.streak = 0;
     if (['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
+    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift('In the minority, the caucus expected to lose this one: no confidence lost · +1 capital'); }
     else { c.confidence--; c.capital += 1; lines.unshift('−1 party confidence · +1 capital (consolation)'); }
     if (B.nomination) { S.nominee = { name: fullName(), tries: (S.nominee.tries || 0) + 1 }; lines.push(`The nomination is withdrawn. ${presTitle()} will send a more moderate pick, Judge ${S.nominee.name}, next.`); }
     S.mood = clamp(S.mood - 1.5, -15, 15);
@@ -1044,9 +1054,10 @@ function houseOdds() {
 function houseOverrideOdds() { return clamp(1 / (1 + Math.exp(-(houseExpected() + 20 - 290) / 12)) + S.bill.houseWork * 0.05, 0.03, 0.9); }
 function vetoOdds() {
   const B = S.bill;
-  if (S.president.party === S.side || B.nomination) return 0;
+  if (B.nomination) return 0;
+  if (S.president.party === S.side) return typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
   let d = 0; const v = presVec(); for (const t of TAGS) d += v[t] * (B.fx[t] || 0);
-  return clamp(0.55 - d * 0.1 - (isBipartisan() ? 0.35 : 0) - (B.softened ? 0.3 : 0) - (S.president.approval < 40 ? 0.1 : 0) - (has('whliaison') ? 0.15 : 0), 0.05, 0.95);
+  return clamp(0.55 - d * 0.1 - (isBipartisan() ? 0.35 : 0) - (B.softened ? 0.3 : 0) - (S.president.approval < 40 ? 0.1 : 0) - (has('whliaison') ? 0.15 : 0) + (typeof wingVetoAdj === 'function' ? wingVetoAdj() : 0), 0.05, 0.95);
 }
 function courtRisk() {
   const B = S.bill;
@@ -1126,6 +1137,7 @@ function projMargin(rc) {
   if (A === S.side) mg += pb + cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
   else mg -= pb + cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
   mg += (A === S.side ? 1 : -1) * (S.election ? S.election.waveSignal : 0);
+  if (typeof wingRaceAdj === 'function') mg += (A === S.side ? 1 : -1) * wingRaceAdj(rc);
   if (typeof midtermRaceAdj === 'function') mg += (A === S.side ? 1 : -1) * midtermRaceAdj(rc); // the midterm campaign's message, strategy, surrogates (midterm.js)
   return mg + (has('pollmap') ? rc.noise : 0);
 }
@@ -1148,7 +1160,7 @@ function electionPrep() {
     const m = rc.m;
     if (rc.retiring || m.party === 'I') continue;
     const moderate = m.faction === MODERATE[m.party], adv = holderAdv(m);
-    const chance = clamp(0.08 + 0.1 * (m.defy || 0) + (moderate && adv > 6 ? 0.2 : 0) + (T(m, 'shady') ? 0.05 : 0), 0, 0.75);
+    const chance = clamp((0.08 + 0.1 * (m.defy || 0) + (moderate && adv > 6 ? 0.2 : 0) + (T(m, 'shady') ? 0.05 : 0)) * (m.party === S.side && m.faction === S.myFaction ? 0.6 : 1) + (typeof wingPrimaryThreat === 'function' ? wingPrimaryThreat(m) : 0), 0, 0.75);
     if (Math.random() < chance) rc.primary = { name: fullName(), faction: FLANK[m.party](m.faction), odds: clamp(0.22 + 0.08 * (m.defy || 0) + (adv > 6 ? 0.1 : -0.08) + (moderate ? 0.08 : 0), 0.05, 0.8), backed: 0 };
   }
   const primaries = races.filter(rc => rc.primary);
@@ -1313,7 +1325,7 @@ function countBallots() {
     const l = cands[1];
     if (flip || rc.retiring || rc.primaried) {
       const nominee = !flip && rc.primaried ? rc.nominee : null;
-      winner = newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : null);
+      winner = newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : (typeof wingRecruitFaction === 'function' ? wingRecruitFaction(np) : null));
       if (nominee || (np === 'I' && rc.ind)) winner.name = w.name;
       if (np === 'I' && rc.ind && rc.ind.cause) winner.cause = rc.ind.cause;
       senatorBackstory(winner, E.year);
@@ -1486,6 +1498,7 @@ function load() {
     const d = JSON.parse(localStorage.getItem('floorfight.v5.save'));
     if (!d || !d.president || !d.governors) return false;
     S = { ...d, log: [] };
+    S.houseLeaders = S.houseLeaders || {}; for (const p of ['D', 'R']) for (const [f] of HOUSE_FAC[p]) if (!S.houseLeaders[f]) S.houseLeaders[f] = 'Rep. ' + fullName();
     layoutSeats(); startBill(); return true;
   } catch (e) { return false; }
 }
@@ -1739,7 +1752,7 @@ function confirmBox(text, yes) {
 }
 
 const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><ul class="how">
-<li>You're your party's whip in the <b>US Senate</b>: 100 senators, two per state. Regular bills need a majority: <b>50 + the Vice President</b> if your party holds the White House, otherwise 51. <b>Landmark</b> bills need <b>60</b> to beat a filibuster, and treaties need <b>67</b>.</li>
+<li>You're your party's whip in the <b>US Senate</b>: 100 senators, two per state. Regular bills need a majority: <b>50 + the Vice President</b> if your party holds the White House, otherwise 51. You start in the <b>minority</b>, 47 seats to 51, facing a President from the other party. <b>Landmark</b> bills need <b>60</b> to beat a filibuster, and treaties need <b>67</b>.</li>
 <li>Every bill starts a few votes short. You have <b>5 days</b> and a handful of <b>actions</b> per day.</li>
 <li><b>Click a seat</b> (or a state on the <b>Map</b>) to visit a senator. <b>Sound Out</b> to learn where they stand, their traits and what they care about.</li>
 <li><b>Pitch</b> with an argument they care about (a bad match backfires). Use <b>earmarks</b> on the pork-hungry and <b>photo ops</b> on the camera-hungry. <b>Promise a favor</b> and you'll owe them later. <b>Twist an arm</b> unless they're thin-skinned. Dig up <b>dirt</b> if you dare.</li>
@@ -1762,6 +1775,8 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 <li>Each party then holds its <b>convention</b> (Summer). At yours you pick the <b>running mate</b> (vet them for hidden risks), settle the <b>platform</b> fight between the flank and the center, choose the keynote and the speech, and ride out the surprises; a party that leaves united gets a <b>bounce</b>. If nobody clinched, it's a <b>brokered convention</b> and you can be the kingmaker. The other party's convention plays out on the news.</li>
 <li>The <b>fall campaign</b> (after the Senate primaries) runs five rounds: the message and the map on Labor Day, two <b>debates</b> (prep them, pick a game plan), the running mates' debate, an <b>October surprise</b> with hard choices, and a final weekend of ads, <b>surrogates</b> and turnout. The poll tracker and the Electoral College map move with every call you make, and every unit you spend on the ticket is one you can't spend on a Senate seat.</li>
 <li>In midterm years the Senate gets its own <b>midterm campaign</b>: pick the message and whether to defend, attack, nationalize or localize, send a debate coach, handle a surprise, and pick your closing surrogates.</li>
+<li>Pick <b>your wing</b> of the party at the start and build it up from the whip's office: recruits for open seats, converts, a PAC. Factions back their own in the primaries.</li>
+<li>Go to battle with the <b>White House</b> (or undermine your own President) from the office, but every hostile move deepens the feud, and the President hits back: vetoes, cancelled projects, primary challengers, campaigning against your senators.</li>
 <li>Check <b>The Pulse</b> for approval, the generic ballot, the presidential horse race, the Senate outlook and what voters care about. Every politician's profile carries their political history.</li>
 <li>Win bills to earn <b>capital</b>, then hire staff and repay your debts. Lose bills (or seats) and the caucus loses <b>confidence</b>. At zero, your career is over.</li></ul>
 <div class="choices"><button class="btn primary" id="howok">To the floor</button></div>`;
@@ -1778,7 +1793,7 @@ function showMenu() {
 function enterGame() { $('#menu').classList.add('hidden'); $('#game').classList.remove('hidden'); }
 function startNew(p) {
   enterGame();
-  const go = () => { newCareer(p); save(); };
+  const go = () => { newCareer(p); save(); if (typeof wingPickModal === 'function') wingPickModal(() => { hideModal(); render(); save(); }); };
   if (!localStorage.getItem('floorfight.us.seenHow')) { localStorage.setItem('floorfight.us.seenHow', '1'); showModal(HOW); $('#howok').onclick = () => { hideModal(); go(); }; }
   else go();
 }

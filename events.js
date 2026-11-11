@@ -66,7 +66,7 @@ function evtFlipParty(m, live) {
   return to;
 }
 function evtPerson(m, sub) { return `<div class="evt-person">${portrait(m)}<div><b>${m.name}</b> <small style="color:${PARTY[m.party].color}">(${m.party === 'I' ? 'I' : tagOf(m)})</small><br><small>${sub || `${m.faction} · ${ST[m.state] ? ST[m.state].name : m.state}`}</small></div></div>`; }
-const EVT_MEMBER = { Progressives: 'a Progressive', 'New Democrats': 'a New Democrat', 'Labor Democrats': 'a Labor Democrat', 'Blue Dogs': 'a Blue Dog', 'Freedom Caucus': 'a Freedom Caucus conservative', Establishment: 'an Establishment Republican', Populists: 'a Populist', 'GOP Moderates': 'a GOP Moderate', Independents: 'an independent' };
+const EVT_MEMBER = { Progressives: 'a Progressive', 'New Democrats': 'a New Democrat', 'Labor Democrats': 'a Labor Democrat', 'Blue Dogs': 'a Blue Dog', 'Freedom Caucus': 'a Freedom Caucus conservative', Establishment: 'an Establishment Republican', Populists: 'a Populist', 'GOP Moderates': 'a GOP Moderate', 'Conservative Democrats': 'a Conservative Democrat', 'Progressive Republicans': 'a Progressive Republican', Independents: 'an independent' };
 function evtMemberOf(m) { return EVT_MEMBER[m.faction] || `a member of the ${m.faction}`; }
 // the vote slips a day (the calendar can only stretch so far)
 function evtSlip(B) { if (B.days < 10) B.days++; return B.days; }

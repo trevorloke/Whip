@@ -21,9 +21,30 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 ## How it plays
 
 - **The Senate.** 100 fictional senators, two per state, each shaped by their
-  party, faction (Progressives, Blue Dogs, Freedom Caucus, Establishment…) and
-  home state's lean and interests. Regular bills need 51 votes, or 50 plus the
-  Vice President; landmark bills need 60 to beat a filibuster; treaties need 67.
+  party, faction (Progressives, Blue Dogs, Conservative Democrats, Freedom
+  Caucus, Progressive Republicans, Establishment…) and home state's lean and
+  interests. You start in the **minority**, 47 seats to 51, with a President
+  from the other party. Regular bills need 51 votes, or 50 plus the Vice
+  President; landmark bills need 60 to beat a filibuster; treaties need 67.
+- **Your wing.** At the start you pick the wing of your party you champion
+  (five per party, including Conservative Democrats from deep-red states and
+  Progressive Republicans from deep-blue ones). Its senators start out warmer
+  to you. Build it up: recruit its candidates for open seats, win converts,
+  fund its PAC, and its presidential candidates get your network in the
+  primaries. Factions take care of their own in the primaries: senators and
+  governors campaign for candidates of their wing, a crowded lane consolidates
+  behind its strongest candidate, and a candidate who quits usually sends their
+  delegates to a fellow member (the ambitious are the exception).
+- **The feud with the White House.** Fight an opposing President with
+  subpoenas (or, in the minority, an inspector general), prime-time rebuttals,
+  holds on nominees, an impeachment inquiry, or cut a deal. Undermine your own
+  party's President with leaks, slow-walking, a recruited challenger or a public
+  break. Every hostile move deepens the feud, and the President hits back:
+  higher veto odds (your own President can veto you too), no more calls for
+  your bills, cancelled projects in your senators' states, executive orders
+  aimed at your agenda, oppo leaked on you, challengers recruited against your
+  wing, and a President who campaigns against your senators (which backfires
+  when they're unpopular). Feuds cool slowly; peace costs capital.
 - **Whipping.** Sound senators out, pitch arguments that match what they care
   about, hand out earmarks and photo ops, promise favors you'll have to repay,
   twist arms, or use dirt. Lock in commitments before the opposing whip peels
@@ -208,6 +229,7 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | `campaign.js` | The fall campaign: five rounds, debates, October surprises, strategy, surrogates, the battleground |
 | `midterm.js` | The midterm campaign: the message and the map, Senate debates, surprises, the closing weekend |
 | `events.js` | Breaking news on the floor, world news and moments between bills |
+| `wing.js` | Your wing of the party and the feud with the White House |
 | `night.js` | Election Night: the Electoral College, House results by state, the projection banner, ticker and tables |
 | `results.js` | The election archive, the full-results explorer and the Almanac |
 

@@ -535,7 +535,7 @@ function execHTML() {
   const nextPrimaryIn = (() => { for (let k = 1; k <= 8; k++) { const n = S.career.bills + k; if (n % 6 === 4 && billYear(n) % 4 === 0) return k; } return 99; })();
   const underUsed = S.underUsed === S.career.bills;
   const undermine = yours ? `<details class="cdet under"><summary>🗡️ Undermine the President${S.undermine ? ` · undermined ${S.undermine}×` : ''}${S.challenger ? ' · challenger recruited' : ''}</summary>
-      <p style="font-size:12px;color:var(--dim)">${presTitle()} leads your party, but you don't have to follow. Undermining drags down their approval (and your party's mood with it) and weakens them in a primary. One move between bills.</p>
+      <p style="font-size:12px;color:var(--dim)">${presTitle()} leads your party, but you don't have to follow. Undermining drags down their approval (and your party's mood with it) and weakens them in a primary. It also starts a feud: the President stops making calls for you, backs challengers against your wing, can veto your bills and will hit back between bills (see <b>You and the President</b> below). One move between bills.</p>
       <div class="shop">
         <button class="btn" data-und="leak" ${underUsed || S.career.capital < 1 ? 'disabled' : ''}><span>Leak damaging stories<small>Approval −3 to −6, your party's mood −0.4.</small></span><span class="cost">1 cap</span></button>
         <button class="btn" data-und="slow" ${underUsed || S.career.capital < 2 ? 'disabled' : ''}><span>Slow-walk the President's agenda<small>Approval −4. The President's own faction resents you (relationship −1).</small></span><span class="cost">2 cap</span></button>
@@ -562,6 +562,7 @@ function bindExec(draw) {
     const k = b.dataset.und, cost = { leak: 1, slow: 2, recruit: 3 }[k];
     if (S.career.capital < cost || S.underUsed === S.career.bills) return;
     S.career.capital -= cost; S.underUsed = S.career.bills; S.undermine = (S.undermine || 0) + 1;
+    if (typeof wingHit === 'function') wingHit(k === 'recruit' ? -3 : -2);
     if (k === 'leak') { const d = ri(3, 6); P.approval = clamp(P.approval - d, 18, 82); S.mood -= 0.4; hist(P, 'Battered by leaks from inside their own party'); toast(`The leaks land: ${presTitle()} −${d}.`); }
     if (k === 'slow') { P.approval = clamp(P.approval - 4, 18, 82); for (const m of S.members) if (m.party === P.party && m.faction === P.faction) m.rel -= 1; hist(P, 'Agenda stalled by their own party in the Senate'); toast('The President\'s agenda grinds to a halt.'); }
     if (k === 'recruit') { S.challenger = true; hist(P, 'Drew a primary challenger recruited by Senate leadership'); toast('A challenger is ready to take on the President.'); }

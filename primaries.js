@@ -68,7 +68,15 @@ function primStrength(R, f, code, noise) {
   const pl = R.plans && R.plans[f.name];
   if (pl) s *= 1 + 0.09 * Math.min(pl.visits[code] || 0, 4) + 0.25 * (1 - Math.exp(-(pl.ads[code] || 0) / 12)) + (pl.favor.includes(code) ? 0.12 : 0) + (pl.msg && ST[code] ? 0.06 * (ST[code].voter[pl.msg] - 1) : 0);
   if (R.hits && R.hits[f.name]) s *= R.hits[f.name];
+  s *= 1 + primNetwork(f, code) + (typeof wingPrimaryBoost === 'function' ? wingPrimaryBoost(f) : 0);
   return Math.max(0.03, s * (noise ? rnd(0.8, 1.2) : 1));
+}
+// a faction takes care of its own: same-faction senators and governors of the party campaign for the candidate in their state
+// (the ambitious, who have their own plans, and anyone running against them are the exceptions)
+function primNetwork(f, code) {
+  let n = S.members.filter(m => m.party === f.party && m.state === code && m.faction === f.faction && m.name !== f.name && !T(m, 'ambitious')).length;
+  const g = S.governors && S.governors[code]; if (g && g.party === f.party && g.faction === f.faction && g.name !== f.name) n++;
+  return 0.07 * n;
 }
 function primShares(R, code, noise) {
   const act = R.field.filter(f => f.active), raw = act.map(f => primStrength(R, f, code, noise)), tot = raw.reduce((a, b) => a + b, 0) || 1;
@@ -189,14 +197,20 @@ function primDropouts(R, label, news) {
   const dropOut = (f, why) => {
     f.active = false; f.out = label; f.why = why;
     const act = R.field.filter(x => x.active).sort((a, b) => b.del - a.del); if (!act.length) return;
-    const to = Math.random() < 0.7 ? act[0] : pick(act);
+    const kin = act.filter(x => x.faction === f.faction), to = kin.length && Math.random() < 0.8 ? kin[0] : Math.random() < 0.7 ? act[0] : pick(act);
     f.backed = to.name; f.released = f.del; to.del += f.del; f.del = 0;
-    news.push(`🚪 <b>${f.name} ${why === 'withdrew' ? 'withdraws from the race' : 'drops out'}</b>${f.released ? ` and releases ${primN(f.released)} delegates to ${to.name}` : `, endorsing ${to.name}`}.`);
+    if (to.faction === f.faction) news.push(`🤝 The ${f.faction} close ranks: ${f.name}'s supporters move to ${to.name}.`);
+    news.push(`🚪 <b>${f.name} ${why === 'withdrew' ? 'withdraws from the race' : why === 'consolidated' ? `steps aside so the ${f.faction} can unite` : 'drops out'}</b>${f.released ? ` and releases ${primN(f.released)} delegates to ${to.name}` : `, endorsing ${to.name}`}.`);
   };
   const ranked = () => R.field.filter(f => f.active).sort((a, b) => b.del - a.del);
   // a battered President can walk away
   const inc = R.field.find(f => f.incumbent && f.active), lead = ranked()[0];
   if (inc && i >= 2 && P.approval < 34 && lead !== inc && inc.del < lead.del * 0.5 && Math.random() < 0.2) { dropOut(inc, 'withdrew'); news.unshift(`🏛️ <b>${presTitle()} will not seek re-election.</b> A sitting President bows out after ${label}.`); }
+  // a faction consolidates behind its strongest candidate, unless the weaker one is ambitious, the President, or your candidate
+  if (i >= 2) for (const [fac] of FACTIONS[R.party] || []) {
+    const lane = ranked().filter(f => f.faction === fac); if (lane.length < 2) continue;
+    for (const f of lane.slice(1)) if (!f.incumbent && !(f.p && f.p.traits && T(f.p, 'ambitious')) && !(R.endorsed && R.endorsed() === f.name) && Math.random() < 0.35) dropOut(f, 'consolidated');
+  }
   // the broke and the beaten quit early; the field narrows to the serious after the early states
   for (const f of ranked().slice(1)) if (!f.incumbent && i >= 2 && f.cash < 3 && f.lastShare < 6) dropOut(f, 'broke');
   if (i >= 4) { const act = ranked(); act.slice(2).forEach(f => { if (f.del < act[0].del * 0.25 && !f.incumbent) dropOut(f, 'beaten'); }); }

@@ -1,0 +1,15 @@
+/* Floor Fight — styles for your wing and the White House feud. */
+.wing-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px;margin:10px 0}
+.wing-card{display:flex;flex-direction:column;gap:6px;text-align:left;background:#141821;border:1px solid var(--line);border-radius:10px;padding:10px 12px;color:var(--ink);cursor:pointer;font:inherit}
+.wing-card:hover:not(:disabled){border-color:var(--gold)}
+.wing-card.on{border-color:var(--gold);opacity:.7;cursor:default}
+.wing-card b{font-family:var(--serif);font-size:18px;color:var(--gold2)}
+.wing-card small{font-size:12px;color:var(--dim)}
+.wing-issues{display:flex;flex-wrap:wrap;gap:4px}
+.wing-chip{font-size:11px;padding:1px 6px;border-radius:4px;background:#232b3f}
+.wing-chip.pro{color:var(--yes)} .wing-chip.con{color:var(--no)}
+.wing-stats{font-size:11px;color:var(--ink);opacity:.85}
+.wing-meter{position:relative;height:8px;margin:8px 0 4px;border-radius:4px;background:linear-gradient(90deg,#c0392b,#e3b54a 50%,#46c27a)}
+.wing-meter i{position:absolute;top:-4px;width:4px;height:16px;margin-left:-2px;border-radius:2px;background:#fff;box-shadow:0 0 6px #000}
+.wing-cons{margin:4px 0 6px 18px;padding:0;font-size:12px;color:var(--ink)}
+.wing-cons li{margin:2px 0}
