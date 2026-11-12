@@ -235,7 +235,7 @@ function campMapCardHTML(P) {
 function campMoneyHTML() {
   const E = S.election;
   return `<div class="camp-money"><span>💰 <b>${E.cash}</b> campaign unit${E.cash === 1 ? '' : 's'} left, shared with the Senate races: every unit here is a unit not spent on a Senate seat.</span>
-    <span class="cashctl"><small>Bulk money for the ticket</small><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button><small>${E.presCash ? `${campNum(cashEff(E.presCash, 1.2))} national` : 'first unit ≈ +1.2 national'}</small></span></div>`;
+    <span class="cashctl"><small>Bulk money for the ticket</small><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button><small>${E.presCash ? `${campNum(cashEff(E.presCash, 1.2))} national` : 'first unit ≈ +0.9 national'}</small></span></div>`;
 }
 function campPickHTML(label, key, note = '') { return `<div class="camp-pick">✓ <b>${label}</b>${note ? `<small>${note}</small>` : ''}<a href="#" data-camp="re:${key}">change</a></div>`; }
 function campFrame(title, intro, decisions, nextLabel) {
@@ -377,7 +377,7 @@ function campDefaultDebate(ui) { const h = ui && ui.hint; return (h && Object.ke
 function campPrepDebateUI(which) {
   const C = campC(), their = campNoms()[other(S.side)], used = C.debates.map(d => d.city);
   const theirPick = campOpponentPick(their);
-  C.ui = { prep: null, deb: null, which, theirPick, theirPrep: Math.random() < 0.5, hint: Math.random() < 0.6 ? theirPick : pick(Object.keys(CAMP_DEBATE).filter(k => k !== theirPick)), city: pick(CAMP_DEBATE_CITIES.filter(c => !used.includes(c))), mod: fullName(), when: pick(['Tuesday night', 'Wednesday night', 'Thursday night', 'Sunday night']) };
+  C.ui = { prep: null, deb: null, which, theirPick, theirPrep: Math.random() < 0.65, hint: Math.random() < 0.45 ? theirPick : pick(Object.keys(CAMP_DEBATE).filter(k => k !== theirPick)), city: pick(CAMP_DEBATE_CITIES.filter(c => !used.includes(c))), mod: fullName(), when: pick(['Tuesday night', 'Wednesday night', 'Thursday night', 'Sunday night']) };
   if (which === 2) C.ui.vp = campVpDebate();
 }
 function campDebate(which, mineKey, prep, theirsKey, city, theirPrep) {
@@ -959,7 +959,7 @@ function campRecapHTML(C) {
     C.adBuy ? `<b>Late ads:</b> ${C.adBuy} unit${C.adBuy > 1 ? 's' : ''} (${campNum(cashEff(C.adBuy, 0.7))})` : '',
     C.gotv ? '<b>Turnout:</b> paid the machine (+0.5)' : '',
     C.opp && (C.opp.surrogates.length || C.opp.adBuy || C.opp.gotv) ? `<b>Their closing weekend:</b> ${campOppLine(C.opp)}` : '',
-    S.election && S.election.presCash ? `<b>Bulk money:</b> ${money(S.election.presCash)} (${campNum(cashEff(S.election.presCash, 1.2))})` : '',
+    S.election && S.election.presCash ? `<b>Bulk money:</b> ${money(S.election.presCash)} (${campNum(cashEff(S.election.presCash, PRES_CASH))})` : '',
     `<b>Net campaign effect:</b> ${campNum(campaignEffects())} national for your ticket${conv ? ` (of which ${campNum(conv)} from the conventions' bounces and unity)` : ''}`,
   ].filter(Boolean);
   return `<div class="camp-recap">${rows.map(r => `<div>${r}</div>`).join('')}</div>`;
@@ -1020,7 +1020,7 @@ function presBattleHTML() {
     <div class="campmap">${campMapHTML(P)}</div>
     <div class="camp-chips"><b>Battlegrounds</b> ${P.battle.map(x => campChip(x, C && (C.focus || []).includes(x.c) ? 'focus' : '')).join('') || '<small style="color:var(--dim)">none: this race isn\'t close</small>'}</div>
     ${C ? `<details class="cdet"><summary>📋 The fall campaign in review</summary>${campRecapHTML(C)}</details>` : ''}
-    <div class="races" style="max-height:none"><div class="race"><span>💰 <b>Bulk presidential money</b><br><small style="color:var(--dim)">Transfer units to the ticket for the last 72 hours. The first unit ≈ +1.2 points nationwide; more units, a bit less each. Every unit here is a unit not spent on a Senate seat.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div></div></div>`;
+    <div class="races" style="max-height:none"><div class="race"><span>💰 <b>Bulk presidential money</b><br><small style="color:var(--dim)">Transfer units to the ticket for the last 72 hours. The first unit ≈ +0.9 points nationwide; more units, a bit less each. Every unit here is a unit not spent on a Senate seat.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span class="dots">${money(E.presCash)}</span><button class="btn" data-pc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div></div></div>`;
 }
 function bindPresBattle(draw) {
   const card = $('#modal-card'), E = S.election; if (!E || !E.pres) return;

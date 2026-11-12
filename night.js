@@ -56,6 +56,7 @@ function runHouse(swingSide) {
 // the presidential race, shared by the campaign trail's projection and the real count
 const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment', 'Conservative Democrats', 'Progressive Republicans'], FLANKS = ['Progressives', 'Freedom Caucus'];
 // the presidential map's pivotal states, recentered so a tied national environment is a coin flip (the Senate and House keep ST[].lean)
+const PRES_EDGE = 2.5, PRES_CASH = 0.9; // difficulty: the opponent's machine, and what a unit of bulk money buys
 const PRES_LEAN_ADJ = { MI: -2, PA: -2, WI: -2, NV: -2, AZ: -1, GA: -1, NC: -1 };
 function nightFallbackName() { let nm = fullName(); for (let i = 0; i < 20 && lastName({ name: nm }) === lastName(S.president); i++) nm = fullName(); return nm; }
 function presSetup() {
@@ -67,7 +68,8 @@ function presSetup() {
   const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
   // the fall campaign (campaign.js) adds its national effects here, from your ticket's point of view
-  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, 1.2) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0));
+  // the other party runs a professional national campaign too: your ticket starts PRES_EDGE points behind what the fundamentals say
+  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
   if (S.war && S.war.party === inc) base += (S.war.support - 50) / 12;
   return { inc, running, noms, base };
 }
