@@ -1137,6 +1137,7 @@ function projMargin(rc) {
   if (A === S.side) mg += pb + cashEff(rc.cash, per) + (has('field') && !rc.retiring && !rc.primaried && rc.m.party === A ? 3 : 0);
   else mg -= pb + cashEff(rc.cash, per) + (has('recruiter') ? 3 : 0);
   mg += (A === S.side ? 1 : -1) * (S.election ? S.election.waveSignal : 0);
+  if (typeof raceCampaignAdj === 'function') mg += (A === S.side ? 1 : -1) * raceCampaignAdj(rc); // races.js: your work on this race
   if (typeof wingRaceAdj === 'function') mg += (A === S.side ? 1 : -1) * wingRaceAdj(rc);
   if (typeof midtermRaceAdj === 'function') mg += (A === S.side ? 1 : -1) * midtermRaceAdj(rc); // the midterm campaign's message, strategy, surrogates (midterm.js)
   return mg + (has('pollmap') ? rc.noise : 0);
@@ -1182,10 +1183,7 @@ function electionPrep() {
       if (Math.random() < chance) rc.ind = { name: fullName(), cause: pick(IND_CAUSES), str: rnd(10, 26) + (rc.primaried ? 6 : 0) };
     }
     E.primaryNews = out;
-    // in a presidential year the fall campaign runs first, then the Senate trail
-    if (pres && typeof fallCampaign === 'function') fallCampaign(draw);
-    else if (!pres && typeof midtermCampaign === 'function') midtermCampaign(draw); // midterm.js: the lighter Senate campaign
-    else draw();
+    afterPrimaries();
   };
   const drawPrimaries = () => {
     if (!primaries.length) return runPrimaries();
@@ -1248,6 +1246,7 @@ function electionPrep() {
     });
     card.querySelectorAll('[data-hc]').forEach(b => b.onclick = () => { const d = +b.dataset.hc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.houseCash) return; E.houseCash += d; E.cash -= d; sfx.click(); draw(); });
     bindPresBattle(draw);
+    if (typeof bindRaceDetails === 'function') bindRaceDetails(card, draw); // races.js: the race detail screens
     card.querySelectorAll('[data-gc]').forEach(b => b.onclick = () => { const d = +b.dataset.gc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.govCash) return; E.govCash = (E.govCash || 0) + d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const d = +b.dataset.pc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); draw(); });
     card.querySelectorAll('[data-promise]').forEach(b => b.onclick = () => { const id = b.dataset.promise, P = E.platform; if (P.includes(id)) E.platform = P.filter(x => x !== id); else if (P.length < 3) P.push(id); sfx.click(); draw(); });
@@ -1255,7 +1254,14 @@ function electionPrep() {
     card.querySelectorAll('[data-auto]').forEach(b => b.onclick = () => { autoDeploy(b.dataset.auto); sfx.up(); draw(); });
     $("#countballots").onclick = countBallots;
   };
-  drawPrimaries();
+  // in a presidential year the fall campaign runs first, then the Senate trail; in a midterm, the midterm campaign
+  const afterPrimaries = () => {
+    if (pres && typeof fallCampaign === 'function') fallCampaign(draw);
+    else if (!pres && typeof midtermCampaign === 'function') midtermCampaign(draw); // midterm.js: the lighter Senate campaign
+    else draw();
+  };
+  // races.js runs the full Senate primaries (fields, vote totals, endorsements) when it is loaded
+  if (typeof senatePrimaries === 'function') senatePrimaries(E, afterPrimaries); else drawPrimaries();
 }
 // your party's chance of holding or taking a seat, as the campaign sees it
 function raceChance(rc) {
@@ -1298,7 +1304,7 @@ function raceRow(rc) {
   const rec = m.rec <= -4 ? ' · <span style="color:var(--no)">bad record at home</span>' : m.rec >= 4 ? ' · <span style="color:var(--yes)">popular record</span>' : '';
   const who = rc.retiring ? `<i>Open seat (${m.party} retiring)</i>` : rc.primaried ? `<i>${rc.nominee.name} (${rc.nominee.faction}), after beating Sen. ${lastName(m)} in the primary</i>` : sen(m);
   const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ Independent ${rc.ind.name} (${rc.ind.cause[0]}), polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
-  return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${rec}${ind}</span>
+  return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${typeof raceDetailBtn === 'function' ? raceDetailBtn(rc, i) : ''}${rec}${ind}</span>
     <span class="cashctl"><span class="chance"><b style="color:${chanceColor(p)}">${Math.round(p * 100)}%</b><span class="mbar"><i style="width:${p * 100}%;background:${chanceColor(p)}"></i></span><small>your chance${rc.ind ? ' · 3-way' : ''}</small></span>
       <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${money(rc.cash)}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
 }
@@ -1311,8 +1317,9 @@ function countBallots() {
     const m = rc.m, A = majorParty(rc), Bp = other(A);
     const final = projMargin(rc) + (has('pollmap') ? 0 : rc.noise) + (A === S.side ? 1 : -1) * (E.wave - E.waveSignal);
     // candidates: the major holder party, the other major party, and maybe an independent
-    const nameA = m.party === A && !rc.retiring ? (rc.primaried ? rc.nominee.name : m.name) : fullName();
-    const cands = [{ party: A, name: nameA, inc: m.party === A && !rc.retiring && !rc.primaried }, { party: Bp, name: fullName(), inc: false }];
+    // nominees named in advance by the primaries (races.js sets rc.names) keep their names on Election Night
+    const nameA = m.party === A && !rc.retiring ? (rc.primaried ? rc.nominee.name : m.name) : (rc.names && rc.names[A]) || fullName();
+    const cands = [{ party: A, name: nameA, inc: m.party === A && !rc.retiring && !rc.primaried }, { party: Bp, name: (rc.names && rc.names[Bp]) || fullName(), inc: false }];
     let iPct = 0;
     if (rc.ind) { iPct = clamp(rc.ind.str + rnd(-5, 5), 3, 60); cands.push({ party: 'I', name: rc.ind.name, inc: !!rc.ind.incumbent }); }
     const rest = 98.5 - iPct, aPct = clamp(rest / 2 + (final / 2) * (rest / 98.5), 1, rest - 1);
@@ -1349,6 +1356,7 @@ function countBallots() {
   const house = runHouse(S.mood * 0.4 + apTerm * 0.3 - 0.18 * (S.house[S.side] - 218) + cashEff(E.houseCash || 0, 0.8) + E.wave * 0.55 + (typeof midtermHouseAdj === 'function' ? midtermHouseAdj() : 0) + rnd(-2, 2));
   const govBefore = Object.fromEntries(Object.entries(S.governors).map(([c, g]) => [c, g.party]));
   const gov = runGovernors(E.year);
+  const local = typeof localEvenElections === 'function' ? localEvenElections(E.year) : null; // local.js: legislatures and mayors
   const pres = E.pres ? runPres() : null;
   const after = { D: seats('D'), R: seats('R'), I: seats('I') };
   const net = after[S.side] - before[S.side];
@@ -1392,7 +1400,7 @@ function countBallots() {
   const gFlips = gov.filter(r => r.flip);
   presLine += `<p><b>Governors:</b> ${gov.length} races. ${gFlips.length ? `${gFlips.length} flipped: ${gFlips.map(r => `<b style="color:${PARTY[r.wParty].color}">${stName(r.code)}</b>`).join(', ')}.` : 'No governorships changed hands.'} Now ${Object.values(S.governors).filter(g => g.party === 'D').length} D – ${Object.values(S.governors).filter(g => g.party === 'R').length} R.</p>`;
   pulseTick();
-  const nightData = { year: E.year, races, house, pres, before, prevMembers, gov, govBefore, wave: E.wave, waveSignal: E.waveSignal };
+  const nightData = { year: E.year, races, house, pres, before, prevMembers, gov, govBefore, local, wave: E.wave, waveSignal: E.waveSignal };
   if (typeof archiveElection === 'function') archiveElection(nightData);
   openNight(nightData, summary);
 }
@@ -1731,7 +1739,7 @@ function renderMember() {
   if (ui.pitchOpen && !isLockedYes(m)) {
     args = `<div class="args"><div class="h">Pick your argument. Match what they care about${known ? '' : ' (you\'re guessing — sound them out first)'}:</div>${Object.entries(B.fx).filter(([, v]) => v).map(([t, v]) => `<button class="btn" data-arg="${t}">${TAG[t][0]} ${v > 0 ? 'It\'s great for' : 'It\'s not so bad for'} ${TAG[t][1]}</button>`).join('')}</div>`;
   }
-  el.innerHTML = `<div class="m-head">${portrait(m)}<div><h3>Sen. ${m.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[m.party].color}">${PARTY[m.party].name}</span> · ${m.faction}</div><div class="m-sub">${st.name} · ${leanLabel(st.lean)} · Class ${m.cls}</div></div></div>
+  el.innerHTML = `<div class="m-head">${portrait(m)}<div><h3>Sen. ${m.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[m.party].color}">${PARTY[m.party].name}</span>${typeof indLabelHTML === 'function' ? indLabelHTML(m) : ''} · ${m.faction}</div><div class="m-sub">${st.name} · ${leanLabel(st.lean)} · Class ${m.cls}</div></div></div>
     <div class="support">${bar}</div>
     <div class="badges">${badges}</div>
     <div class="traits">${traits}</div>${leadLine}${concerns}${home}
