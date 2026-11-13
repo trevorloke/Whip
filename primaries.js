@@ -270,7 +270,7 @@ function primariesModal(done) {
     lastLabel = lbl; hqPlan = null;
     if (state.I) indCatchUp(state.I, allDone() ? null : lbl);
     for (const p of ['D', 'R', 'I']) { const R = state[p]; if (R && R.rounds.length) { const last = R.rounds[R.rounds.length - 1]; if (last.label === lbl) sel[p] = last.results.slice().sort((a, b) => a.margin - b.margin)[0].code; } }
-    const f = myCand(); if (endorsed && f && !f.active) note = `${f.name} is out of the race. Endorse someone still running to take over their campaign, or sit out the rest.`;
+    const f = myCand(); if (endorsed && f && !f.active) note = IND() ? `${f.name} is out of the race. Endorse someone still running for the Alliance line, or sit out the rest.` : `${f.name} is out of the race. Endorse someone still running to take over their campaign, or sit out the rest.`;
   };
   // the end of the primaries: delegate leaders, runners-up and whether anyone actually clinched.
   const finishAll = () => {
@@ -316,7 +316,7 @@ function primariesModal(done) {
     const ind = typeof indFinish === 'function' ? indFinish(IR, state, n, year) : null;
     if (IND() && typeof cauAfterPrimaries === 'function') lines.push(...cauAfterPrimaries(n, endorsed, year));
     const head = p => n[p].contested ? `NO ONE CLINCHES: A CONTESTED ${PARTY[p].name.toUpperCase()} CONVENTION LOOMS` : `${lastName(n[p].p).toUpperCase()} CLINCHES THE ${PARTY[p].name.toUpperCase()} NOMINATION`;
-    const headline = IND() ? (n.I ? `${lastName(n.I.p).toUpperCase()} TAKES THE ALLIANCE LINE` : 'THE ALLIANCE FIELDS NO ONE') : n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
+    const headline = IND() ? (n.I ? (n.I.incumbent ? `PRESIDENT ${lastName(n.I.p).toUpperCase()} RUNS AGAIN OUTSIDE BOTH PARTIES` : `${lastName(n.I.p).toUpperCase()} TAKES THE ALLIANCE LINE`) : 'THE ALLIANCE FIELDS NO ONE') : n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
     const para = p => {
       const N = n[p], ru = N.runnerUp;
       if (!state[p]) return `${PARTY[p].short}: ${presTitle()} was renominated without serious opposition and arrives at the convention with all ${primN(totalDel)} delegates in hand.`;
@@ -410,7 +410,7 @@ function primariesModal(done) {
       const canEndorse = yours && (!f0 || !f0.active);
       const inc = R.field.find(x => x.incumbent);
       const intro = IND() && view === 'I'
-        ? `${indIntroHTML(R)}<p class="prim-note">${R.field.length} candidate${R.field.length === 1 ? '' : 's'} for one line. Your caucus can't run their campaigns, but its endorsement carries everywhere. If your pick takes the Alliance line, +4 capital. ${started ? 'Switching mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until the first votes are cast.'}</p>
+        ? `${indIntroHTML(R)}<p class="prim-note">${R.field.length} candidate${R.field.length === 1 ? '' : 's'} for one line. Your caucus can't run their campaigns, but its endorsement carries everywhere. If your pick takes the Alliance line, +4 capital.${P.party === 'I' && running ? ` <b>${presTitle()} is running for a second term, so the Alliance will stand aside for the President whoever wins here.</b>` : ''} ${started ? 'Switching mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until the first votes are cast.'}</p>
            ${f0 ? `<div class="rankbar">Your candidate: <span class="rk ${f0.active ? '' : 'gone'}" style="border-color:${f0.color}">${f0.name}${f0.active ? '' : ' (out)'}</span>${f0.active ? '' : ' <i>pick someone still running, or sit out the rest</i>'}</div>` : ''}${note && yours ? `<p class="prim-note">${note}</p>` : ''}`
         : yours
         ? `<p>${primN(R.need)} delegates to win. ${R.field.length} candidate${R.field.length === 1 ? '' : 's'}${inc ? `, including ${presTitle()}, who drew ${R.field.length - 1 === 1 ? 'a challenger' : `${R.field.length - 1} challengers`} at ${P.approval}% approval` : ''}. <b>Endorse one and you run their campaign:</b> before each contest you plan their days on the ground, ads, attacks, message and debate strategy. If your candidate wins the nomination, +4 capital; if they lose, −1. ${started ? 'Switching horses mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until Iowa votes.'}</p>
