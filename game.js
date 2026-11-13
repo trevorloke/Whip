@@ -299,8 +299,9 @@ function baseSupport(m) {
   // the bill's own party lines up behind it, the other party against it
   if (m.party === spon) s += 16 * loyal;
   else if (m.party === other(spon)) s -= 16 * loyal;
-  s += m.rel * 6;
-  if (m.grudge) s -= 15;
+  // relationships and grudges are with you: they pull a senator toward your caucus's position
+  s += m.rel * 6 * aimSign();
+  if (m.grudge) s -= 15 * aimSign();
   s += (B.opinion - 50) * (T(m, 'swing') ? 0.6 : 0.15);
   if (isUp(m)) s += clamp(stateFit(m.state, B.fx) * 2.5, -18, 18);
   // a popular President keeps their own party in line
@@ -428,7 +429,7 @@ function openBudget() {
         <button class="btn ${deal ? 'on' : ''}" data-baim="deal" ${!deal && c.capital < 1 ? 'disabled' : ''}>Sell your votes<small>1 capital: ${TAG[mine][0]} ${TAG[mine][1]} +2 written in, and your caucus whips it through.</small></button></div></div>
       <p>Committee count: <b style="color:var(--yes)">${yes} likely yeas</b> · <b style="color:var(--mid)">${mid} on the fence</b> · <b style="color:var(--no)">${no} likely nays</b><br>
       House passes it: <b>${Math.round(houseOdds() * 100)}%</b> · ${vetoOdds() ? `veto risk <b>${Math.round(vetoOdds() * 100)}%</b>` : `${presTitle()} will sign it`}</p>
-      <div class="choices"><button class="btn primary big" id="bgo">${deal ? 'Whip it through' : 'Take it to the floor and kill it'}</button></div>`);
+      <div class="choices"><button class="btn primary big adv" id="bgo">${deal ? 'Whip it through' : 'Take it to the floor and kill it'}</button></div>`);
     $('#modal-card').querySelectorAll('[data-fund]').forEach(b => b.onclick = () => { if (!maj) return; const t = b.dataset.fund; if (fund.includes(t)) fund = fund.filter(x => x !== t); else { if (cut === t) cut = null; fund = fund.concat(t).slice(-2); } sfx.click(); draw(); });
     $('#modal-card').querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { if (!maj) return; const t = b.dataset.cut; cut = cut === t ? null : t; fund = fund.filter(x => x !== t); sfx.click(); draw(); });
     $('#modal-card').querySelectorAll('[data-baim]').forEach(b => b.onclick = () => { deal = b.dataset.baim === 'deal' && (deal || c.capital >= 1); B.aim = deal ? 'pass' : 'kill'; sfx.click(); draw(); });
@@ -935,7 +936,7 @@ function finishVote(results, y, n) {
   const spare = k ? (thr ? thr - 1 - y : n - y - (vpBacks() ? 1 : 0)) : thr ? y - thr : vpYours() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
   if (!B.override) B.spare = spare;
   // votes go on the record back home, and party-line defections feed primary challenges
-  const P = B.budget ? sponsor() : billParty(B.name), mine = k ? 'no' : 'yes';
+  const P = B.budget ? (B.by === 'them' ? other(S.side) : S.side) : billParty(B.name), mine = k ? 'no' : 'yes';
   for (const r of results) {
     if (r.v === 'abs') continue;
     if (P && ((r.m.party === P && r.v === 'no') || (r.m.party === other(P) && r.v === 'yes'))) { r.m.defy = (r.m.defy || 0) + 1; hist(r.m, `Broke with the ${PARTY[r.m.party].name} Party to vote ${r.v === 'yes' ? 'YEA' : 'NAY'} on the ${B.name}`); }
@@ -1160,7 +1161,8 @@ function buildCourt() {
 }
 function courtCount(p) { return S.court.filter(j => j.party === p).length; }
 function courtLabel() { return `${courtCount('R')}R–${courtCount('D')}D${S.court.length < 9 ? `, ${9 - S.court.length} vacant` : ''}`; }
-function isBipartisan() { return AGENDA.both.some(b => b[0] === S.bill.name); }
+// a bipartisan deal: the AGENDA.both bills, and the majority's budget once you've sold them your votes
+function isBipartisan() { const B = S.bill; return AGENDA.both.some(b => b[0] === B.name) || (B.budget && B.by === 'them' && B.aim === 'pass'); }
 function dotPrior(p, fx) { let s = 0; for (const t of TAGS) s += (PARTY[p].prior[t] || 0) * (fx[t] || 0); return s; }
 function houseMaj() { return S.house[S.side] >= 218 ? S.side : other(S.side); }
 function houseExpected() { return houseBlocs().reduce((a, b) => a + b.yes, 0); }
@@ -1179,6 +1181,7 @@ function vetoOdds() {
   if (S.president.party === spon) return spon === S.side && typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
   let d = 0; const v = presVec(); for (const t of TAGS) d += v[t] * (B.fx[t] || 0);
   if (spon !== S.side) return clamp(0.8 - d * 0.1 - (isBipartisan() ? 0.35 : 0), 0.1, 0.97); // your President, their bill
+  if (B.budget && B.by === 'them') return 0.05; // their own budget, with your price written in
   return clamp(0.55 - d * 0.1 - (isBipartisan() ? 0.35 : 0) - (B.softened ? 0.3 : 0) - (S.president.approval < 40 ? 0.1 : 0) - (has('whliaison') ? 0.15 : 0) + (typeof wingVetoAdj === 'function' ? wingVetoAdj() : 0), 0.05, 0.95);
 }
 function courtRisk() {

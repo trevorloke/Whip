@@ -153,7 +153,7 @@ function docketHTML() {
         ${S.nuclear ? '' : tool('data-nuke', 'nuke', '☢️ Go nuclear', `Abolish the legislative filibuster: your agenda needs a simple majority from now on. So will theirs, the next time they run the place. National mood −1.`, 3)}
         ${wpr ? tool('data-wpr', 'wpr', `☮ War Powers Resolution on ${S.war.place}`, 'Put it in the selected slot: order the troops home.', 1) : ''}</div>`;
   } else {
-    const head = flQueue().find(x => x.by === 'them'), pk = U.pick;
+    const head = flTheirs(flQueue()), pk = U.pick;
     const rideT = pk && flTopTag(pk.tpl[2]);
     body = `<p class="fl-sub">Your bill${pk ? `: <b>${pk.name}</b> <small>${flFx(pk.tpl[2])}</small>` : ''}. Pick one, then use the minority's tools to fight for floor time:</p>
       <div class="shop docket">${U.offers.map(offerBtn).join('')}</div>${own}
@@ -178,6 +178,8 @@ function flHoldTarget() {
   }
   return best;
 }
+// the majority's next bill on the schedule, the target of threats and riders: one they want and you don't, if there is one
+function flTheirs(q) { return q.find(x => x.by === 'them' && x.aim === 'kill') || q.find(x => x.by === 'them') || null; }
 function bindDocket(redraw) {
   const card = $('#modal-card'), maj = isMajority(), c = S.career, U = flState(), q = flQueue();
   const pay = (key, cost) => { if (c.capital < cost || U.used[key]) return false; c.capital -= cost; U.used[key] = true; return true; };
@@ -223,12 +225,11 @@ function bindDocket(redraw) {
 // the minority's tools
 function flTool(k, pay, done) {
   const U = flState(), q = flFill(), pk = U.pick, them = PARTY[other(S.side)].name;
-  const theirs = () => q.find(x => x.by === 'them' && x.aim === 'kill') || q.find(x => x.by === 'them');
   const mine = () => ({ ...pk, by: 'you', aim: 'pass', win: true });
   if (k === 'discharge') {
     if (!pk || !pay(k, 2)) return;
     if (Math.random() > 0.6) return done('The discharge petition fell short of a majority. Leadership keeps its pick.', false);
-    const h = q.shift(); q.unshift({ ...mine(), note: 'Discharge petition' }); if (h) q.push(h); unlock('discharge');
+    const h = flTheirs(q); if (h) q.splice(q.indexOf(h), 1); q.unshift({ ...mine(), note: 'Discharge petition' }); if (h) q.push(h); unlock('discharge');
     return done(`Discharge petition succeeds: the ${pk.name} comes up next.`, true);
   }
   if (k === 'uc') {
@@ -238,13 +239,13 @@ function flTool(k, pay, done) {
     return done(`Nobody objected! The ${pk.name} goes on the schedule right after this week's bill.`, true);
   }
   if (k === 'pull') {
-    const t = theirs(); if (!t || !pay(k, 2)) return;
+    const t = flTheirs(q); if (!t || !pay(k, 2)) return;
     if (Math.random() > 0.5) return done(`Leadership calls your bluff: the ${t.name} stays put.`, false);
     q.splice(q.indexOf(t), 1); q.push(t);
     return done(`They blinked. The ${t.name} goes to the back of the line.`, true);
   }
   if (k === 'ride') {
-    const t = theirs(), tag = pk && flTopTag(pk.tpl[2]); if (!t || !tag || t.ride || !pay(k, 1)) return;
+    const t = flTheirs(q), tag = pk && flTopTag(pk.tpl[2]); if (!t || !tag || t.ride || !pay(k, 1)) return;
     t.ride = tag;
     return done(`Your ${TAG[tag][1]} language will ride as an amendment on the ${t.name}.`, true);
   }
@@ -261,7 +262,7 @@ function flTool(k, pay, done) {
 /* ---------------- the newspaper, when you were killing it ---------------- */
 function floorHeadline(won, headline, y, n) {
   const B = S.bill, name = B.name.toUpperCase(), me = PARTY[S.side].short, them = PARTY[other(S.side)].short, P = lastName(S.president).toUpperCase();
-  if (B.budget) return won ? { h: 'GOVERNMENT SHUTS DOWN', d: `The ${them}' budget dies on the floor, ${y}–${n}; the ${me} dig in and dare the White House to blink.`, mood: 'storm' }
+  if (B.budget) return won ? { h: 'GOVERNMENT SHUTS DOWN', d: `The ${them}' budget dies ${headline === 'DEAD IN THE HOUSE' ? 'in the House' : /VETO/.test(headline) ? 'by veto' : `on the Senate floor, ${y}–${n}`}; the ${me} dig in and dare the majority to blink.`, mood: 'storm' }
     : { h: `${them.toUpperCase()} PUSH THEIR BUDGET THROUGH`, d: `A ${y}–${n} vote over ${me} objections. The lights stay on; the priorities are theirs.`, mood: 'night' };
   if (B.nomination) return won ? { h: 'SENATE REJECTS NOMINEE', d: `A ${n}–${y} rebuke for ${presTitle()}. The seat stays open.`, mood: 'dawn' }
     : { h: `SENATE CONFIRMS ${B.name.replace('Confirmation of Judge ', '').toUpperCase()}`, d: `Over ${me} objections, ${y}–${n}. The Court now stands ${courtLabel()}.`, mood: 'night' };
