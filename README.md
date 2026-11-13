@@ -273,16 +273,17 @@ neither party can organize without you.
   amendment, a simple majority otherwise). On about two bills in three the
   parties land within your caucus's votes of that line: 🗝 **your votes decide
   it**, both offers go up, and whichever side you spurn fights for every vote.
-  The rest are clearly carried or clearly dead, and the offers are thin: going
-  with the count is a short whip, going against it a long one. Each card shows
-  how many votes short you would start. Voting your banner is worth a vote at
-  the start; a deal against it costs one.
+  The rest are clearly carried or clearly dead for now, and the offers are
+  thin. Once you declare, the other side's whip goes to work: going with the
+  count still leaves a vote or two to hold, going against it means turning
+  several. Each card shows how many votes short you would start. Voting your
+  banner is worth a vote at the start; a deal against it costs one.
 - **Confidence as a kingmaker.** Losing a bill your votes could never have
-  decided costs no confidence; losing one they did decide can. Every second
-  bill you decide your banner's way restores a point of confidence, and three
-  votes in a row against your banner cost one. Every second bill you decide
-  brings a would-be candidate to your door (a free, stronger recruit for the
-  next slate). Campaign promises are judged gently: a caucus can't pass laws
+  decided costs no confidence; losing one they did decide costs a point. Every
+  second bill you decide your banner's way (budgets aside) restores a point of
+  confidence, and three votes in a row against your banner cost one. Every
+  second bill you decide brings a would-be candidate to your door (a free,
+  stronger recruit for the next slate). Campaign promises are judged gently: a caucus can't pass laws
   alone, so a broken one costs independent mood, and only a term with none
   kept costs confidence.
 - **Budgets and your own bills.** The floor party writes the budget; selling

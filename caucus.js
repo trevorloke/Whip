@@ -262,8 +262,9 @@ function cauPivotCount(B) {
   const need = cauPassNeed(B);
   const ms = S.members.filter(m => m.party === 'D' || m.party === 'R');
   const yes = ms.filter(m => support(m) > 0).length, ci = seats('I');
-  const decisive = yes < need && yes + ci >= need;
-  return { yes, no: ms.length - yes, need, decisive, kind: decisive ? 'close' : yes >= need ? 'carried' : 'dead' };
+  const vpI = S.president.party === 'I' && !B.super && !B.cloture;   // an independent Vice President breaks a 50-50 tie your caucus's way when it votes to pass
+  const decisive = yes < need && yes + ci + (vpI ? 1 : 0) >= need;
+  return { yes, no: ms.length - yes, need, vpI, decisive, kind: decisive ? 'close' : yes >= need ? 'carried' : 'dead' };
 }
 // shift every senator's mood so that exactly `yes` of the parties' senators start on the yea side (calibrate() for the count without you)
 function cauSetCount(yes) {
@@ -348,7 +349,7 @@ function cauPayNow(p, keys, B) {
     else if (k === 'rider') { const t = cauTopIssue(); B.fx[t] = (B.fx[t] || 0) + 1; B.applied.push(`${TAG[t][1]} +1 (the ${S.cau.label} rider)`); B.cauRider = t; }
   }
 }
-function cauNeedPass(B) { const k = B.super || B.cloture; return k ? `${k} votes${B.cloture ? ' for cloture' : ''}` : vpBacks() ? '50 votes and the Vice President' : '51 votes'; }
+function cauNeedPass(B) { const k = B.super || B.cloture; return k ? `${k} votes${B.cloture ? ' for cloture' : ''}` : S.president.party === 'I' ? '51 votes, or 50 and the Vice President if your caucus votes for it' : cauPassNeed(B) === 50 ? '50 votes and the Vice President' : '51 votes'; }
 function cauOfferCard(p, B) {
   const C = S.cau, W = C.whips[p], keys = B.offers[p], toward = p === 'D' ? -C.lean : C.lean, pass = p === B.owner, gone = B.cauWithdrawn && B.cauWithdrawn[p];
   const notes = [`trust ${cauSigned(C.trust[p])}`];
@@ -369,11 +370,11 @@ function cauAsk(next) {
   if (!B.offers) B.offers = { D: cauMakeOffer('D', B), R: cauMakeOffer('R', B) };
   B.cauWithdrawn = B.cauWithdrawn || {};
   const o = B.owner, pv = B.pivot || cauPivotCount(B), ci = seats('I'), la = B.labelAim;
-  const verdict = pv.decisive ? '<b class="cau-key">🗝 YOUR VOTES DECIDE IT</b>' : pv.yes >= pv.need ? 'They can pass it without you' : 'It\'s dead even with you';
-  const tide = pv.yes >= pv.need ? 'PASS' : 'KILL';
+  const verdict = pv.decisive ? '<b class="cau-key">🗝 YOUR VOTES DECIDE IT</b>' : pv.yes >= pv.need ? 'They have the votes without you, for now' : 'It\'s short even with you, for now';
+  const tide = pv.yes >= pv.need ? 'PASS' : 'KILL', dShort = pv.need - pv.yes - ci - (pv.vpI ? 1 : 0);
   const price = pv.decisive
-    ? `<p class="cau-price"><b>Your price is high.</b> Without you the parties are ${pv.need - pv.yes} short of ${pv.need}, and your caucus has ${ci}: the way you vote decides it, so both whips are bidding. Whichever side you spurn will fight for every vote.</p>`
-    : `<p class="cau-price cau-dim"><b>Your price is low.</b> ${pv.yes > pv.need ? `They have ${pv.yes - pv.need} vote${pv.yes - pv.need === 1 ? '' : 's'} to spare without you` : pv.yes === pv.need ? 'They have exactly the votes they need without you' : `They are ${pv.need - pv.yes - ci} vote${pv.need - pv.yes - ci === 1 ? '' : 's'} short even with your ${ci}`}, so your votes won't change it and the offers are thin. Going with the count (${tide}) is a short whip; going against it means turning the parties' own senators, and nobody blames the caucus if that fails.</p>`;
+    ? `<p class="cau-price"><b>Your price is high.</b> Without you the parties are ${pv.need - pv.yes} short of ${pv.need}, and your caucus has ${ci}${pv.vpI ? ' plus the Vice President\'s tie-break if you vote to pass' : ''}: the way you vote decides it, so both whips are bidding. Whichever side you spurn will fight for every vote.</p>`
+    : `<p class="cau-price cau-dim"><b>Your price is low.</b> ${pv.yes > pv.need ? `They have ${pv.yes - pv.need} vote${pv.yes - pv.need === 1 ? '' : 's'} to spare without you` : pv.yes === pv.need ? 'They have exactly the votes they need without you' : ci === 0 ? `They are ${pv.need - pv.yes} vote${pv.need - pv.yes === 1 ? '' : 's'} short, and you have no votes to add` : `They are ${dShort} vote${dShort === 1 ? '' : 's'} short even with your ${ci}${pv.vpI ? ' and the Vice President' : ''}`}, so the parties won't pay ${ci === 0 ? 'you much' : 'much for them'}. Once you declare, the other side's whip goes to work on the parties' own senators: going with the count (${tide}) still leaves a vote or two to hold; going against it means turning several. Either way, nobody blames the caucus if it goes wrong.</p>`;
   const body = `<p class="blurb">${B.blurb}</p><div class="fx">${fxChips(B.fx)}</div>
     <p>A <b style="color:${PARTY[o].color}">${PARTY[o].name}</b> ${B.nomination ? 'nomination' : B.aumf ? 'war resolution' : 'bill'}${B.by === 'them' ? `, scheduled by the ${PARTY[floorParty()].short}` : ''} · to pass it needs ${cauNeedPass(B)}.</p>
     <div class="cau-pivot"><span>The count before anyone whips: <b>${pv.yes}</b> for · <b>${pv.no}</b> against · <b>${pv.need}</b> needed. Your caucus: <b>${ci}</b> vote${ci === 1 ? '' : 's'}.</span><span>${verdict}</span></div>
@@ -381,10 +382,11 @@ function cauAsk(next) {
     <p>Your ${indPill(C.label)} banner says <b class="${la === 'kill' ? 'cau-kill' : 'cau-pass'}">${la === 'kill' ? 'KILL' : 'PASS'}</b>${C.partner ? ` · your organizing partner: the ${PARTY[C.partner].short}` : ' · you caucus with no one: both sides bid +1'}.</p>
     <div class="cau-bid">${cauOfferCard('D', B)}${cauOfferCard('R', B)}</div>`;
   const askOK = p => !B.cauAsked && !B.cauWithdrawn[p];
+  const fs = cauShortPreview(B, la, null);
   const take = p => B.offers[p].length ? `Take the ${PARTY[p].name} deal` : `Side with the ${PARTY[p].short} for nothing`;
   const choices = ['D', 'R'].map(p => `<button class="btn ${p === 'D' ? 'dem' : 'rep'}" data-choice="bid:${p}">${take(p)}<small>${p === o ? 'PASS' : 'KILL'} it · the ${PARTY[other(p)].short} whip works against you</small></button>`).join('')
     + ['D', 'R'].map(p => `<button class="btn" data-choice="bid:ask:${p}" ${askOK(p) ? '' : 'disabled'}>Name your price to the ${PARTY[p].short}<small>Once a bill · ${Math.round(cauAskOdds(p, B) * 100)}% they sweeten it; otherwise they walk away</small></button>`).join('')
-    + `<button class="btn" data-choice="bid:free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits<small>No deal, no ally whip · your caucus likes it (+0.5 each) · Lean eases · independent mood +0.2 · you start about ${cauShortPreview(B, la, null)} short</small></button>`;
+    + `<button class="btn" data-choice="bid:free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits<small>No deal, no ally whip · your caucus likes it (+0.5 each) · Lean eases · independent mood +0.2 · you start about ${fs} vote${fs === 1 ? '' : 's'} short</small></button>`;
   cauScreen(`The Bidding · ${season(B.n)} ${billYear(B.n)}`, `${B.name}${B.landmark ? '<span class="cau-lm">LANDMARK</span>' : ''}`, body, choices,
     `<button class="btn primary big adv" id="cau-free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits</button>`);
   const card = $('#modal-card');
@@ -484,7 +486,7 @@ function cauSettle(won, enacted, headline) {
   } else if (B.labelAim && !B.budget) C.stats.offRun = 0;   // budgets are their own bid: they neither count nor break the run
   if (B.pivot && B.pivot.decisive && won) {
     c.capital += 1; addLegacy(4); C.pivots++;
-    const onBanner = !B.labelAim || B.aim === B.labelAim;   // the swing vote, cast for your banner's cause
+    const onBanner = !B.budget && (!B.labelAim || B.aim === B.labelAim);   // the swing vote, cast for your banner's cause
     if (onBanner) C.stats.banner = (C.stats.banner || 0) + 1;
     if (onBanner && C.stats.banner % 2 === 0 && c.confidence < 5) { c.confidence++; lines.push(`🗝 Your ${seats('I')} votes decided it for the ${C.label} banner: +1 capital, +1 confidence (${C.stats.banner} bills decided your banner's way)`); }
     else lines.push(`🗝 Your ${seats('I')} votes decided it${onBanner ? ` for the ${C.label} banner` : ''}: +1 capital`);

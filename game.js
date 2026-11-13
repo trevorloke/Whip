@@ -1112,7 +1112,7 @@ function settle(won, detail, headline, isLaw, partial) {
     c.losses++; c.streak = 0;
     if (!k && ['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
     else if (IND() && typeof cauNoBlame === 'function' && cauNoBlame()) { c.capital += 1; lines.unshift(cauNoBlame()); } // a bill your caucus could never have decided
-    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift(`${IND() ? 'Even kingmakers lose some: the caucus shrugs this one off' : 'In the minority, the caucus expected to lose this one'}: no confidence lost · +1 capital`); }
+    else if (!isMajority() && !(IND() && B.pivot && B.pivot.decisive && !B.budget) && Math.random() < 0.5) { c.capital += 1; lines.unshift(`${IND() ? 'Even kingmakers lose some: the caucus shrugs this one off' : 'In the minority, the caucus expected to lose this one'}: no confidence lost · +1 capital`); }
     else { c.confidence--; c.capital += 1; lines.unshift(IND() && B.pivot && B.pivot.decisive && !B.budget ? '🗝 Your votes were the margin, and it still went the wrong way: −1 confidence · +1 capital (consolation)' : '−1 party confidence · +1 capital (consolation)'); }
     // an enemy law helps the other side's mood more when it's popular
     S.mood = clamp(S.mood - 1.5 - (k ? Math.max(0, (B.opinion - 50) / 15) : 0), -15, 15);
