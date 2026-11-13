@@ -109,7 +109,7 @@ function wingBattleMoves() {
     ['rebut', 'Prime-time rebuttal', `Your party answers the President on every network. Approval −1 to −2, your party's mood +0.8.`, 1, true],
     ['holds', 'Hold the President\'s nominees', 'Holds on every nominee in the queue. Approval −2, the President fumes (feud −2).', 1, true],
     ['impeach', 'Open an impeachment inquiry', `The nuclear option. Needs your party's House majority, approval under 45 and a hostile feud. 55%: approval −8 and your base energized; 45%: it backfires (approval +4, mood −2.5, −1 confidence).`, 3, hm && P.approval < 45 && whRel() <= -4],
-    ['deal', 'Cut a deal with the White House', `Trade a priority for a priority. Feud +3, veto risk down. Your base grumbles (mood −0.5); ${[MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()) ? 'your wing likes deals (+0.5).' : 'your wing hates it (−0.5).'}`, 1, true],
+    ['deal', 'Cut a deal with the White House', IND() ? 'Trade a priority for a priority. Feud +3, veto risk down. Your trust with the President\'s party +0.5; your Lean moves their way.' : `Trade a priority for a priority. Feud +3, veto risk down. Your base grumbles (mood −0.5); ${[MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()) ? 'your wing likes deals (+0.5).' : 'your wing hates it (−0.5).'}`, 1, true],
   ].map(x => x.concat([cap]));
 }
 function wingBattle(k) {
@@ -122,8 +122,10 @@ function wingBattle(k) {
   if (k === 'probe') { if (Math.random() < (isMajority() ? 0.2 : 0.1)) { S.mood -= 1.5; wingHit(-1); msg = 'The investigation looks like a witch hunt. It backfires.'; } else { const n = isMajority() ? ri(3, 7) : ri(1, 3); d(n); wingHit(-2); hist(P, isMajority() ? 'Subpoenaed by the Senate' : 'Faced a Senate demand for an inspector general'); msg = `The probe lands: ${presTitle()} −${n}.`; } }
   if (k === 'rebut') { const n = ri(1, 2); d(n); S.mood += 0.8; wingHit(-1); msg = `Your rebuttal wins the night: ${presTitle()} −${n}.`; }
   if (k === 'holds') { d(2); wingHit(-2); S.cabinetHolds = (S.cabinetHolds || 0) + 1; msg = 'Every nominee is on hold. The President is furious.'; }
+  if (k === 'holds' && IND() && S.cau && (P.party === 'D' || P.party === 'R')) S.cau.trust[P.party] = clamp(S.cau.trust[P.party] - 0.5, -5, 5);
   if (k === 'impeach') { if (Math.random() < 0.55) { d(8); S.mood += 1.5; wingHit(-3); hist(P, 'Faced an impeachment inquiry'); msg = `The inquiry is devastating: ${presTitle()} −8.`; } else { P.approval = clamp(P.approval + 4, 18, 82); S.mood -= 2.5; S.career.confidence = Math.max(1, S.career.confidence - 1); wingHit(-2); msg = 'The inquiry backfires. The public rallies to the President.'; } }
   if (k === 'deal') { wingHit(3); S.mood -= 0.5; const likes = [MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()); for (const m of wingMembers()) m.rel += likes ? 0.5 : -0.5; msg = 'A deal with the White House.'; }
+  if (k === 'deal' && IND() && S.cau && (P.party === 'D' || P.party === 'R')) { S.cau.trust[P.party] = clamp(S.cau.trust[P.party] + 0.5, -5, 5); S.cau.lean = clamp(S.cau.lean + (P.party === 'D' ? -0.5 : 0.5), -10, 10); }
   if (P.party !== S.side && P.approval < 35) unlock('warpath');
   S.mood = clamp(S.mood, -15, 15);
   sfx.gavel(); toast(msg);
@@ -134,8 +136,8 @@ HOOKS.office.push({
   html: () => {
     const f = wingOf(), P = S.president, yours = P.party === S.side, used = S.wingBattleUsed === S.career.bills, cap = S.career.capital;
     let h = '';
-    if (!f) h += `<hr><b>🦅 Your wing</b><p style="margin:6px 0"><button class="btn" id="wingpick" data-office-extra>Choose the wing of the party you champion</button></p>`;
-    else {
+    if (!f && !IND()) h += `<hr><b>🦅 Your wing</b><p style="margin:6px 0"><button class="btn" id="wingpick" data-office-extra>Choose the wing of the party you champion</button></p>`;
+    else if (f) {
       const ms = wingMembers(), L = wingLeader(), hs = wingHouse(), govs = wingGovs(), tgt = wingConvertTarget();
       if (ms.length >= 12) unlock('wing');
       h += `<hr><b>🦅 Your wing: the ${f}</b> <small style="color:var(--dim)">· ${ms.length} senator${ms.length === 1 ? '' : 's'}${L ? ` led by Sen. ${L.name}` : ''} · ${govs.length} governor${govs.length === 1 ? '' : 's'}${hs ? ` · ~${hs.seats} in the ${hs.name}` : ''} · PAC clout ${S.wingClout || 0}/5${S.wingRecruits ? ` · ${S.wingRecruits} recruit${S.wingRecruits > 1 ? 's' : ''} waiting for open seats` : ''}</small>
@@ -147,7 +149,7 @@ HOOKS.office.push({
         </div>`;
     }
     const r = whRel(), cons = wingConsequences(), moves = wingBattleMoves();
-    h += `<hr><b>${yours ? '🗡️ You and the President' : '⚔️ Battle the White House'}</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}) at ${P.approval}% · relations: <b style="color:${r <= -4 ? 'var(--no)' : r >= 2 ? 'var(--yes)' : 'var(--gold2)'}">${wingFeudLabel(r)}</b> (${r > 0 ? '+' : ''}${r.toFixed(1)})</small>
+    h += `<hr><b>${IND() ? '⚖️ The swing bloc and the White House' : yours ? '🗡️ You and the President' : '⚔️ Battle the White House'}</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}) at ${P.approval}% · relations: <b style="color:${r <= -4 ? 'var(--no)' : r >= 2 ? 'var(--yes)' : 'var(--gold2)'}">${wingFeudLabel(r)}</b> (${r > 0 ? '+' : ''}${r.toFixed(1)})</small>
       <div class="wing-meter"><i style="left:${(r + 10) * 5}%"></i></div>
       ${cons.length ? `<ul class="wing-cons">${cons.map(c => `<li>${c}</li>`).join('')}</ul>` : '<p style="font-size:12px;color:var(--dim);margin:4px 0">No feud to speak of. Every hostile move has a price: the President hits back.</p>'}
       <div class="shop sinks">${moves.map(([k, t, s, c, ok]) => `<button class="btn" data-battle="${k}" ${!ok || used || cap < c ? 'disabled' : ''}><span>${t}<small>${s}</small></span><span class="cost">${c} cap</span></button>`).join('')}</div>

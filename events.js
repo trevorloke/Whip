@@ -11,6 +11,10 @@
 
 /* ---------------- shared helpers ---------------- */
 const EVT_FLANK = { D: 'Progressives', R: 'Freedom Caucus' };
+// independent career: floor events and moments that read MODERATE/EVT_FLANK/PARTY[S.side].prior or assume a party Senate
+// (game.js runEvent and the moment pool below skip them when IND())
+const EVT_IND_SKIP = ['evt_parliamentarian', 'evt_gang', 'evt_scotus', 'evt_whcounter', 'evt_switch', 'evt_vpwhip', 'evt_donor', 'evt_pledge_due'];
+const EVT_IND_SKIP_MOMENTS = ['leader', 'switch'];
 const EVT_AGENCY = { economy: 'the Commerce Department', environment: 'the EPA', security: 'the Pentagon', welfare: 'Health and Human Services', rural: 'the Agriculture Department', urban: 'HUD', taxes: 'the Treasury', tech: 'the Office of Science and Technology Policy' };
 const EVT_COMMITTEES = ['Finance', 'Appropriations', 'Armed Services', 'Judiciary', 'Commerce', 'Agriculture', 'Foreign Relations', 'HELP', 'Intelligence', 'Energy and Natural Resources', 'Banking', 'Environment and Public Works'];
 const EVT_NATIONS = ['Valoria', 'the Tamar Isles', 'Ostrava', 'the Kessan Republic', 'Sarnia', 'Mardova', 'Lusitania'];
@@ -55,9 +59,12 @@ function evtFixLeaders() {
 }
 // moderates in states that lean hard the other way are the ones who switch parties
 function evtSwitchCands(party) { return S.members.filter(m => m.party === party && m.faction === MODERATE[party] && !T(m, 'loyal') && !evtOnTicket(m) && evtLeanAdv(m.state, other(party)) >= 8); }
-function evtFlipParty(m, live) {
-  const from = m.party, to = other(from);
-  m.party = to; m.faction = MODERATE[to];
+// to: optional; joining the independent caucus is to === 'I' (caucus.js), and leaving it names the party
+function evtFlipParty(m, live, to) {
+  const from = m.party; to = to || other(from);
+  m.party = to;
+  if (to === 'I') { m.faction = 'Independents'; m.exParty = from; m.label = null; m.cause = m.cause || pick(IND_CAUSES); if (typeof indLabel === 'function') indLabel(m); }
+  else { m.faction = MODERATE[to]; if (from === 'I') m.label = null; }
   if (T(m, 'leader')) m.traits = m.traits.filter(t => t !== 'leader');
   m.knownTraits = true;
   hist(m, `Switched parties: left the ${PARTY[from].short} for the ${PARTY[to].short}`);
@@ -768,7 +775,7 @@ HOOKS.interlude.push(() => {
   if (S.lastVacancy) { if (S.career.bills - (S.lastVacancy.bill || 0) <= 3) return [wrap(evtMomentAppointment)]; S.lastVacancy = null; }
   const since = S.career.bills - (S.evtLastMoment || 0);
   if (Math.random() >= 0.15 && since < 8) return [];
-  const pool = EVT_MOMENTS.filter(m => !m.cond || m.cond()); if (!pool.length) return [];
+  const pool = EVT_MOMENTS.filter(m => (!m.cond || m.cond()) && !(IND() && EVT_IND_SKIP_MOMENTS.includes(m.id))); if (!pool.length) return [];
   const mo = pick(pool); S.evtLastMoment = S.career.bills;
   return [wrap(mo.run)];
 });
