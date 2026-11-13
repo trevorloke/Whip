@@ -30,7 +30,7 @@ function flForced() {
   const out = [];
   if (S.pendingAUMF) out.push({ name: `War vote: Authorization for Use of Military Force in ${S.pendingAUMF}`, why: `${presTitle()} asked Congress for a war vote`, aim: IND() ? flAimI(FL_AUMF_FX, S.president.party) : 'pass' });
   if (S.docket) out.push({ name: S.docket.name, why: S.docket.forced ? 'a bipartisan bloc forced it onto the floor' : 'already on the calendar', aim: IND() ? flAimI(S.docket.tpl[2], billParty(S.docket.tpl[0]) || (S.docket.forced ? floorParty() : 'I')) : 'pass' });
-  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: IND() ? flAimI({}, S.nominee.party || S.president.party) : (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
+  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: IND() ? flNomination().aim : (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
   return out;
 }
 function forcedNext(n) {
@@ -241,7 +241,7 @@ function flTool(k, pay, done) {
   if (k === 'owed') {
     if (!pk || !(S.cau && S.cau.floorOwed > 0) || !pay(k, 0)) return;
     S.cau.floorOwed--; q.splice(1, 0, { ...mine(), note: 'Owed to the Independent caucus' });
-    return done(`The ${pk.name} goes on the schedule right after this week's.`, true);
+    return done(`The ${pk.name} goes on the schedule right after this week's bill.`, true);
   }
   if (k === 'uc') {
     if (!pk || !pay(k, 1)) return;
