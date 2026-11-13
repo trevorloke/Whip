@@ -18,15 +18,16 @@ const resSigned = (v, d = 1) => (v > 0 ? '+' : v < 0 ? '−' : '±') + Math.abs(
 const resCountBy = o => { const c = { D: 0, R: 0, I: 0 }; for (const p of Object.values(o || {})) c[p] = (c[p] || 0) + 1; return c; };
 const resCnt = o => o ? `D ${o.D || 0} · R ${o.R || 0}${o.I ? ` · I ${o.I}` : ''}` : '—';
 const resNm = (nm, p) => `<b style="color:${PARTY[p].color}">${nm}</b>`;
-ACH.push(['split', '⚖️', 'Split Decision', 'See a President elected while losing the popular vote.'], ['sweep40', '🗺️', 'Forty-State Sweep', 'See a ticket carry 40 or more states.'], ['almanac', '📚', 'Historian', 'Consult the Almanac.']);
+ACH.push(['split', '⚖️', 'Split Decision', 'See a President elected while losing the popular vote.'], ['sweep40', '🗺️', 'Forty-State Sweep', 'See a ticket carry 40 or more states.'], ['almanac', '📚', 'Historian', 'Consult the Almanac.'], ['thirdway', '🟣', 'Third Way', 'See an independent presidential candidate carry a state.']);
 
 /* ---------------- the archive ---------------- */
-// one compact, JSON-safe record per election: percentages to one decimal, votes to integers
+// one compact, JSON-safe record per election: percentages to one decimal, votes to integers.
+// House districts: house.dist[code] = [[winner, D-positive margin, flags (1 flip, 2 open seat), previous margin, lean, winner's name, loser's name (flips only)], ...]
 function resBuildRecord(nd) {
   const P = nd.pres, r1 = resR1;
   const pres = P ? {
     states: Object.fromEntries(Object.entries(P.states).map(([c, s]) => [c, [r1(s.dPct), r1(s.rPct), r1(s.iPct || 0)]])),
-    evD: P.evD, evR: P.evR, popD: Math.round(P.popD), popR: Math.round(P.popR), popI: Math.round(P.popI || 0), names: P.names, winner: P.winner, inc: P.inc, running: !!P.running,
+    evD: P.evD, evR: P.evR, evI: P.evI || 0, popD: Math.round(P.popD), popR: Math.round(P.popR), popI: Math.round(P.popI || 0), names: P.names, winner: P.winner, inc: P.inc, running: !!P.running, third: P.third || null,
     prev: P.prev ? { year: P.prev.year, states: P.prev.states } : null, homes: P.homes || null, vps: P.vps || null, offices: P.offices || null, houseVote: P.houseVote || null,
   } : null;
   const senate = { before: nd.before || null, after: { D: seats('D'), R: seats('R'), I: seats('I') }, races: (nd.races || []).map(r => {
@@ -36,6 +37,7 @@ function resBuildRecord(nd) {
   }) };
   const H = nd.house || {}, hp = (H.popD || 0) + (H.popR || 0);
   const house = { before: H.before || null, after: { D: S.house.D, R: S.house.R }, byState: Object.fromEntries(Object.entries(H.states || {}).map(([c, s]) => [c, [s.d, s.n, s.prevD, r1(s.dPct), r1(s.rPct)]])), pop: hp ? [r1(H.popD / hp * 98.4), r1(H.popR / hp * 98.4)] : null };
+  if (H.districts) house.dist = Object.fromEntries(Object.entries(H.districts).map(([c, L]) => [c, L.map(x => { const a = [x.w, r1(x.m), (x.flip ? 1 : 0) + (x.open ? 2 : 0), x.prev == null ? null : r1(x.prev), r1(x.lean), x.w === 'D' ? x.dName : x.rName]; if (x.flip) a.push(x.w === 'D' ? x.rName : x.dName); return a; })]));
   const gov = (nd.gov || []).map(r => ({ code: r.code, wParty: r.wParty, wName: r.wName, lParty: r.lParty, lName: r.lName, wPct: r1(r.wPct), lPct: r1(r.lPct), margin: r1(r.margin), flip: !!r.flip, open: !!r.open, inc: r.incumbent || null }));
   return { year: nd.year, side: S.side, wave: r1(nd.wave), waveSignal: r1(nd.waveSignal), president: { name: S.president.name, party: S.president.party, terms: S.president.terms || 1 }, pres, senate, house, gov,
     govBefore: nd.govBefore ? resCountBy(nd.govBefore) : null, govAfter: resCountBy(Object.fromEntries(Object.entries(S.governors || {}).map(([c, g]) => [c, g.party]))),
@@ -48,9 +50,9 @@ function archiveElection(nd) {
     S.archive = (S.archive || []).filter(r => r && r.year !== rec.year).concat([rec]);
     if (S.archive.length > RES_MAX) S.archive.splice(0, S.archive.length - RES_MAX);
     if (rec.pres) {
-      const pv = rec.pres.popD >= rec.pres.popR ? 'D' : 'R';
-      if (pv !== rec.pres.winner) unlock('split');
-      if (Object.entries(rec.pres.states).filter(([c, s]) => c !== 'DC' && (s[0] > s[1]) === (rec.pres.winner === 'D')).length >= 40) unlock('sweep40');
+      if (resPvWinner(rec.pres) !== rec.pres.winner) unlock('split');
+      if (Object.keys(rec.pres.states).filter(c => c !== 'DC' && resPresW(rec.pres, c) === rec.pres.winner).length >= 40) unlock('sweep40');
+      if (rec.pres.evI) unlock('thirdway');
     }
     const sb = rec.senate.before;
     if (rec.midterm && sb && rec.president.party === rec.side && (rec.senate.after[rec.side] || 0) > (sb[rec.side] || 0)) unlock('midmaestro');
@@ -70,48 +72,62 @@ HOOKS.office.push({
 });
 
 /* ---------------- reading a record ---------------- */
-const resPresM = (P, c) => P.states[c] ? P.states[c][0] - P.states[c][1] : null;           // D-positive margin
-const resPresW = (P, c) => P.states[c] ? (P.states[c][0] > P.states[c][1] ? 'D' : 'R') : null;
+const resPresM = (P, c) => P.states[c] ? P.states[c][0] - P.states[c][1] : null;           // D-positive margin (swings are D-vs-R)
+const resPresW = (P, c) => { const s = P.states[c]; return s ? (s[2] > s[0] && s[2] > s[1] ? 'I' : s[0] > s[1] ? 'D' : 'R') : null; };
+const resPresWM = (P, c) => { const s = P.states[c]; if (!s) return null; const v = s.slice(0, 3).sort((a, b) => b - a); return v[0] - v[1]; }; // the winner's margin
+const resPresShade = (P, c) => { const w = resPresW(P, c); if (!w) return null; const s = shade(w, resPresWM(P, c)); return { c: s.fill, op: s.op }; };
+const resEV = P => ({ D: P.evD || 0, R: P.evR || 0, I: P.evI || 0 });
+// the tickets by electoral votes, most first (the third only if it had a candidate); the runner-up; the popular-vote winner
+const resEvOrder = P => { const e = resEV(P); return ['D', 'R', 'I'].filter(p => p !== 'I' || (P.names.I && (e.I || P.popI))).sort((a, b) => e[b] - e[a]); };
+const resRunner = P => resEvOrder(P).find(p => p !== P.winner) || other(P.winner);
+const resPvWinner = P => { const v = { D: P.popD, R: P.popR, I: P.popI || 0 }; return ['D', 'R', 'I'].sort((a, b) => v[b] - v[a])[0]; };
+// the electoral-vote line, winner first (or, when nobody reached 270, most to fewest)
+const resEvTxt = P => { const e = resEV(P), o = resEvOrder(P), w = P.winner; return (resDeadlocked(P) ? o : [w].concat(o.filter(p => p !== w))).map(p => e[p]).filter((v, i) => i < 2 || v).join('–'); };
 function resPresTip(P) {
   let ev = 0;
-  for (const c of Object.keys(P.states).filter(c => resPresW(P, c) === P.winner).sort((a, b) => Math.abs(resPresM(P, b)) - Math.abs(resPresM(P, a)))) { ev += EV[c] || 0; if (ev >= 270) return c; }
+  for (const c of Object.keys(P.states).filter(c => resPresW(P, c) === P.winner).sort((a, b) => resPresWM(P, b) - resPresWM(P, a))) { ev += EV[c] || 0; if (ev >= 270) return c; }
   return null;
 }
 function resPresBells(P) {
-  const tot = P.popD + P.popR + (P.popI || 0) || 1, nat = (P.popD - P.popR) / tot * 100, off = c => Math.abs(resPresM(P, c) - nat);
+  const tot = P.popD + P.popR + (P.popI || 0) || 1, nat = (P.popD - P.popR) / tot * 100, natI = (P.popI || 0) / tot * 100, off = c => Math.abs(resPresM(P, c) - nat) + Math.abs(P.states[c][2] - natI);
   return Object.keys(P.states).filter(c => resPresW(P, c) === P.winner && off(c) < 1.5).sort((a, b) => off(a) - off(b)).slice(0, 4);
 }
-const resPresClosest = (P, n = 10) => Object.keys(P.states).sort((a, b) => Math.abs(resPresM(P, a)) - Math.abs(resPresM(P, b))).slice(0, n);
+const resPresClosest = (P, n = 10) => Object.keys(P.states).sort((a, b) => resPresWM(P, a) - resPresWM(P, b)).slice(0, n);
 const resSwingOf = (P, c) => P.prev && P.prev.states && P.prev.states[c] != null ? resPresM(P, c) - P.prev.states[c] : null;
 const resMaj = o => (o.D || 0) > (o.R || 0) ? 'D' : (o.R || 0) > (o.D || 0) ? 'R' : null;
+const resThirdName = P => `${P.names.I}${P.third && P.third.label && P.third.label !== 'Independent' ? ` (${P.third.label})` : ' (I)'}`;
 // the headline of a record, for the explorer and the Almanac
 function resHeadline(R) {
   if (R.pres) {
-    const P = R.pres, w = P.winner, re = w === P.inc && P.running, big = Math.max(P.evD, P.evR);
-    if (resDeadlocked(P)) return `${P.names[w]} ${re ? 're-elected' : 'elected'} by the House after a 269–269 deadlock`;
-    return `${P.names[w]} ${big >= 400 ? 'wins in a landslide' : re ? 're-elected' : 'elected President'}, ${big}–${Math.min(P.evD, P.evR)}`;
+    const P = R.pres, w = P.winner, re = w === P.inc && P.running, big = resEV(P)[w];
+    if (resDeadlocked(P)) return `${P.names[w]} ${re ? 're-elected' : 'elected'} by the House after ${P.evD === 269 && P.evR === 269 ? 'a 269–269 deadlock' : 'no one won 270'}`;
+    if (w === 'I') return `Independent ${P.names.I} wins the White House, ${resEvTxt(P)}`;
+    return `${P.names[w]} ${big >= 400 ? 'wins in a landslide' : re ? 're-elected' : 'elected President'}, ${resEvTxt(P)}`;
   }
   const b = R.senate.before || {}, a = R.senate.after, was = resMaj(b), now = resMaj(a);
   if (!R.senate.races.length && !(a.D || a.R)) return `${R.year}: no detailed results on record`;
   return now ? `${PARTY[now].short} ${was === now ? 'hold' : 'take'} the Senate, ${a.D}–${a.R}${a.I ? `–${a.I}` : ''}` : `Senate deadlocked ${a.D}–${a.R}`;
 }
 // a full 538-vote count that nobody won outright (the House chose), and how the state delegations voted
-const resDeadlocked = P => P.evD + P.evR === 538 && P.evD < 270 && P.evR < 270;
-const resHouseTxt = P => { const hv = P.houseVote; if (!hv) return ''; const w = P.winner, l = other(w), tied = 50 - hv.D - hv.R; return hv[w] > hv[l] ? `${hv[w]} delegations to ${hv[l]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${hv.D}–${hv.R}${tied ? ` with ${tied} tied` : ''}`; };
+const resDeadlocked = P => { const e = resEV(P); return e.D + e.R + e.I === 538 && e.D < 270 && e.R < 270 && e.I < 270; };
+const resHouseTxt = P => { const hv = P.houseVote; if (!hv) return ''; const w = P.winner, l = w === 'D' ? 'R' : 'D', tied = 50 - hv.D - hv.R; return hv[w] > hv[l] ? `${hv[w]} delegations to ${hv[l]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${hv.D}–${hv.R}${tied ? ` with ${tied} tied` : ''}`; };
 // two or three sentences of narrative for a record's presidential race
 function resNarrative(R) {
-  const P = R.pres, w = P.winner, l = other(w), evW = Math.max(P.evD, P.evR), evL = Math.min(P.evD, P.evR), re = w === P.inc && P.running;
-  const carried = Object.keys(P.states).filter(c => resPresW(P, c) === w).length, tot = P.popD + P.popR + (P.popI || 0) || 1;
-  const pvW = P.popD >= P.popR ? 'D' : 'R', gap = Math.abs(P.popD - P.popR), pts = gap / tot * 100, tip = resPresTip(P), closest = resPresClosest(P, 1)[0];
-  const out = [], who = `${P.names[w]}${P.offices && P.offices[w] ? `, the ${P.offices[w].replace(/^President$/, 'sitting President')},` : ''}`, how = re ? 'won a second term' : w === P.inc ? `kept the White House for the ${PARTY[w].short}` : `took the White House from the ${PARTY[l].short}`;
-  if (resDeadlocked(P)) out.push(`${who} ${how} without winning the Electoral College: it deadlocked at <b>269–269</b>, and under the Twelfth Amendment the House of Representatives chose the President, one vote per state delegation${P.houseVote ? ` (${resHouseTxt(P)})` : ''}. ${P.names[w]} carried ${carried} of 51 contests on the night.`);
-  else out.push(`${who} ${how} with <b>${evW} electoral votes</b> to ${P.names[l]}'s ${evL}, carrying ${carried} of 51 contests${evW >= 400 ? ' — a landslide by any measure' : evW < 290 ? ' in a race that went down to the wire' : ''}.`);
-  if (pvW !== w) out.push(`The popular vote went the other way: ${P.names[pvW]} drew <b>${nfmt(gap)} more votes</b> (${pts.toFixed(1)} points) and still lost — a split decision that will be argued about for years.`);
-  else out.push(`The popular vote margin was ${nfmt(gap)} votes, ${pts.toFixed(1)} points, out of ${nfmt(tot)} cast${P.popI ? `; independent ${P.names.I} took ${(P.popI / tot * 100).toFixed(1)}%` : ''}.`);
-  if (tip) out.push(`The tipping point was <b>${stName(tip)}</b> (${EV[tip]} EV), carried by ${Math.abs(resPresM(P, tip)).toFixed(1)}${closest !== tip ? `; the closest state of all was ${stName(closest)}, decided by ${Math.abs(resPresM(P, closest)).toFixed(1)}` : ''}.`);
+  const P = R.pres, w = P.winner, E = resEV(P), evW = E[w], re = w === P.inc && P.running;
+  const carried = Object.keys(P.states).filter(c => resPresW(P, c) === w).length, tot = P.popD + P.popR + (P.popI || 0) || 1, V = { D: P.popD, R: P.popR, I: P.popI || 0 };
+  const pvW = resPvWinner(P), pvL = ['D', 'R', 'I'].filter(p => p !== pvW).sort((a, b) => V[b] - V[a])[0], gap = V[pvW] - V[pvL], pts = gap / tot * 100, tip = resPresTip(P), closest = resPresClosest(P, 1)[0];
+  const iw = Object.keys(P.states).filter(c => resPresW(P, c) === 'I');
+  const out = [], who = `${P.names[w]}${P.offices && P.offices[w] ? `, the ${P.offices[w].replace(/^President$/, 'sitting President')},` : ''}`;
+  const how = w === 'I' ? (re ? 'won a second term as an independent' : 'broke the two-party lock on the White House') : re ? 'won a second term' : w === P.inc ? `kept the White House for the ${PARTY[w].short}` : `took the White House from the ${PARTY[P.inc].short}`;
+  if (resDeadlocked(P)) out.push(`${who} ${how} without winning the Electoral College: ${P.evD === 269 && P.evR === 269 ? 'it deadlocked at <b>269–269</b>' : `nobody reached 270 (<b>${resEvOrder(P).map(p => `${P.names[p]} ${E[p]}`).join(', ')}</b>)`}, and under the Twelfth Amendment the House of Representatives chose the President, one vote per state delegation${P.houseVote ? ` (${resHouseTxt(P)})` : ''}. ${P.names[w]} carried ${carried} of 51 contests on the night.`);
+  else out.push(`${who} ${how} with <b>${evW} electoral votes</b> to ${resEvOrder(P).filter(p => p !== w && (p !== 'I' || E.I)).map(p => `${P.names[p]}'s ${E[p]}`).join(' and ')}, carrying ${carried} of 51 contests${evW >= 400 ? ' — a landslide by any measure' : evW < 290 ? ' in a race that went down to the wire' : ''}.`);
+  if (pvW !== w) out.push(`The popular vote went the other way: ${P.names[pvW]} drew <b>${nfmt(gap)} more votes</b> than ${P.names[pvL]} (${pts.toFixed(1)} points) and still lost — a split decision that will be argued about for years.`);
+  else out.push(`The popular vote margin was ${nfmt(gap)} votes, ${pts.toFixed(1)} points, out of ${nfmt(tot)} cast${P.popI && w !== 'I' ? `; ${resThirdName(P)} took ${(P.popI / tot * 100).toFixed(1)}%` : ''}.`);
+  if (iw.length && w !== 'I') out.push(`${resThirdName(P)} carried <b>${iw.length} state${iw.length > 1 ? 's' : ''}</b> (${iw.map(c => stName(c)).join(', ')}) for ${E.I} electoral votes — the strongest third-party showing in living memory.`);
+  if (tip) out.push(`The tipping point was <b>${stName(tip)}</b> (${EV[tip]} EV), carried by ${resPresWM(P, tip).toFixed(1)}${closest !== tip ? `; the closest state of all was ${stName(closest)}, decided by ${resPresWM(P, closest).toFixed(1)}` : ''}.`);
   const sw = Object.keys(P.states).map(c => [c, resSwingOf(P, c)]).filter(x => x[1] != null).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]));
   if (sw.length) { const nat = Object.keys(P.states).reduce((a, c) => a + (resSwingOf(P, c) || 0) * (EV[c] || 0), 0) / 538; out.push(`Against ${P.prev.year}, the map swung ${nat >= 0 ? 'D' : 'R'}+${Math.abs(nat).toFixed(1)} on average; the biggest lurch came in ${stName(sw[0][0])} (${sw[0][1] >= 0 ? 'D' : 'R'}+${Math.abs(sw[0][1]).toFixed(1)}).`); }
-  for (const p of ['D', 'R']) if (P.homes && P.homes[p] && resPresW(P, P.homes[p]) !== p) out.push(`${P.names[p]} ${p === w ? 'won the White House but' : 'even'} lost ${P.homes[p] === 'DC' ? 'the District' : stName(P.homes[p])}, ${p === w ? 'the' : 'their own'} home state.`);
+  for (const p of ['D', 'R', 'I']) if (P.names[p] && P.homes && P.homes[p] && P.states[P.homes[p]] && resPresW(P, P.homes[p]) !== p) out.push(`${P.names[p]} ${p === w ? 'won the White House but' : 'even'} lost ${P.homes[p] === 'DC' ? 'the District' : stName(P.homes[p])}, ${p === w ? 'the' : 'their own'} home state.`);
   return out.map(t => `<p>${t}</p>`).join('');
 }
 
@@ -123,14 +139,16 @@ function resNorm(r) {
   o.senate.after = o.senate.after || { D: 0, R: 0, I: 0 }; o.senate.races = (o.senate.races || []).map(cand);
   o.house = { before: null, after: { D: 0, R: 0 }, byState: {}, pop: null, ...(o.house || {}) };
   o.house.after = o.house.after || { D: 0, R: 0 }; o.house.byState = o.house.byState || {};
+  if (o.house.dist && typeof o.house.dist !== 'object') o.house.dist = null;
   o.gov = (o.gov || []).map(cand);
   o.president = o.president || { name: S.president.name, party: S.president.party, terms: S.president.terms || 1 };
   if (o.pres) {
-    const p = { states: {}, evD: 0, evR: 0, popD: 0, popR: 0, popI: 0, winner: 'D', inc: 'D', ...o.pres };
+    const p = { states: {}, evD: 0, evR: 0, evI: 0, popD: 0, popR: 0, popI: 0, winner: 'D', inc: 'D', ...o.pres };
     p.names = { D: '—', R: '—', ...(o.pres.names || {}) };
     p.states = Object.fromEntries(Object.entries(p.states || {}).filter(([c, s]) => EV[c] && Array.isArray(s) && s.length >= 2).map(([c, s]) => [c, [+s[0] || 0, +s[1] || 0, +s[2] || 0]]));
-    if (p.winner !== 'D' && p.winner !== 'R') p.winner = p.evD >= p.evR ? 'D' : 'R';
-    if (p.inc !== 'D' && p.inc !== 'R') p.inc = p.winner;
+    if (!['D', 'R', 'I'].includes(p.winner) || (p.winner === 'I' && !p.names.I)) p.winner = p.evD >= p.evR ? 'D' : 'R';
+    if (!['D', 'R', 'I'].includes(p.inc)) p.inc = p.winner;
+    if (p.inc === 'I' && !p.names.I) p.names.I = '—';
     o.pres = Object.keys(p.states).length ? p : null;
   }
   return o;
@@ -142,7 +160,7 @@ function resExplorer(rec, back) {
   if (!rec) { if (back) back(); return; }
   rec = resNorm(rec);
   const tabs = [rec.pres && 'pres', 'senate', 'house', rec.gov && rec.gov.length && 'gov', (rec.campaign || rec.conventions || rec.midterm) && 'campaign', 'table'].filter(Boolean);
-  RESX = { rec, tabs, tab: tabs[0], sort: null, sel: null, back, pdAt: Date.now() }; // pdAt: the click that trails the opening tap must not count
+  RESX = { rec, tabs, tab: tabs[0], sort: null, sel: null, hf: 'all', back, pdAt: Date.now() }; // pdAt: the click that trails the opening tap must not count
   let el = $('#night');
   if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
   hideModal(); el.classList.remove('hidden');
@@ -154,11 +172,12 @@ function resXEvent(e) {
   // a tap fires pointerdown and then click, and the pointerdown re-renders, so the click lands on a fresh node: act once.
   // Clicks are still honored on their own (keyboard activation, or a browser that never sent the pointerdown).
   if (e.type === 'click' && Date.now() - X.pdAt < 700) return;
-  const t = e.target.closest('[data-rtab],[data-sort],[data-code],#ndone,#resback');
+  const t = e.target.closest('[data-rtab],[data-sort],[data-hf],[data-code],#ndone,#resback');
   if (!t) return;
   if (e.type === 'pointerdown') X.pdAt = Date.now();
   if (t.id === 'ndone' || t.id === 'resback') return resXClose();
   if (t.dataset.rtab) { X.tab = t.dataset.rtab; X.sel = null; sfx.click(); }
+  else if (t.dataset.hf) { if (t.dataset.hf === 'nosel') X.sel = null; else X.hf = t.dataset.hf; sfx.click(); }
   else if (t.dataset.sort) { const k = t.dataset.sort; X.sort = X.sort && X.sort.k === k ? { k, d: -X.sort.d } : { k, d: k === 'state' ? 1 : -1 }; sfx.click(); }
   else if (t.dataset.code) { X.sel = X.sel === t.dataset.code ? null : t.dataset.code; sfx.click(); }
   resXRender();
@@ -187,36 +206,41 @@ const resPv = (dn, d, rn, r, i, iLabel) => { const tot = d + r + (i || 0) || 1; 
 function resSelDetail(R, code) {
   if (!code) return '';
   const P = R.pres, bits = [];
-  if (P && P.states[code]) { const s = P.states[code], w = resPresW(P, code), sw = resSwingOf(P, code); bits.push(`<b>President</b> · ${EV[code]} EV · ${resNm(P.names[w], w)} ${resMarginTag(w, s[0] - s[1])} · D ${pct(s[0])} · R ${pct(s[1])}${s[2] ? ` · I ${pct(s[2])}` : ''}${sw != null ? ` · swing ${resSwing(sw)} since ${P.prev.year}` : ''}`); }
+  if (P && P.states[code]) { const s = P.states[code], w = resPresW(P, code), sw = resSwingOf(P, code); bits.push(`<b>President</b> · ${EV[code]} EV · ${resNm(P.names[w], w)} ${resMarginTag(w, resPresWM(P, code))} · D ${pct(s[0])} · R ${pct(s[1])}${s[2] ? ` · I ${pct(s[2])}` : ''}${sw != null ? ` · swing ${resSwing(sw)} since ${P.prev.year}` : ''}`); }
   for (const r of R.senate.races.filter(r => r.code === code)) bits.push(`<b>Senate${r.cls != null ? ` (Class ${r.cls})` : ''}</b> · ${resNm(r.wName, r.wParty)} ${pct(r.wPct)} def. ${r.lName} (${r.lParty}) ${pct(r.lPct)}${r.c3 ? ` and ${r.c3[1]} (${r.c3[0]}) ${pct(r.c3[2])}` : ''} · ${r.flip ? '<span class="call flip">FLIP</span>' : r.open ? 'open seat held' : 'hold'}`);
-  const h = R.house.byState && R.house.byState[code]; if (h && h[1]) bits.push(`<b>House</b> · ${h[1]} seat${h[1] > 1 ? 's' : ''}: <b style="color:${PARTY.D.color}">${h[0]} D</b> – <b style="color:${PARTY.R.color}">${h[1] - h[0]} R</b>${h[0] !== h[2] ? ` · ${h[0] > h[2] ? 'D' : 'R'} +${Math.abs(h[0] - h[2])}` : ' · no change'}${h[3] != null ? ` · D ${pct(h[3])} · R ${pct(h[4])}` : ''}`);
+  const h = R.house.byState && R.house.byState[code], hf = resDists({ dist: { [code]: (R.house.dist || {})[code] || [] } }).filter(x => x.flip);
+  if (h && h[1]) bits.push(`<b>House</b> · ${h[1]} seat${h[1] > 1 ? 's' : ''}: <b style="color:${PARTY.D.color}">${h[0]} D</b> – <b style="color:${PARTY.R.color}">${h[1] - h[0]} R</b>${h[0] !== h[2] ? ` · ${h[0] > h[2] ? 'D' : 'R'} +${Math.abs(h[0] - h[2])}` : ' · no change'}${h[3] != null ? ` · D ${pct(h[3])} · R ${pct(h[4])}` : ''}${hf.length ? ` · flips: ${hf.map(x => `<b style="color:${PARTY[x.w].color}">${x.id}</b>`).join(', ')}` : ''}`);
   for (const g of (R.gov || []).filter(g => g.code === code)) bits.push(`<b>Governor</b> · ${resNm(g.wName, g.wParty)} ${pct(g.wPct)} def. ${g.lName} (${g.lParty}) ${pct(g.lPct)} · ${g.flip ? '<span class="call flip">FLIP</span>' : 'hold'}`);
   return resCard(`${stName(code)} · ${leanLabel(stLean(code))}`, bits.length ? `<div class="res-list">${bits.map(b => `<div class="res-row" data-code="${code}"><span>${b}</span></div>`).join('')}</div>` : '<div class="nsub">No contest here this year.</div>');
 }
 
 /* ---- President ---- */
 function resXPres(R, X) {
-  const P = R.pres, w = P.winner, l = other(w), tip = resPresTip(P), bells = resPresBells(P), tot = P.popD + P.popR + (P.popI || 0) || 1;
-  const pvW = P.popD >= P.popR ? 'D' : 'R', gap = Math.abs(P.popD - P.popR), pts = gap / tot * 100;
+  const P = R.pres, w = P.winner, E = resEV(P), tip = resPresTip(P), bells = resPresBells(P), tot = P.popD + P.popR + (P.popI || 0) || 1, ord = resEvOrder(P), others = ord.filter(p => p !== w);
+  const V = { D: P.popD, R: P.popR, I: P.popI || 0 }, pvW = resPvWinner(P), pvL = ['D', 'R', 'I'].filter(p => p !== pvW).sort((a, b) => V[b] - V[a])[0], gap = V[pvW] - V[pvL], pts = gap / tot * 100;
+  const iw = Object.keys(P.states).filter(c => resPresW(P, c) === 'I');
   const map = usMap({ cls: 'res-map',
-    fill: c => { const m = resPresM(P, c); if (m == null) return null; const s = shade(m > 0 ? 'D' : 'R', m); return { c: s.fill, op: s.op }; },
+    fill: c => resPresShade(P, c),
     sub: c => { const sw = resSwingOf(P, c); return P.states[c] ? `${EV[c]}${sw != null ? ` ${sw >= 0 ? 'D' : 'R'}+${Math.abs(sw).toFixed(0)}` : ''}` : ''; },
     ring: c => X.sel === c ? '#fff' : c === tip ? '#f6d27a' : null,
     attr: c => P.states[c] ? `data-code="${c}"` : '',
-    title: c => P.states[c] ? `${stName(c)}: ${P.names[resPresW(P, c)]} +${Math.abs(resPresM(P, c)).toFixed(1)} · ${EV[c]} EV${c === tip ? ' · tipping point' : ''}` : stName(c) });
+    title: c => P.states[c] ? `${stName(c)}: ${P.names[resPresW(P, c)]} +${resPresWM(P, c).toFixed(1)} · ${EV[c]} EV${c === tip ? ' · tipping point' : ''}` : stName(c) });
   const carried = Object.keys(P.states).filter(c => resPresW(P, c) === w).length;
   const closest = resPresClosest(P, 10);
   const swings = Object.keys(P.states).map(c => [c, resSwingOf(P, c)]).filter(x => x[1] != null).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 8);
-  const regions = Object.entries(RES_REGIONS).map(([name, codes]) => { let d = 0, r = 0, i = 0, ev = { D: 0, R: 0 }; for (const c of codes) { const s = P.states[c]; if (!s) continue; const pop = POP[c] || 1; d += s[0] * pop; r += s[1] * pop; i += s[2] * pop; ev[resPresW(P, c)] += EV[c] || 0; } return { name, d, r, i, ev }; });
-  const left = `${resCard('', `<div class="res-h" style="color:${PARTY[w].color}">${P.names[w].toUpperCase()} ${w === P.inc && P.running ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div><div class="res-dek">${resDeadlocked(P) ? `269–269 · chosen by the House${P.houseVote ? `: ${resHouseTxt(P)}` : ''}` : `${Math.max(P.evD, P.evR)} electoral votes to ${Math.min(P.evD, P.evR)}`} · ${carried} of 51 contests · ${pvW === w ? 'won the popular vote' : '<span class="res-split">lost the popular vote</span>'} by ${pts.toFixed(1)} points</div>${map}<div class="nsub">Shade = margin · labels: electoral votes${P.prev ? ` and the swing since ${P.prev.year}` : ''} · gold ring: the tipping-point state · click a state</div>`)}
-    ${resCard('Electoral College', barChart(`${P.names.D} vs ${P.names.R}`, { D: P.evD, R: P.evR, und: 0 }, 538, 270, '270 to win') + `<div class="res-kpis">${resKpi('Tipping point', tip ? stName(tip) : '—', tip ? `${EV[tip]} EV · ${resPresW(P, tip)} +${Math.abs(resPresM(P, tip)).toFixed(1)}` : 'no majority')}${resKpi('Closest state', stName(closest[0]), `${resPresW(P, closest[0])} +${Math.abs(resPresM(P, closest[0])).toFixed(1)}`)}${resKpi('States carried', `${carried}–${51 - carried}`, 'of 50 states + DC')}${resKpi('Turnout', nfmt(tot), 'votes cast')}${P.popI ? resKpi('Third party', pct(P.popI / tot * 100), `${P.names.I} (I)`) : resKpi('Third party', '—', 'none of note')}</div>`)}
-    ${resCard('Popular vote', resPv(P.names.D, P.popD, P.names.R, P.popR, P.popI, P.names.I) + `<div class="res-callout">${pvW !== w ? `<span class="res-split">⚠ Split decision:</span> <b>${P.names[w]}</b> wins the Electoral College ${Math.max(P.evD, P.evR)}–${Math.min(P.evD, P.evR)} while losing the popular vote by <b>${nfmt(gap)}</b> votes (${pts.toFixed(1)} points).` : `<b>${P.names[w]}</b> wins both the Electoral College and the popular vote, by ${nfmt(gap)} votes (${pts.toFixed(1)} points).`}<br><small>${nfmt(P.popD)} D · ${nfmt(P.popR)} R${P.popI ? ` · ${nfmt(P.popI)} I` : ''}</small></div>`)}
-    ${resCard('Regional popular vote', `<div class="res-regions">${regions.map(g => `<div class="res-region"><b>${g.name}</b>${resPv('D', g.d, 'R', g.r, g.i)}<span style="color:${PARTY.D.color}">D ${g.ev.D} EV</span> · <span style="color:${PARTY.R.color}">R ${g.ev.R} EV</span></div>`).join('')}</div><div class="nsub">Shares weighted by state population.</div>`)}`;
+  const regions = Object.entries(RES_REGIONS).map(([name, codes]) => { let d = 0, r = 0, i = 0, ev = { D: 0, R: 0, I: 0 }; for (const c of codes) { const s = P.states[c]; if (!s) continue; const pop = POP[c] || 1; d += s[0] * pop; r += s[1] * pop; i += s[2] * pop; ev[resPresW(P, c)] += EV[c] || 0; } return { name, d, r, i, ev }; });
+  const evLine = `${E[w]} electoral votes to ${others.filter(p => p !== 'I' || E.I).map(p => E[p]).join(' and ')}`;
+  const tag = (c) => resMarginTag(resPresW(P, c), resPresWM(P, c));
+  const left = `${resCard('', `<div class="res-h" style="color:${PARTY[w].color}">${P.names[w].toUpperCase()} ${w === P.inc && P.running ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div><div class="res-dek">${w === 'I' ? `<b style="color:${PARTY.I.color}">${P.third && P.third.label && P.third.label !== 'Independent' ? P.third.label : 'Independent'}</b> · ` : ''}${resDeadlocked(P) ? `${P.evD === 269 && P.evR === 269 ? '269–269' : `no majority (${resEvTxt(P)})`} · chosen by the House${P.houseVote ? `: ${resHouseTxt(P)}` : ''}` : evLine} · ${carried} of 51 contests · ${pvW === w ? 'won the popular vote' : '<span class="res-split">lost the popular vote</span>'} by ${pts.toFixed(1)} points</div>${map}<div class="nsub">Shade = margin · labels: electoral votes${P.prev ? ` and the swing since ${P.prev.year}` : ''} · gold ring: the tipping-point state${iw.length ? ` · <span style="color:${PARTY.I.color}">purple: carried by ${P.names.I}</span>` : ''} · click a state</div>`)}
+    ${resCard('Electoral College', barChart(`${P.names.D} vs ${P.names.R}${E.I ? ` vs ${P.names.I}` : ''}`, { D: E.D, R: E.R, I: E.I, und: 0 }, 538, 270, '270 to win', '', true) + `<div class="res-kpis">${resKpi('Tipping point', tip ? stName(tip) : '—', tip ? `${EV[tip]} EV · ${resPresW(P, tip)} +${resPresWM(P, tip).toFixed(1)}` : 'no majority')}${resKpi('Closest state', stName(closest[0]), `${resPresW(P, closest[0])} +${resPresWM(P, closest[0]).toFixed(1)}`)}${resKpi('States carried', `${carried}–${51 - carried}`, 'of 50 states + DC')}${resKpi('Turnout', nfmt(tot), 'votes cast')}${P.popI ? resKpi('Third party', pct(P.popI / tot * 100), `${resThirdName(P)}${E.I ? ` · ${E.I} EV` : ''}`) : resKpi('Third party', '—', 'none of note')}</div>`)}
+    ${resCard('Popular vote', resPv(P.names.D, P.popD, P.names.R, P.popR, P.popI, P.names.I) + `<div class="res-callout">${pvW !== w ? `<span class="res-split">⚠ Split decision:</span> <b>${P.names[w]}</b> wins the White House while ${P.names[pvW]} wins the popular vote by <b>${nfmt(gap)}</b> votes (${pts.toFixed(1)} points).` : `<b>${P.names[w]}</b> wins both the Electoral College and the popular vote, by ${nfmt(gap)} votes (${pts.toFixed(1)} points).`}<br><small>${nfmt(P.popD)} D · ${nfmt(P.popR)} R${P.popI ? ` · ${nfmt(P.popI)} I` : ''}</small></div>`)}
+    ${resCard('Regional popular vote', `<div class="res-regions">${regions.map(g => `<div class="res-region"><b>${g.name}</b>${resPv('D', g.d, 'R', g.r, g.i)}<span style="color:${PARTY.D.color}">D ${g.ev.D} EV</span> · <span style="color:${PARTY.R.color}">R ${g.ev.R} EV</span>${g.ev.I ? ` · <span style="color:${PARTY.I.color}">I ${g.ev.I} EV</span>` : ''}</div>`).join('')}</div><div class="nsub">Shares weighted by state population.</div>`)}`;
   const right = `${resSelDetail(R, X.sel)}${resCard('The story', `<div class="res-narr">${resNarrative(R)}</div>`)}
-    ${resCard('The 10 states that decided it', `<div class="res-list">${closest.map(c => resRow(c, `<span><b>${c}</b> ${stName(c)} · ${EV[c]} EV${c === tip ? '<span class="res-tag">TIPPING POINT</span>' : ''}${bells.includes(c) ? '<span class="res-tag">BELLWETHER</span>' : ''}</span>`, resMarginTag(resPresW(P, c), resPresM(P, c)), X.sel === c)).join('')}</div>`)}
-    ${swings.length ? resCard(`Biggest swings since ${P.prev.year}`, `<div class="res-list">${swings.map(([c, sw]) => resRow(c, `<span><b>${c}</b> ${stName(c)} · now ${resMarginTag(resPresW(P, c), resPresM(P, c))}</span>`, resSwing(sw), X.sel === c)).join('')}</div>`) : resCard('Swings', '<div class="nsub">The first presidential election on record: swings appear from the next one.</div>')}
-    ${resCard('Bellwethers', bells.length ? `<div class="res-chips">${bells.map(c => `<span class="res-chip ${X.sel === c ? 'on' : ''}" data-code="${c}">${stName(c)} · ${resPresW(P, c)} +${Math.abs(resPresM(P, c)).toFixed(1)}</span>`).join('')}</div><div class="nsub">States that voted with the winner and mirrored the national popular vote within a point and a half.</div>` : '<div class="nsub">No state mirrored the national vote this time.</div>')}
-    ${resCard('Home turf', `<div class="res-list">${['D', 'R'].map(p => `<div class="res-row" ${P.homes && P.homes[p] ? `data-code="${P.homes[p]}"` : ''}><span>${resNm(P.names[p], p)}${P.offices && P.offices[p] ? ` · ${P.offices[p]}` : ''}<br><small style="color:var(--dim)">home: ${P.homes && P.homes[p] ? stName(P.homes[p]) : 'unknown'}${P.vps && P.vps[p] ? ` · running mate ${P.vps[p].name}${P.vps[p].state ? ` of ${stName(P.vps[p].state)}` : ''}` : ''}</small></span><span class="mg">${P.homes && P.homes[p] ? (resPresW(P, P.homes[p]) === p ? '<span style="color:var(--yes)">carried home</span>' : '<span style="color:var(--no)">lost at home</span>') : ''}</span></div>`).join('')}</div>`)}
+    ${iw.length ? resCard(`States carried by ${resThirdName(P)} · ${iw.length}`, `<div class="res-list">${iw.sort((a, b) => EV[b] - EV[a]).map(c => resRow(c, `<span><b>${c}</b> ${stName(c)} · ${EV[c]} EV · ${pct(P.states[c][2])} to D ${pct(P.states[c][0])}, R ${pct(P.states[c][1])}</span>`, tag(c), X.sel === c)).join('')}</div>`) : ''}
+    ${resCard('The 10 states that decided it', `<div class="res-list">${closest.map(c => resRow(c, `<span><b>${c}</b> ${stName(c)} · ${EV[c]} EV${c === tip ? '<span class="res-tag">TIPPING POINT</span>' : ''}${bells.includes(c) ? '<span class="res-tag">BELLWETHER</span>' : ''}</span>`, tag(c), X.sel === c)).join('')}</div>`)}
+    ${swings.length ? resCard(`Biggest swings since ${P.prev.year}`, `<div class="res-list">${swings.map(([c, sw]) => resRow(c, `<span><b>${c}</b> ${stName(c)} · now ${tag(c)}</span>`, resSwing(sw), X.sel === c)).join('')}</div>`) : resCard('Swings', '<div class="nsub">The first presidential election on record: swings appear from the next one.</div>')}
+    ${resCard('Bellwethers', bells.length ? `<div class="res-chips">${bells.map(c => `<span class="res-chip ${X.sel === c ? 'on' : ''}" data-code="${c}">${stName(c)} · ${resPresW(P, c)} +${resPresWM(P, c).toFixed(1)}</span>`).join('')}</div><div class="nsub">States that voted with the winner and mirrored the national popular vote within a point and a half.</div>` : '<div class="nsub">No state mirrored the national vote this time.</div>')}
+    ${resCard('Home turf', `<div class="res-list">${['D', 'R', 'I'].filter(p => P.names[p] && (p !== 'I' || (P.homes && P.homes.I))).map(p => `<div class="res-row" ${P.homes && P.homes[p] ? `data-code="${P.homes[p]}"` : ''}><span>${resNm(P.names[p], p)}${P.offices && P.offices[p] ? ` · ${P.offices[p]}` : ''}<br><small style="color:var(--dim)">home: ${P.homes && P.homes[p] ? stName(P.homes[p]) : 'unknown'}${P.vps && P.vps[p] ? ` · running mate ${P.vps[p].name}${P.vps[p].state ? ` of ${stName(P.vps[p].state)}` : ''}` : ''}</small></span><span class="mg">${P.homes && P.homes[p] && P.states[P.homes[p]] ? (resPresW(P, P.homes[p]) === p ? '<span style="color:var(--yes)">carried home</span>' : '<span style="color:var(--no)">lost at home</span>') : ''}</span></div>`).join('')}</div>`)}
     ${resWaveCard(R)}`;
   return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${right}</div></div>`;
 }
@@ -256,20 +280,47 @@ function resXSenate(R, X) {
 }
 
 /* ---- House ---- */
+const resDistId = (c, n, len) => len === 1 ? `${c}-AL` : `${c}-${String(n).padStart(2, '0')}`;
+const resLeanTxt = l => l == null ? '—' : Math.abs(l) < 0.5 ? 'EVEN' : `${l > 0 ? 'D' : 'R'}+${Math.abs(l).toFixed(0)}`;
+// a record's districts, flattened: { c, id, w, m (D-positive), flip, open, prev, lean, name, loser }
+function resDists(H) {
+  const out = [];
+  for (const [c, L] of Object.entries(H.dist || {})) if (Array.isArray(L)) L.forEach((a, i) => { if (Array.isArray(a) && (a[0] === 'D' || a[0] === 'R')) out.push({ c, id: resDistId(c, i + 1, L.length), w: a[0], m: +a[1] || 0, flip: !!(a[2] & 1), open: !!(a[2] & 2), prev: a[3] == null ? null : +a[3], lean: a[4] == null ? null : +a[4], name: a[5] || '—', loser: a[6] || null }); });
+  return out;
+}
 function resXHouse(R, X) {
-  const H = R.house, b = H.before || {}, a = H.after, was = resMaj(b), now = resMaj(a), by = H.byState || {};
-  const map = usMap({ cls: 'res-map', fill: c => { const s = by[c]; if (!s || !s[1]) return null; const sh = s[0] / s[1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 }; }, sub: c => by[c] && by[c][1] ? `${by[c][0]}–${by[c][1] - by[c][0]}` : '', ring: c => X.sel === c ? '#fff' : by[c] && by[c][0] !== by[c][2] ? '#f6d27a' : null, attr: c => by[c] && by[c][1] ? `data-code="${c}"` : '', title: c => by[c] && by[c][1] ? `${stName(c)}: ${by[c][0]} D – ${by[c][1] - by[c][0]} R` : stName(c) });
+  const H = R.house, b = H.before || {}, a = H.after, was = resMaj(b), now = resMaj(a), by = H.byState || {}, all = resDists(H);
+  const map = usMap({ cls: 'res-map', fill: c => { const s = by[c]; if (!s || !s[1]) return null; const sh = s[0] / s[1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 }; }, sub: c => by[c] && by[c][1] ? `${by[c][0]}–${by[c][1] - by[c][0]}` : '', ring: c => X.sel === c ? '#fff' : (all.length ? all.some(x => x.c === c && x.flip) : by[c] && by[c][0] !== by[c][2]) ? '#f6d27a' : null, attr: c => by[c] && by[c][1] ? `data-code="${c}"` : '', title: c => by[c] && by[c][1] ? `${stName(c)}: ${by[c][0]} D – ${by[c][1] - by[c][0]} R` : stName(c) });
   const st = c => ({ v: stName(c), h: `<b>${c}</b> ${stName(c)}` }), num = (v, h) => ({ v, h: h == null ? String(v) : h });
-  const cols = [{ k: 'state', l: 'State' }, { k: 'n', l: 'Seats', num: 1 }, { k: 'd', l: 'D', num: 1 }, { k: 'r', l: 'R', num: 1 }, { k: 'dp', l: 'D %', num: 1 }, { k: 'rp', l: 'R %', num: 1 }, { k: 'ch', l: 'Change', num: 1 }];
-  const rows = Object.entries(by).filter(([, s]) => s[1]).map(([c, s]) => { const ch = s[0] - s[2]; return { code: c, c: { state: st(c), n: num(s[1]), d: num(s[0], `<b style="color:${PARTY.D.color}">${s[0]}</b>`), r: num(s[1] - s[0], `<b style="color:${PARTY.R.color}">${s[1] - s[0]}</b>`), dp: s[3] != null ? num(s[3], `<span style="color:${PARTY.D.color}">${s[3].toFixed(1)}</span>`) : null, rp: s[4] != null ? num(s[4], `<span style="color:${PARTY.R.color}">${s[4].toFixed(1)}</span>`) : null, ch: num(ch, ch ? `<b style="color:${ch > 0 ? PARTY.D.color : PARTY.R.color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>` : '<span style="color:var(--dim)">—</span>') } }; });
   const gains = Object.entries(by).map(([c, s]) => [c, s[0] - s[2]]).filter(x => x[1]).sort((x, y) => Math.abs(y[1]) - Math.abs(x[1]));
-  const cells = []; for (const [c, s] of Object.entries(by).sort((x, y) => (y[1][3] || 0) - (y[1][4] || 0) - ((x[1][3] || 0) - (x[1][4] || 0)))) { const m = Math.abs((s[3] || 0) - (s[4] || 0)), gain = s[0] - s[2]; for (let i = 0; i < s[1]; i++) cells.push({ p: i < s[0] ? 'D' : 'R', m, code: c, flip: gain > 0 ? i >= s[2] && i < s[0] : i >= s[0] && i < s[2], title: `${stName(c)}: ${s[0]}D–${s[1] - s[0]}R` }); }
   const net = (a[R.side] || 0) - (b[R.side] || 0);
-  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'KEEP' : 'WIN'} THE HOUSE` : 'HOUSE DEADLOCKED'}</div><div class="res-dek">All 435 seats · ${H.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${H.before ? ` · ${PARTY[R.side].short} ${resSigned(net, 0)}` : ''} · ${gains.length} states shifted</div>${map}<div class="nsub">Labels: D–R seats · gold ring: delegation changed · click a state</div>`)}
-    ${resCard('Balance of power', resSnakeHTML(cells, 218, 435, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span> · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 218 for control · seats grouped by state, sorted by the state's margin, gains outlined in gold`))}
-    ${H.pop ? resCard('National House vote', resPv('Democrats', H.pop[0], 'Republicans', H.pop[1]) + `<div class="nsub">Two-party share of all House ballots; ${H.pop[0] > H.pop[1] ? 'Democrats' : 'Republicans'} led by ${Math.abs(H.pop[0] - H.pop[1]).toFixed(1)} points and ${(now && (H.pop[0] > H.pop[1]) === (now === 'D')) ? 'won the chamber' : 'still lost the chamber'}.</div>`) : ''}`;
-  const right = `${resSelDetail(R, X.sel)}${resCard(`Where the delegations moved · ${gains.length}`, gains.length ? `<div class="res-list">${gains.slice(0, 12).map(([c, g]) => resRow(c, `<span><b>${c}</b> ${stName(c)} · now ${by[c][0]}D–${by[c][1] - by[c][0]}R</span>`, `<b style="color:${g > 0 ? PARTY.D.color : PARTY.R.color}">${g > 0 ? 'D' : 'R'} +${Math.abs(g)}</b>`, X.sel === c)).join('')}</div>` : '<div class="nsub">Every state sent back the same split.</div>')}
-    ${resCard('State by state', `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'n', d: -1 })}</div>`)}`;
+  let cells = [];
+  if (all.length) cells = all.map(x => ({ p: x.w, m: Math.abs(x.m), code: x.c, flip: x.flip, title: `${x.id}: ${x.name} (${x.w}) +${Math.abs(x.m).toFixed(1)}${x.flip ? ' · FLIP' : ''}` }));
+  else for (const [c, s] of Object.entries(by).sort((x, y) => (y[1][3] || 0) - (y[1][4] || 0) - ((x[1][3] || 0) - (x[1][4] || 0)))) { const m = Math.abs((s[3] || 0) - (s[4] || 0)), gain = s[0] - s[2]; for (let i = 0; i < s[1]; i++) cells.push({ p: i < s[0] ? 'D' : 'R', m, code: c, flip: gain > 0 ? i >= s[2] && i < s[0] : i >= s[0] && i < s[2], title: `${stName(c)}: ${s[0]}D–${s[1] - s[0]}R` }); }
+  const flips = all.filter(x => x.flip), fl = p => flips.filter(x => x.w === p).length, beaten = flips.filter(x => !x.open), opens = all.filter(x => x.open), closest = all.slice().sort((x, y) => Math.abs(x.m) - Math.abs(y.m))[0];
+  const kpis = all.length ? `<div class="res-kpis hd-kpis">${resKpi('Pickups', `<span style="color:${PARTY.D.color}">D +${fl('D')}</span> · <span style="color:${PARTY.R.color}">R +${fl('R')}</span>`, `${flips.length} seats changed hands`)}${resKpi('Incumbents defeated', beaten.length, `${beaten.filter(x => x.w === 'R').length} D · ${beaten.filter(x => x.w === 'D').length} R`)}${resKpi('Open seats', opens.length, `${opens.filter(x => x.flip).length} flipped`)}${closest ? resKpi('Closest race', closest.id, `${closest.w} +${Math.abs(closest.m).toFixed(1)}`) : ''}</div>` : '';
+  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'KEEP' : 'WIN'} THE HOUSE` : 'HOUSE DEADLOCKED'}</div><div class="res-dek">All 435 seats · ${H.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${H.before ? ` · ${PARTY[R.side].short} ${resSigned(net, 0)}` : ''} · ${all.length ? `${flips.length} seats flipped` : `${gains.length} states shifted`}</div>${map}<div class="nsub">Labels: D–R seats · gold ring: ${all.length ? 'a seat changed hands' : 'delegation changed'} · click a state for its districts</div>${kpis}`)}
+    ${resCard('Balance of power', resSnakeHTML(cells, 218, 435, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span> · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 218 for control · ${all.length ? 'every district sorted by margin' : 'seats grouped by state, sorted by the state\'s margin'}, gains outlined in gold`))}
+    ${H.pop ? resCard('National House vote', resPv('Democrats', H.pop[0], 'Republicans', H.pop[1]) + `<div class="nsub">Two-party share of all House ballots; ${H.pop[0] > H.pop[1] ? 'Democrats' : 'Republicans'} led by ${Math.abs(H.pop[0] - H.pop[1]).toFixed(1)} points and ${(now && (H.pop[0] > H.pop[1]) === (now === 'D')) ? 'won the chamber' : 'still lost the chamber'}.</div>`) : ''}
+    ${resCard(`Seats changed by state · ${gains.length}`, gains.length ? `<div class="res-list">${gains.map(([c, g]) => resRow(c, `<span><b>${c}</b> ${stName(c)} · now ${by[c][0]}D–${by[c][1] - by[c][0]}R${all.length ? ` <small style="color:var(--dim)">${all.filter(x => x.c === c && x.flip).map(x => x.id).join(', ')}</small>` : ''}</span>`, `<b style="color:${g > 0 ? PARTY.D.color : PARTY.R.color}">${g > 0 ? 'D' : 'R'} +${Math.abs(g)}</b>`, X.sel === c)).join('')}</div>` : '<div class="nsub">Every state sent back the same split.</div>')}`;
+  if (!all.length) {
+    // an older record without districts: the state-by-state table
+    const cols = [{ k: 'state', l: 'State' }, { k: 'n', l: 'Seats', num: 1 }, { k: 'd', l: 'D', num: 1 }, { k: 'r', l: 'R', num: 1 }, { k: 'dp', l: 'D %', num: 1 }, { k: 'rp', l: 'R %', num: 1 }, { k: 'ch', l: 'Change', num: 1 }];
+    const rows = Object.entries(by).filter(([, s]) => s[1]).map(([c, s]) => { const ch = s[0] - s[2]; return { code: c, c: { state: st(c), n: num(s[1]), d: num(s[0], `<b style="color:${PARTY.D.color}">${s[0]}</b>`), r: num(s[1] - s[0], `<b style="color:${PARTY.R.color}">${s[1] - s[0]}</b>`), dp: s[3] != null ? num(s[3], `<span style="color:${PARTY.D.color}">${s[3].toFixed(1)}</span>`) : null, rp: s[4] != null ? num(s[4], `<span style="color:${PARTY.R.color}">${s[4].toFixed(1)}</span>`) : null, ch: num(ch, ch ? `<b style="color:${ch > 0 ? PARTY.D.color : PARTY.R.color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>` : '<span style="color:var(--dim)">—</span>') } }; });
+    return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${resSelDetail(R, X.sel)}${resCard('State by state', `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'n', d: -1 })}</div>`)}</div></div>`;
+  }
+  // upsets: seats won against the district's lean (or, without one, the narrowest flips)
+  const against = x => x.lean == null ? -Math.abs(x.m) : (x.w === 'D' ? -x.lean : x.lean);
+  const upsets = flips.slice().sort((x, y) => against(y) - against(x)).slice(0, 8);
+  const mine = X.sel ? all.filter(x => x.c === X.sel) : [];
+  const seatTag = x => x.flip ? `<span class="call flip">${x.w} FLIP</span>` : x.open ? '<span class="hd-open">OPEN</span>' : '<span class="hd-inc">HOLD</span>';
+  const hf = X.hf || 'all', keep = x => (!X.sel || x.c === X.sel) && (hf === 'flips' ? x.flip : hf === 'close' ? Math.abs(x.m) < 5 : hf === 'open' ? x.open : true), shown = all.filter(keep);
+  const cols = [{ k: 'dist', l: 'District' }, { k: 'win', l: 'Winner' }, { k: 'margin', l: 'Margin', num: 1 }, { k: 'swing', l: 'Swing', num: 1 }, { k: 'lean', l: 'Lean', num: 1 }, { k: 'seat', l: 'Seat', num: 1 }];
+  const rows = shown.map(x => ({ code: x.c, cls: x.flip ? 'hd-fliprow' : '', c: { dist: { v: x.id, h: `<b>${x.id}</b>` }, win: { v: x.name, h: `${resNm(x.name, x.w)}${x.flip && x.loser ? ` <small style="color:var(--dim)">${x.open ? 'over' : 'def.'} ${x.loser}</small>` : ''}` }, margin: num(Math.abs(x.m), hdTag(x.w, x.m)), swing: x.prev != null ? num(x.m - x.prev, resSwing(x.m - x.prev)) : null, lean: x.lean != null ? num(x.lean, `<span style="color:${x.lean >= 0 ? PARTY.D.color : PARTY.R.color}">${resLeanTxt(x.lean)}</span>`) : null, seat: num(x.flip ? 2 : x.open ? 1 : 0, seatTag(x)) } }));
+  const chips = `<div class="hd-filters">${[['all', `All ${all.length}`], ['flips', `Flips ${flips.length}`], ['close', `Within 5 pts ${all.filter(x => Math.abs(x.m) < 5).length}`], ['open', `Open seats ${opens.length}`]].map(([k, l]) => `<span class="res-chip ${hf === k ? 'on' : ''}" data-hf="${k}">${l}</span>`).join('')}${X.sel ? `<span class="res-chip on" data-hf="nosel">✕ ${stName(X.sel)} only</span>` : '<small style="color:var(--dim)">click a row or a state to see one state</small>'}</div>`;
+  const right = `${resSelDetail(R, X.sel)}${mine.length ? resCard(`${stName(X.sel)} · ${mine.length} district${mine.length > 1 ? 's' : ''}`, `<div class="res-scroll hd-list">${mine.map(x => `<div class="hd-row ${x.flip ? 'flip' : ''}"><span class="hd-id">${x.id}</span><span class="hd-who">${resNm(x.name, x.w)} <small>${x.flip ? (x.loser ? `${x.open ? 'over' : 'unseats'} ${x.loser}` : 'pickup') : x.open ? 'open seat' : 'incumbent'} · lean ${resLeanTxt(x.lean)}</small></span><span class="hd-mg">${hdTag(x.w, x.m)}${seatTag(x)}</span></div>`).join('')}</div>`) : ''}
+    ${resCard(`Biggest upsets · ${upsets.length}`, upsets.length ? `<div class="res-list">${upsets.map(x => resRow(x.c, `<span><b>${x.id}</b> · ${resNm(x.name, x.w)} ${x.open ? 'takes an open seat' : `unseats ${x.loser || 'the incumbent'}`}<br><small style="color:var(--dim)">a ${resLeanTxt(x.lean)} district</small></span>`, hdTag(x.w, x.m), X.sel === x.c)).join('')}</div>` : '<div class="nsub">Not one seat changed hands.</div>')}
+    ${resCard(`Every district · ${shown.length}`, `${chips}<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'dist', d: 1 })}</div>`)}`;
   return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${right}</div></div>`;
 }
 
@@ -393,11 +444,11 @@ function resXTable(R, X) {
   const st = c => ({ v: stName(c), h: `<b>${c}</b> ${stName(c)}` }), num = (v, h) => ({ v, h: h == null ? String(v) : h });
   const cols = [{ k: 'state', l: 'State' }].concat(P ? [{ k: 'pres', l: 'President', num: 1 }, { k: 'pd', l: 'D %', num: 1 }, { k: 'pr', l: 'R %', num: 1 }] : []).concat([{ k: 'sen', l: 'Senate' }, { k: 'house', l: 'House D–R', num: 1 }, { k: 'hch', l: 'Δ', num: 1 }, { k: 'gov', l: 'Governor' }]);
   const rows = codes.map(c => { const m = P ? resPresM(P, c) : null, h = by[c], ch = h ? h[0] - h[2] : 0;
-    return { code: c, c: { state: st(c), pres: m != null ? num(m, resMarginTag(m > 0 ? 'D' : 'R', m)) : null, pd: P && P.states[c] ? num(P.states[c][0], pct(P.states[c][0])) : null, pr: P && P.states[c] ? num(P.states[c][1], pct(P.states[c][1])) : null,
+    return { code: c, c: { state: st(c), pres: m != null ? num(m, resMarginTag(resPresW(P, c), resPresWM(P, c))) : null, pd: P && P.states[c] ? num(P.states[c][0], pct(P.states[c][0])) : null, pr: P && P.states[c] ? num(P.states[c][1], pct(P.states[c][1])) : null,
       sen: sen[c] ? { v: sen[c][0].wName, h: sen[c].map(r => `${resNm(r.wName, r.wParty)} +${r.margin.toFixed(1)}${r.flip ? ' <span class="call flip">FLIP</span>' : ''}`).join('<br>') } : null,
       house: h && h[1] ? num(h[0] / h[1], `<span style="color:${PARTY.D.color}">${h[0]}</span>–<span style="color:${PARTY.R.color}">${h[1] - h[0]}</span>`) : null, hch: h && h[1] ? num(ch, ch ? `<b style="color:${ch > 0 ? PARTY.D.color : PARTY.R.color}">${ch > 0 ? 'D' : 'R'}+${Math.abs(ch)}</b>` : '<span style="color:var(--dim)">—</span>') : null,
       gov: gov[c] ? { v: gov[c].wName, h: `${resNm(gov[c].wName, gov[c].wParty)} +${gov[c].margin.toFixed(1)}${gov[c].flip ? ' <span class="call flip">FLIP</span>' : ''}` } : null } }; });
-  const fill = c => { if (P && P.states[c]) { const m = resPresM(P, c), s = shade(m > 0 ? 'D' : 'R', m); return { c: s.fill, op: s.op }; } if (sen[c]) { const s = shade(sen[c][0].wParty, sen[c][0].margin); return { c: s.fill, op: s.op }; } if (by[c] && by[c][1]) { const sh = by[c][0] / by[c][1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 }; } return null; };
+  const fill = c => { if (P && P.states[c]) return resPresShade(P, c); if (sen[c]) { const s = shade(sen[c][0].wParty, sen[c][0].margin); return { c: s.fill, op: s.op }; } if (by[c] && by[c][1]) { const sh = by[c][0] / by[c][1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 }; } return null; };
   const map = usMap({ cls: 'res-map', fill, sub: c => P && P.states[c] ? `${EV[c]}` : sen[c] ? sen[c][0].wParty : '', ring: c => X.sel === c ? '#fff' : null, attr: c => codes.includes(c) ? `data-code="${c}"` : '', title: c => stName(c) });
   return `<div class="res-grid res-grid-table"><div class="res-col">${resCard(P ? 'The map, by presidential margin' : 'The map, by Senate result', map + '<div class="nsub">Click a row in the table (or a state) to highlight it here.</div>')}${resSelDetail(R, X.sel)}</div>
     <div class="res-col">${resCard(`Every state · ${codes.length}`, `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'state', d: 1 })}</div>`)}</div></div>`;
@@ -407,7 +458,7 @@ function resXTable(R, X) {
 let RESA = { tab: 'elections' };
 function resThumb(R) {
   const P = R.pres, sen = Object.fromEntries(R.senate.races.map(r => [r.code, r])), by = R.house.byState || {};
-  return usMap({ cls: 'res-thumb', fill: c => { if (P && P.states[c]) { const m = resPresM(P, c); return { c: PARTY[m > 0 ? 'D' : 'R'].color, op: 0.5 + Math.min(0.5, Math.abs(m) / 20) }; } if (sen[c]) return { c: PARTY[sen[c].wParty].color, op: 0.85 }; if (by[c] && by[c][1]) { const sh = by[c][0] / by[c][1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.3 + Math.abs(sh - 0.5) }; } return null; }, title: c => stName(c) });
+  return usMap({ cls: 'res-thumb', fill: c => { if (P && P.states[c]) return { c: PARTY[resPresW(P, c)].color, op: 0.5 + Math.min(0.5, resPresWM(P, c) / 20) }; if (sen[c]) return { c: PARTY[sen[c].wParty].color, op: 0.85 }; if (by[c] && by[c][1]) { const sh = by[c][0] / by[c][1]; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.3 + Math.abs(sh - 0.5) }; } return null; }, title: c => stName(c) });
 }
 function resAlmanac(back) {
   const A = (S.archive || []).map(resNorm).reverse(), tab = RESA.tab, P = S.president;
@@ -420,7 +471,7 @@ function resAlmanac(back) {
       <p>${R.pres ? `White House: <b style="color:${PARTY[R.pres.winner].color}">${R.pres.names[R.pres.winner]}</b> (${R.pres.winner}) · popular vote ${pct(R.pres.popD / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} D – ${pct(R.pres.popR / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} R` : `President ${R.president.name} (${R.president.party}) ${R.president.party === resMaj(R.senate.after) ? 'kept' : 'faced'} ${R.president.party === resMaj(R.senate.after) ? 'a friendly Senate' : 'an opposition Senate'}`}${R.wave != null ? ` · wave ${R.wave >= 0 ? PARTY[R.side || S.side].short : PARTY[other(R.side || S.side)].short} +${Math.abs(R.wave).toFixed(1)}` : ''}</p></div>
       <button class="btn primary" data-res="${S.archive.length - 1 - i}">Open →</button></div>`).join('')}</div>` : `<div class="res-empty">The record book is empty. The first election comes in November 2028, after bill #6, and every result from then on is kept here: the map, every race, the swings and the story of the night.</div>`;
   } else if (tab === 'presidents') {
-    const wins = (S.archive || []).filter(R => R.pres).map(R => ({ year: R.year, name: R.pres.names[R.pres.winner], party: R.pres.winner, ev: `${Math.max(R.pres.evD, R.pres.evR)}–${Math.min(R.pres.evD, R.pres.evR)}`, re: R.pres.winner === R.pres.inc && R.pres.running, split: (R.pres.popD >= R.pres.popR ? 'D' : 'R') !== R.pres.winner }));
+    const wins = (S.archive || []).filter(R => R.pres).map(R => ({ year: R.year, name: R.pres.names[R.pres.winner], party: R.pres.winner, ev: resEvTxt(R.pres), re: R.pres.winner === R.pres.inc && R.pres.running, split: resPvWinner(R.pres) !== R.pres.winner }));
     body = `<div class="res-presrow">${portrait(P)}<div><b style="color:${PARTY[P.party].color}">President ${P.name}</b> <small>(${P.party} · ${P.faction})</small><br><small>Term ${P.terms} · approval ${P.approval}%${S.vp ? ` · Vice President ${S.vp.name}` : ''}</small></div><span class="res-years">in office</span></div>
       ${(P.history || []).filter(h => /President/.test(h.t)).slice(-4).map(h => `<p style="margin:4px 0 0;font-size:12px;color:var(--dim)"><b style="color:var(--gold2)">${h.y}</b> ${h.t}</p>`).join('')}
       <hr><b>Presidential elections on record</b>
