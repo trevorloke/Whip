@@ -18,7 +18,7 @@ const IND_LABELS = {
   'Democratic Socialist': { lean: -1, color: '#f472b6', group: 'Socialists', base: 1.8, issues: { welfare: 2, urban: 1, taxes: -1.5, economy: -0.5, security: -1.5 }, line: 'Medicare for all and a union card in every pocket' },
   'Working Families': { lean: -0.6, color: '#fb923c', group: 'Working Families Party', base: 1.5, issues: { welfare: 1.5, economy: 1, urban: 1, rural: 0.5 }, line: 'wages, rent and the price of insulin' },
   'Forward': { lean: 0, color: '#2dd4bf', group: 'Forward Party', base: 2, issues: { tech: 2, economy: 1, urban: 0.5 }, line: 'open primaries, ranked ballots and a government that works' },
-  'Common Ground': { lean: 0.1, color: '#c4b5fd', group: 'Common Ground', base: 2.6, issues: { economy: 1, taxes: 0.5, security: 0.5, welfare: 0.5 }, line: 'the sensible middle both parties abandoned' },
+  'Common Ground': { lean: 0.1, color: '#c4b5fd', group: 'Common Ground Party', base: 2.6, issues: { economy: 1, taxes: 0.5, security: 0.5, welfare: 0.5 }, line: 'the sensible middle both parties abandoned' },
   'Libertarian': { lean: 0.5, color: '#facc15', group: 'Libertarians', base: 2.8, issues: { taxes: 2, economy: 1.5, tech: 1, security: -1.5, welfare: -1 }, line: 'cut the government in half and leave people alone' },
   'Heartland': { lean: 0.7, color: '#d6a35c', group: 'Heartland Party', base: 1.6, issues: { rural: 2, economy: 1, security: 1, urban: -1, tech: -0.5 }, line: 'factories home, farms first and Washington out' },
   'Constitution': { lean: 0.9, color: '#cbd5e1', group: 'Constitutionalists', base: 1.3, issues: { security: 1.5, rural: 1.5, taxes: 2, tech: -1, welfare: -1.5 }, line: 'the Constitution as written, and not a word more' },
@@ -105,7 +105,7 @@ function indField() {
   const field = [], used = new Set();
   // the rare sitting independent senator, and the former senator who quit a party, take the first slots
   const sens = shuffle(S.members.filter(m => m.party === 'I'));
-  const formers = shuffle((S.formers || []).filter(f => f && (f.party === 'D' || f.party === 'R') && f.name !== S.president.name && !(S.vp && f.name === S.vp.name) && !(f.history || []).some(h => /Died/.test(h.t))));
+  const formers = shuffle((S.formers || []).filter(f => f && (f.party === 'D' || f.party === 'R') && f.name !== S.president.name && !(S.vp && f.name === S.vp.name) && !nameTaken(f.name) && !(f.history || []).some(h => /Died/.test(h.t))));
   picks.forEach((label, i) => {
     const L = indLabelInfo(label);
     const sen = sens.find(m => !used.has(m.name) && indLabel(m) === label);
@@ -147,7 +147,7 @@ function indCatchUp(R, label) {
 }
 function indIntroHTML(R) {
   const labels = [...new Set(R.field.map(f => f.label))];
-  return `<div class="ind-pills">${labels.map(l => indPill(l, true)).join('')}</div><p><b>The Independent Ballot Alliance</b> pools ${labels.length > 1 ? `${labels.length} third parties' petition drives` : `the ${indLabelInfo(labels[0]).group}' ballot lines`} into one line on all fifty ballots, and only one candidate gets it${labels.length > 1 ? `: ${labels.map(l => `${l} (${indLabelInfo(l).line})`).join('; ')}` : `, running on ${indLabelInfo(labels[0]).line}`}. Thirteen states vote in party primaries, caucuses and petition conventions (${primN(R.pledged)} pledged delegates); ${primN(R.atLarge)} at-large delegates ${labels.length > 1 ? 'are seated in equal blocks by the member parties' : 'follow the national poll'} at the convention, and ${primN(R.need)} nominate. <i>You can watch this race, but no whip runs it.</i></p>`;
+  return `<div class="ind-pills">${labels.map(l => indPill(l, true)).join('')}</div><p><b>The Independent Ballot Alliance</b> pools ${labels.length > 1 ? `${labels.length} third parties' petition drives` : `the ${indLabelInfo(labels[0]).group.replace(/s$/, 's\'').replace(/([^'])$/, '$1\'s')} ballot lines`} into one line on all fifty ballots, and only one candidate gets it${labels.length > 1 ? `: ${labels.map(l => `${l} (${indLabelInfo(l).line})`).join('; ')}` : `, running on ${indLabelInfo(labels[0]).line}`}. Thirteen states vote in party primaries, caucuses and petition conventions (${primN(R.pledged)} pledged delegates); ${primN(R.atLarge)} at-large delegates ${labels.length > 1 ? 'are seated in equal blocks by the member parties' : 'follow the national poll'} at the convention, and ${primN(R.need)} nominate. <i>You can watch this race, but no whip runs it.</i></p>`;
 }
 function indNoFieldHTML(R, year) {
   return `<div class="race ind-none"><span style="font-size:30px">🗳️</span><span><b>No third-party candidate qualifies for the ${year} ballot.</b><br>The Independent Ballot Alliance will not field a presidential candidate: ${R.why}. Expect a straight two-way race in the fall${S.members.some(m => m.party === 'I') ? ', whatever the Senate\'s independents think of it' : ''}.</span></div>`;

@@ -18,3 +18,4 @@
 .ind-conv td.win{font-weight:800;color:var(--yes)}
 .ind-conv td.out{color:var(--dim);text-decoration:line-through}
 .ind-conv .nsub{margin-top:6px}
+@media (max-width:640px){.camp-tk.ind-tk{flex:1 1 100%}}
