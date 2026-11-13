@@ -255,12 +255,14 @@ function primariesModal(done) {
   // the independents' Ballot Alliance runs its own contests on the same dates (indie.js); IR.none = no field this year
   const IR = typeof indPrimaryFor === 'function' ? indPrimaryFor(year) : null;
   state.I = IR && !IR.none ? IR : null;
+  // an independent caucus endorses in its own Alliance race (no Campaign HQ) and watches both parties'
+  if (IND() && state.I) { state.I.endorsed = myEnd; view = 'I'; } else if (IND()) view = 'D';
   const allDone = () => ['D', 'R'].every(p => !state[p] || state[p].done());
   const myRace = () => state[mine];
   const myCand = () => { const R = myRace(); return R && endorsed ? R.field.find(f => f.name === endorsed) : null; };
-  const playing = () => { const f = myCand(); return !!(f && f.active && !myRace().done()); };
+  const playing = () => { if (IND()) return false; const f = myCand(); return !!(f && f.active && !myRace().done()); };
   const nextLabel = () => { const i = PRIMARY_CAL.findIndex(c => c[0] === lastLabel); return PRIMARY_CAL[i + 1] ? PRIMARY_CAL[i + 1] : null; };
-  const autoMine = () => { const f = myCand(), R = myRace(), nx = nextLabel(); if (f && f.active && R && !R.done() && nx && !R.plans[f.name]) R.plans[f.name] = primAIPlan(R, f, nx[0], nx[1]); };
+  const autoMine = () => { if (IND()) return; const f = myCand(), R = myRace(), nx = nextLabel(); if (f && f.active && R && !R.done() && nx && !R.plans[f.name]) R.plans[f.name] = primAIPlan(R, f, nx[0], nx[1]); };
   const step = () => {
     let lbl = null;
     for (const p of ['D', 'R']) if (state[p] && !state[p].done()) lbl = state[p].nextContest() || lbl;
@@ -312,18 +314,19 @@ function primariesModal(done) {
     S.challenger = false; S.undermine = 0;
     const n = S.nominees, outParty = P.party === 'I' ? 'D' : other(P.party), inParty = P.party === 'I' ? 'R' : P.party;
     const ind = typeof indFinish === 'function' ? indFinish(IR, state, n, year) : null;
+    if (IND() && typeof cauAfterPrimaries === 'function') lines.push(...cauAfterPrimaries(n, endorsed, year));
     const head = p => n[p].contested ? `NO ONE CLINCHES: A CONTESTED ${PARTY[p].name.toUpperCase()} CONVENTION LOOMS` : `${lastName(n[p].p).toUpperCase()} CLINCHES THE ${PARTY[p].name.toUpperCase()} NOMINATION`;
-    const headline = n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
+    const headline = IND() ? (n.I ? `${lastName(n.I.p).toUpperCase()} TAKES THE ALLIANCE LINE` : 'THE ALLIANCE FIELDS NO ONE') : n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
     const para = p => {
       const N = n[p], ru = N.runnerUp;
       if (!state[p]) return `${PARTY[p].short}: ${presTitle()} was renominated without serious opposition and arrives at the convention with all ${primN(totalDel)} delegates in hand.`;
       if (N.contested) return `${PARTY[p].short}: the June primaries end with ${N.name} (${N.office}) at ${primN(N.del)} delegates${ru ? `, ${ru.name} at ${primN(ru.del)}` : ''} and ${primN(need)} needed. The nomination will be settled on the convention floor.`;
       return `${PARTY[p].short}: ${N.name} (${N.office}) clinched with ${primN(N.del)} of ${primN(totalDel)} delegates${ru ? `; ${ru.name} finished second with ${primN(ru.del)}` : ''}.`;
     };
-    const sub = `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority${n[mine].contested ? ' either' : ''}.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[inParty].short} in August.`;
+    const sub = IND() ? `The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[inParty].short} in August.` : `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority${n[mine].contested ? ' either' : ''}.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[inParty].short} in August.`;
     const showNominees = () => {
       const major = ind && ind.major;
-      showModal(`${frontPage({ headline, sub, body: [major ? `<b>Breaking:</b> ${major.name} (${major.office}) is launching an independent campaign for President. <i>See the extra edition.</i>` : '', para(mine), para(theirs), ...lines, ind ? ind.line : '', endorsed || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}
+      showModal(`${frontPage({ headline, sub, body: [major ? `<b>Breaking:</b> ${major.name} (${major.office}) is launching an independent campaign for President. <i>See the extra edition.</i>` : '', IND() ? para('D') : para(mine), IND() ? para('R') : para(theirs), ...lines, ind ? ind.line : '', endorsed || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}
       <div class="choices"><button class="btn ghost" id="nprof1">Profile: ${n.D.name}</button><button class="btn ghost" id="nprof2">Profile: ${n.R.name}</button>${n.I && !major ? `<button class="btn ghost" id="nprof3">Profile: ${n.I.name}</button>` : ''}${ind && ind.conv ? '<button class="btn ghost" id="nconv">The Alliance convention</button>' : ''}${major ? `<button class="btn primary big adv" id="primbreak">Extra: ${lastName(major.p)} launches an independent bid ▶</button>` : '<button class="btn primary big adv" id="primdone">On to the summer</button>'}</div>`);
       $('#nprof1').onclick = () => profileModal(n.D.p, n.D.contested ? 'Democratic delegate leader' : 'Democratic nominee', showNominees);
       $('#nprof2').onclick = () => profileModal(n.R.p, n.R.contested ? 'Republican delegate leader' : 'Republican nominee', showNominees);
@@ -390,7 +393,7 @@ function primariesModal(done) {
   /* ---- the board: the race, the latest results, every state's full count ---- */
   const draw = () => {
     const R = state[view], yours = view === mine;
-    const tabs = `<div class="ptabs">${[mine, theirs].map(p => `<button class="btn ${view === p ? 'on' : ''}" data-pview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].short}${p === mine ? ' (your party)' : ' (watch only)'}</button>`).join('')}${IR ? `<button class="btn ${view === 'I' ? 'on' : ''}" data-pview="I" style="border-color:${PARTY.I.color}">Independents${state.I ? ` (${state.I.field.filter(f => f.active).length} running)` : ' (no field)'}</button>` : ''}</div>`;
+    const tabs = `<div class="ptabs">${(IND() ? ['D', 'R'] : [mine, theirs]).map(p => `<button class="btn ${view === p ? 'on' : ''}" data-pview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].short}${p === mine ? ' (your party)' : ' (watch only)'}</button>`).join('')}${IR ? `<button class="btn ${view === 'I' ? 'on' : ''}" data-pview="I" style="border-color:${PARTY.I.color}">Independents${IND() ? ' · your Alliance' : ''}${state.I ? ` (${state.I.field.filter(f => f.active).length} running)` : ' (no field)'}</button>` : ''}</div>`;
     const nx = nextLabel();
     const nextBtn = allDone() ? '<button class="btn primary big adv" id="pfin">See the nominees</button>' : `<button class="btn primary big adv" id="pnext">${playing() ? `Campaign for ${nx ? nx[0] : 'the final contests'} ▶` : `Next: ${nx ? nx[0] : 'final contests'} votes ▶`}</button><button class="btn ghost" id="pskip">Skip to the end</button>`;
     const controls = `<div class="choices">${nextBtn}</div>`;
@@ -406,7 +409,10 @@ function primariesModal(done) {
       const started = lastLabel !== '', f0 = yours ? myCand() : null;
       const canEndorse = yours && (!f0 || !f0.active);
       const inc = R.field.find(x => x.incumbent);
-      const intro = yours
+      const intro = IND() && view === 'I'
+        ? `${indIntroHTML(R)}<p class="prim-note">${R.field.length} candidate${R.field.length === 1 ? '' : 's'} for one line. Your caucus can't run their campaigns, but its endorsement carries everywhere. If your pick takes the Alliance line, +4 capital. ${started ? 'Switching mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until the first votes are cast.'}</p>
+           ${f0 ? `<div class="rankbar">Your candidate: <span class="rk ${f0.active ? '' : 'gone'}" style="border-color:${f0.color}">${f0.name}${f0.active ? '' : ' (out)'}</span>${f0.active ? '' : ' <i>pick someone still running, or sit out the rest</i>'}</div>` : ''}${note && yours ? `<p class="prim-note">${note}</p>` : ''}`
+        : yours
         ? `<p>${primN(R.need)} delegates to win. ${R.field.length} candidate${R.field.length === 1 ? '' : 's'}${inc ? `, including ${presTitle()}, who drew ${R.field.length - 1 === 1 ? 'a challenger' : `${R.field.length - 1} challengers`} at ${P.approval}% approval` : ''}. <b>Endorse one and you run their campaign:</b> before each contest you plan their days on the ground, ads, attacks, message and debate strategy. If your candidate wins the nomination, +4 capital; if they lose, −1. ${started ? 'Switching horses mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until Iowa votes.'}</p>
            ${f0 ? `<div class="rankbar">Your candidate: <span class="rk ${f0.active ? '' : 'gone'}" style="border-color:${f0.color}">${f0.name}${f0.active ? '' : ' (out)'}</span>${f0.active ? '' : ' <i>pick someone still running, or sit out the rest</i>'}</div>` : ''}${note && yours ? `<p class="prim-note">${note}</p>` : ''}`
         : view === 'I' ? indIntroHTML(R) : `<p>${primN(R.need)} delegates to win. You're watching from across the aisle${inc ? `, and ${presTitle()} is fighting off a primary challenge` : ''}.</p>`;
@@ -422,10 +428,10 @@ function primariesModal(done) {
       });
       const cands = field.map(f => {
         const idx = R.field.indexOf(f), mineF = yours && f.name === endorsed;
-        const endBtn = yours && f.active && !mineF && canEndorse ? `<button class="btn" data-choice="endorse:${idx}">Endorse &amp; run the campaign</button>` : yours && f.active && !mineF && f0 && f0.active ? `<button class="btn ghost" data-pswitch="${idx}" ${started && S.career.capital < 1 ? 'disabled' : ''}>Switch to them${started ? ' (1 cap)' : ''}</button>` : '';
+        const endBtn = yours && f.active && !mineF && canEndorse ? `<button class="btn" data-choice="endorse:${idx}">${IND() ? 'Endorse for the Alliance line' : 'Endorse &amp; run the campaign'}</button>` : yours && f.active && !mineF && f0 && f0.active ? `<button class="btn ghost" data-pswitch="${idx}" ${started && S.career.capital < 1 ? 'disabled' : ''}>Switch to them${started ? ' (1 cap)' : ''}</button>` : '';
         const mo = f.mo > 0.1 ? ' <b style="color:var(--yes)">▲</b>' : f.mo < -0.08 ? ' <b style="color:var(--no)">▼</b>' : '';
-        return `<div class="cand2 ${f.active ? '' : 'out'} ${mineF ? 'prim-mine' : ''}" style="${mineF ? `border-color:${f.color}` : ''}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b>${f.label ? ' ' + indPill(f.label) : ''}${mineF ? ' <b class="prim-you">YOUR CAMPAIGN</b>' : ''}${f.heavy ? ' <small class="prim-tag up">HEAVYWEIGHT</small>' : ''} <small>· ${f.office}${f.party === 'I' ? '' : ` · ${f.faction}`}${f.active ? '' : f.why === 'withdrew' ? ` · withdrew after ${f.out}` : ` · dropped out after ${f.out}`}</small>
-          <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.active || !f.released ? `${primN(f.del)} delegates` : `released ${primN(f.released)} delegates to ${lastName({ name: f.backed })}`} · ${f.wins} state${f.wins === 1 ? '' : 's'} · ${primN(f.votes)} votes${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%${mo}` : ''}${mineF && f.active ? ` · $${f.cash}M in the bank` : ''}</small></span>
+        return `<div class="cand2 ${f.active ? '' : 'out'} ${mineF ? 'prim-mine' : ''}" style="${mineF ? `border-color:${f.color}` : ''}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b>${f.label ? ' ' + indPill(f.label) : ''}${mineF ? (IND() ? ' <b class="prim-you">YOUR PICK</b>' : ' <b class="prim-you">YOUR CAMPAIGN</b>') : ''}${f.heavy ? ' <small class="prim-tag up">HEAVYWEIGHT</small>' : ''} <small>· ${f.office}${f.party === 'I' ? '' : ` · ${f.faction}`}${f.active ? '' : f.why === 'withdrew' ? ` · withdrew after ${f.out}` : ` · dropped out after ${f.out}`}</small>
+          <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.active || !f.released ? `${primN(f.del)} delegates` : `released ${primN(f.released)} delegates to ${lastName({ name: f.backed })}`} · ${f.wins} state${f.wins === 1 ? '' : 's'} · ${primN(f.votes)} votes${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%${mo}` : ''}${mineF && f.active && !IND() ? ` · $${f.cash}M in the bank` : ''}</small></span>
           <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><a href="#" data-cprof="${idx}">profile</a>${endBtn}</span></div>`;
       }).join('');
       const decided = PRIMARY_CAL.filter(([lbl, codes]) => codes.some(c => R.results[c]));
@@ -447,7 +453,7 @@ function primariesModal(done) {
       if (paid) { if (S.career.capital < 1) return; S.career.capital--; }
       const prev = myCand(); if (prev && hqPlan && R.plans[prev.name] === hqPlan) delete R.plans[prev.name];
       endorsed = f.name; endorsedHist.push(f.name); note = ''; hqPlan = null; R.poll = primaryPoll(R);
-      hist(f.p, `Endorsed for President by the ${PARTY[mine].name} whip, who took over the campaign's strategy`);
+      hist(f.p, IND() ? 'Endorsed for President by the Independent caucus, whose senators lent the campaign their networks' : `Endorsed for President by the ${PARTY[mine].name} whip, who took over the campaign's strategy`);
       sfx.up(); draw();
     };
     card.querySelectorAll('[data-choice^="endorse:"]').forEach(b => b.onclick = () => endorse(+b.dataset.choice.split(':')[1], false));
