@@ -1,1 +1,25 @@
-/* Floor Fight — styles for house.js */
+/* Floor Fight — styles for house.js: the House district by district (Election Night and the results explorer) */
+.hd-dots{gap:2px}
+.hd-dots i{width:11px;height:11px}
+.hd-dots i.fl{box-shadow:0 0 0 2px var(--gold)}
+.hd-lh{margin-top:8px}
+.hd-list{max-height:300px;padding:2px}
+.hd-flips{max-height:210px;padding:2px}
+.hd-row{display:grid;grid-template-columns:54px minmax(0,1fr) auto;gap:8px;align-items:center;padding:4px 6px;border-radius:5px;font-size:12px;border-bottom:1px solid #1a2130}
+.hd-row:last-child{border-bottom:0}
+.hd-row.flip{background:#2a2412}
+.hd-row.pending{opacity:.75}
+.hd-id{font-weight:800;color:var(--gold2);font-variant-numeric:tabular-nums}
+.hd-who{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.hd-who small{color:var(--dim)}
+.hd-mg{display:flex;gap:5px;align-items:center;white-space:nowrap}
+.hd-wait{color:var(--dim)}
+.hd-open,.hd-inc{display:inline-block;font-size:9px;font-weight:800;letter-spacing:1px;padding:2px 5px;border-radius:4px}
+.hd-open{background:#22303f;color:#8fc3ff}
+.hd-inc{background:#232a35;color:var(--dim)}
+.hd-tog{display:inline-flex;gap:4px;margin-left:6px}
+.hd-tog .btn{padding:3px 9px;font-size:12px}
+.res-table tbody tr.hd-fliprow td:first-child{box-shadow:inset 3px 0 0 var(--gold)}
+.hd-filters{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:4px 0 8px}
+.hd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:8px 0}
+@media (max-width:640px){.hd-row{grid-template-columns:48px minmax(0,1fr);}.hd-mg{grid-column:2}.hd-list{max-height:240px}}

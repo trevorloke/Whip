@@ -24,33 +24,10 @@ function callTime(code, margin) {
 const nfmt = v => Math.round(v).toLocaleString('en-US');
 const pct = v => v.toFixed(1) + '%';
 
-/* ---------------- the House, state by state ---------------- */
-function houseSeatsD(code, envD) {
-  const n = HSEATS(code);
-  if (!S.hNoise) { S.hNoise = {}; for (const [c] of STATES) S.hNoise[c] = rnd(-0.12, 0.12); }
-  const share = clamp(0.5 + (-stLean(code) + envD) / 55 + S.hNoise[code], 0, 1);
-  return Math.round(n * share);
-}
-function houseTotalD(envD) { return STATES.reduce((a, [c]) => a + houseSeatsD(c, envD), 0); }
-function runHouse(swingSide) {
-  // find the national environment that reproduces the current House, then swing it
-  let env0 = 0, best = 1e9;
-  for (let e = -30; e <= 30; e += 0.25) { const d = Math.abs(houseTotalD(e) - S.house.D); if (d < best) { best = d; env0 = e; } }
-  const envD = env0 + (S.side === 'D' ? swingSide : -swingSide);
-  const states = {};
-  let D = 0, R = 0, popD = 0, popR = 0;
-  for (const [c] of STATES) {
-    const n = HSEATS(c), d = houseSeatsD(c, envD), prevD = S.houseByState ? S.houseByState[c] : houseSeatsD(c, env0);
-    const dPct = clamp(49.2 + (-stLean(c) + envD) / 2 + rnd(-2, 2), 15, 85), rPct = 98.4 - dPct;
-    const tv = turnout(c) * 0.96;
-    states[c] = { n, d, r: n - d, prevD, dPct, rPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, call: callTime(c, dPct - rPct) };
-    D += d; R += n - d; popD += states[c].dVotes; popR += states[c].rVotes;
-  }
-  S.houseByState = Object.fromEntries(Object.entries(states).map(([c, v]) => [c, v.d]));
-  const before = { ...S.house };
-  S.house = { D, R };
-  return { states, D, R, before, popD, popR };
-}
+/* ---------------- the House, district by district (house.js) ---------------- */
+// swingSide: national points for your party. Every one of the 435 districts is decided on its own lean, the national
+// environment, incumbency and luck; returns { states, districts, D, R, before, popD, popR } and updates S.house and S.districts
+function runHouse(swingSide) { return hdElect(swingSide); }
 
 /* ---------------- the Presidency, by electoral vote ---------------- */
 // the presidential race, shared by the campaign trail's projection and the real count
@@ -58,21 +35,31 @@ const MODERATES = ['Blue Dogs', 'GOP Moderates', 'New Democrats', 'Establishment
 // the presidential map's pivotal states, recentered so a tied national environment is a coin flip (the Senate and House keep ST[].lean)
 const PRES_EDGE = 2.5, PRES_CASH = 0.9; // difficulty: the opponent's machine, and what a unit of bulk money buys
 const PRES_LEAN_ADJ = { MI: -2, PA: -2, WI: -2, NV: -2, AZ: -1, GA: -1, NC: -1 };
+// an independent President's executive orders (world.js keys its list by party)
+if (typeof EO_LIST !== 'undefined' && !EO_LIST.I) EO_LIST.I = [['Government Ethics Order', 'taxes'], ['Infrastructure Fast-Track Order', 'economy'], ['Rural Broadband Order', 'rural'], ['Veterans First Order', 'security'], ['Drug Price Transparency Order', 'welfare'], ['Open Data Order', 'tech'], ['Conservation Order', 'environment'], ['Housing Permits Order', 'urban']];
 function nightFallbackName() { let nm = fullName(); for (let i = 0; i < 20 && lastName({ name: nm }) === lastName(S.president); i++) nm = fullName(); return nm; }
+// base is the national margin of the `ref` party's ticket over the other major party. ref is the White House party, or, under an
+// independent President, the party opposite yours (so callers' (inc === S.side ? 1 : -1) * base is still your ticket's margin)
 function presSetup() {
-  const P = S.president, inc = P.party, N = S.nominees || {}, E = S.election || {};
-  const running = P.terms < 2 && (!N[inc] || N[inc].name === P.name);
+  const P = S.president, inc = P.party, N = S.nominees || {}, E = S.election || {}, third = N.I && N.I.name ? N.I : null;
+  const running = P.terms < 2 && (inc === 'I' ? !third || third.name === P.name : !N[inc] || N[inc].name === P.name);
+  const ref = inc === 'I' ? other(S.side) : inc;
   const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: nightFallbackName(), R: nightFallbackName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
   const noms = { D: nom('D'), R: nom('R') };
+  // the third candidate: indie.js's nominee, or an independent President seeking a second term
+  if (inc === 'I' && running) noms.I = { label: 'Independent', lean: 0, ...(third || {}), name: P.name, p: P, state: P.state, home: (third && third.home) || P.state, faction: P.faction, major: true, incumbent: true, strength: clamp((third ? third.strength : 16) + (P.approval - 45) * 0.6, 6, 42) };
+  else if (third) noms.I = third;
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
-  let base = (P.approval - 50) / 5 + (inc === S.side ? S.mood : -S.mood) * 0.25 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1) + q(inc) - q(other(inc));
+  const indWH = inc === 'I';
+  let base = (indWH ? 0 : (P.approval - 50) / 5 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1)) + (ref === S.side ? S.mood : -S.mood) * 0.25 + q(ref) - q(other(ref));
   // the fall campaign (campaign.js) adds its national effects here, from your ticket's point of view
   // the other party runs a professional national campaign too: your ticket starts PRES_EDGE points behind what the fundamentals say
-  base += (inc === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
-  if (S.war && S.war.party === inc) base += (S.war.support - 50) / 12;
-  return { inc, running, noms, base };
+  base += (ref === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
+  if (S.war && S.war.party === inc && !indWH) base += (S.war.support - 50) / 12;
+  return { inc, ref, running, noms, base };
 }
+const presEnvD = s => s.ref === 'D' ? s.base : -s.base;
 function stateMarginD(c, envD, noms) {
   let dm = -(stLean(c) + (PRES_LEAN_ADJ[c] || 0)) * 1.5 + envD; // the state table is compressed: spread it so a +8 national margin is ~350 EV, not 412
   if (noms.D.state === c) dm += 4; if (noms.R.state === c) dm -= 4;            // home-state advantage
@@ -81,52 +68,82 @@ function stateMarginD(c, envD, noms) {
   return dm;
 }
 function presProjection() {
-  const s = presSetup(), envD = s.inc === 'D' ? s.base : -s.base, margins = {};
+  const s = presSetup(), envD = presEnvD(s), margins = {};
   let evMine = 0;
   for (const c of Object.keys(EV)) { margins[c] = stateMarginD(c, envD, s.noms); if ((margins[c] > 0) === (S.side === 'D')) evMine += EV[c]; }
   return { margins, evMine, noms: s.noms };
 }
+// the third name on the ballot. Prefer indie.js's S.nominees.I (or an independent President); else the fall campaign's surge
+// candidate; else, only when no independent field was run at all (old saves), the old 30% random minor candidate
+function presThird(s) {
+  if (s.noms.I) { const T = s.noms.I; return { ...T, strength: clamp(+T.strength || 3, 0.5, 45), lean: clamp(+T.lean || 0, -1, 1), home: T.home || T.state || (T.p && T.p.state) || null }; }
+  const N = S.nominees || {}, tp = S.election && S.election.camp && S.election.camp.thirdParty;
+  if (tp) return { name: tp.name || fullName(), label: 'Independent', strength: clamp((tp.share || 5) * rnd(0.6, 0.95), 1, 12), lean: 0, fixed: true };
+  if (!('I' in N) && Math.random() < 0.3) return { name: fullName(), label: 'Independent', strength: rnd(2, 9), lean: 0, fixed: true };
+  return null;
+}
+// a third candidate's share in one state: around the national number, stronger where the state leans its way, at home and in its region
+function presThirdShare(T, c, nat, reg) {
+  const sl = clamp(stLean(c) / 15, -2.5, 2.5);
+  let x = nat * clamp(1 + 0.22 * T.lean * sl, 0.45, 1.7) * reg[Math.min(2, Math.floor(colOf(c) / 4))] * Math.exp(gauss() * (T.major ? 0.15 : 0.25));
+  if (T.home === c) x += T.major ? 10 : 3;
+  if (T.vp && T.vp.state === c) x += T.major ? 3 : 1;
+  return clamp(x, 0.3, 70);
+}
+// the winner's margin over the runner-up in one state's presidential result
+const presWM = s => { const v = [s.dPct, s.rPct, s.iPct || 0].sort((a, b) => b - a); return v[0] - v[1]; };
+const presWho = (d, r, i) => i > d && i > r ? 'I' : d > r ? 'D' : 'R';
 function runPres() {
-  const P = S.president, { inc, running, noms, base } = presSetup();
-  const names = { D: noms.D.name, R: noms.R.name };
-  // the fall campaign's third-party surge (campaign.js) is on the ballot; otherwise the usual random independent
-  const tp = S.election && S.election.camp && S.election.camp.thirdParty;
-  const indShare = tp ? clamp((tp.share || 5) * rnd(0.6, 0.95), 1, 12) : Math.random() < 0.3 ? rnd(2, 9) : 0;
-  if (indShare) names.I = tp && tp.name ? tp.name : fullName();
+  const P = S.president, s = presSetup(), { inc, ref, running, noms, base } = s;
+  const names = { D: noms.D.name, R: noms.R.name }, T = presThird(s);
+  if (T) names.I = T.name;
   // the wave forecasters saw is in base; the rest of it lands on election night
-  const surprise = S.election ? (inc === S.side ? 1 : -1) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
-  const score = clamp(base + surprise + rnd(-3, 3), -20, 20), envD = inc === 'D' ? score : -score;
+  const surprise = S.election ? (ref === S.side ? 1 : -1) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
+  const score = clamp(base + surprise + rnd(-3, 3), -20, 20), envD = ref === 'D' ? score : -score;
+  // a real third candidate's night: its national number moves, and so do the regions (west, middle, east)
+  const nat = T && !T.fixed ? T.strength * (T.major ? Math.exp(gauss() * 0.2) : rnd(0.65, 1.05)) : 0, reg = [0, 1, 2].map(() => T && T.major ? Math.exp(gauss() * 0.12) : 1);
   const states = {};
-  let evD = 0, evR = 0, popD = 0, popR = 0, popI = 0;
+  let evD = 0, evR = 0, evI = 0, popD = 0, popR = 0, popI = 0;
   for (const c of Object.keys(EV)) {
-    const dm = stateMarginD(c, envD, noms) + rnd(-2.5, 2.5);
-    const iPct = indShare ? clamp(indShare + rnd(-2, 3), 0.5, 20) : 0, scale = (98.5 - iPct) / 98.5;
-    const dPct = clamp(49.25 + dm / 2, 5, 95) * scale, rPct = 98.5 - iPct - dPct;
-    const tv = turnout(c), w = dPct > rPct ? 'D' : 'R';
-    states[c] = { dPct, rPct, iPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, iVotes: tv * iPct / 100, ev: EV[c], w, call: callTime(c, dPct - rPct) };
-    if (w === 'D') evD += EV[c]; else evR += EV[c];
+    const dm = stateMarginD(c, envD, noms) + rnd(-2.5, 2.5), d0 = clamp(49.25 + dm / 2, 5, 95);
+    let iPct = 0, fD = d0 / 98.5;   // fD: the share of the third candidate's vote that would otherwise have gone Democratic
+    if (T && T.fixed) iPct = clamp(T.strength + rnd(-2, 3), 0.5, 20);
+    else if (T) { iPct = presThirdShare(T, c, nat, reg); fD = clamp(fD - 0.3 * T.lean, 0.05, 0.95); }
+    let dPct = d0 - iPct * fD, rPct = 98.5 - iPct - dPct;
+    if (dPct < 1) { dPct = 1; rPct = 98.5 - iPct - 1; } if (rPct < 1) { rPct = 1; iPct = 98.5 - dPct - 1; }
+    const tv = turnout(c), w = presWho(dPct, rPct, iPct);
+    states[c] = { dPct, rPct, iPct, dVotes: tv * dPct / 100, rVotes: tv * rPct / 100, iVotes: tv * iPct / 100, ev: EV[c], w, call: callTime(c, presWM({ dPct, rPct, iPct })) };
+    if (w === 'D') evD += EV[c]; else if (w === 'R') evR += EV[c]; else evI += EV[c];
     popD += states[c].dVotes; popR += states[c].rVotes; popI += states[c].iVotes;
   }
-  const year = S.election ? S.election.year : currentYear(), r1 = v => Math.round(v * 10) / 10;
-  // 269–269: the House chooses, one vote per state delegation (runHouse has already seated the new delegations).
-  // Evenly split delegations abstain; the side with more delegations prevails, and a dead-even House keeps the White House party
+  const year = S.election ? S.election.year : currentYear(), r1 = v => Math.round(v * 10) / 10, EVS = { D: evD, R: evR, I: evI };
+  // nobody at 270: the House chooses, one vote per state delegation (runHouse has already seated the new delegations).
+  // The delegations are all Democratic or Republican, so a third candidate's electors only deny a majority. Evenly split delegations
+  // abstain; the side with more delegations prevails, and a dead-even House keeps the White House party (or the bigger elector count)
   let houseVote = null;
-  if (evD < 270 && evR < 270) { houseVote = { D: 0, R: 0 }; for (const [c] of STATES) { const d = S.houseByState ? S.houseByState[c] : null, n = HSEATS(c); if (d == null) continue; if (d * 2 > n) houseVote.D++; else if (d * 2 < n) houseVote.R++; } }
-  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : houseVote.D > houseVote.R ? 'D' : houseVote.R > houseVote.D ? 'R' : inc, loser = other(winner);
+  if (evD < 270 && evR < 270 && evI < 270) { houseVote = { D: 0, R: 0 }; for (const v of Object.values(hdDelegations())) { if (v.D > v.R) houseVote.D++; else if (v.R > v.D) houseVote.R++; } }
+  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : evI >= 270 ? 'I' : houseVote.D > houseVote.R ? 'D' : houseVote.R > houseVote.D ? 'R' : inc !== 'I' ? inc : evD >= evR ? 'D' : 'R';
+  const tie = evD === 269 && evR === 269, losers = ['D', 'R', 'I'].filter(p => p !== winner && names[p]), loser = losers.sort((a, b) => EVS[b] - EVS[a])[0];
   S.whStreak = winner === inc ? S.whStreak + 1 : 1;
   // the record book: the last six presidential results by state, so the night can show swings
   const book = (S.presHistory || []).filter(h => h && h.year !== year).slice(-5), prev = book.length ? book[book.length - 1] : null;
-  S.presHistory = book.concat([{ year, states: Object.fromEntries(Object.entries(states).map(([c, s]) => [c, r1(s.dPct - s.rPct)])), evD, evR, popD: Math.round(popD), popR: Math.round(popR), names, winner }]);
-  const homes = { D: noms.D.state || null, R: noms.R.state || null };
+  const iw = Object.keys(states).filter(c => states[c].w === 'I');
+  S.presHistory = book.concat([{ year, states: Object.fromEntries(Object.entries(states).map(([c, s]) => [c, r1(s.dPct - s.rPct)])), evD, evR, popD: Math.round(popD), popR: Math.round(popR), names, winner, ...(evI ? { evI, iw, popI: Math.round(popI) } : {}) }]);
+  const homes = { D: noms.D.state || null, R: noms.R.state || null, ...(T ? { I: T.home || null } : {}) };
   const vps = { D: noms.D.vp ? { name: noms.D.vp.name, state: noms.D.vp.state || null } : null, R: noms.R.vp ? { name: noms.R.vp.name, state: noms.R.vp.state || null } : null };
-  const offices = { D: noms.D.office || (noms.D.p === P ? 'President' : null), R: noms.R.office || (noms.R.p === P ? 'President' : null) };
-  const ev = `${Math.max(evD, evR)}–${Math.min(evD, evR)}`, evTxt = houseVote ? ' by the House after a 269–269 Electoral College deadlock' : `, ${ev} in the Electoral College`;
+  if (T && T.vp && T.vp.name) vps.I = { name: T.vp.name, state: T.vp.state || null };
+  const offices = { D: noms.D.office || (noms.D.p === P ? 'President' : null), R: noms.R.office || (noms.R.p === P ? 'President' : null), ...(T ? { I: T.office || (T.incumbent ? 'President' : null) } : {}) };
+  const evSorted = [evD, evR, evI].filter(Boolean).sort((a, b) => b - a), evStr = evSorted.join('–');
+  const evTxt = houseVote ? (tie ? ' by the House after a 269–269 Electoral College deadlock' : ' by the House after no candidate won a majority in the Electoral College') : `, ${evStr} in the Electoral College`;
   // the live record behind a nominee or running mate, by name: after a save/load the record's `p` is a detached copy,
   // and someone who left office in this very count (a term-limited governor, a retiring senator) is already among the formers
   const liveOf = (n, p) => { if (!n || !n.name) return null; if (P.name === n.name) return P; if (S.vp && S.vp.name === n.name) return S.vp;
     return S.members.find(m => m.name === n.name && (!p || m.party === p)) || Object.values(S.governors || {}).find(g => g && g.name === n.name) || Object.values(S.cabinet || {}).find(c => c && c.name === n.name) || (S.reps || []).find(r => r.name === n.name) || (S.formers || []).find(f => f && f.name === n.name) || n.p || null; };
-  const loserP = liveOf(noms[loser], loser);
-  if (loserP) hist(loserP, houseVote ? 'Lost the presidential election in the House after a 269–269 Electoral College deadlock' : `Lost the presidential election, ${Math.min(evD, evR)}–${Math.max(evD, evR)} in the Electoral College`, year);
+  for (const p of losers) {
+    if (p === 'I' && !(T.major || T.p || T.incumbent)) continue;
+    const lp = liveOf(p === 'I' ? T : noms[p], p === 'I' ? null : p);
+    if (lp) hist(lp, houseVote ? `Lost the presidential election in the House after ${tie ? 'a 269–269 Electoral College deadlock' : 'no candidate won an Electoral College majority'}` : `Lost the presidential election${p === 'I' ? ' as an independent' : ''}, ${EVS[p]}–${EVS[winner]} in the Electoral College`, year);
+  }
   let what, extra = [];
   // the running mate takes office: out of the Senate, a governor's mansion, the cabinet or the House
   const seatVP = N => {
@@ -134,7 +151,7 @@ function runPres() {
     const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === N.vp.name);
     const cabPost = Object.keys(S.cabinet || {}).find(k => S.cabinet[k] && S.cabinet[k].name === N.vp.name);
     const live = vm || liveOf(N.vp, null);
-    S.vp = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, N.vp.state), { name: N.vp.name, faction: N.vp.faction || pick(FACTIONS[winner])[0] });
+    S.vp = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, N.vp.state || pick(STATES)[0]), { name: N.vp.name, faction: N.vp.faction || pick(FACTIONS[winner])[0] });
     hist(S.vp, 'Elected Vice President', year);
     if (vm) extra.push(vacateSeat(vm, 'was elected Vice President'));
     if (govCode) { governorSucceeded(govCode, 'was elected Vice President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
@@ -142,36 +159,43 @@ function runPres() {
   };
   // nobody holds two offices: the President and Vice President come off the House list and the formers' list
   const tidy = () => { const taken = x => x && (x.name === S.president.name || (S.vp && x.name === S.vp.name)); S.reps = (S.reps || []).filter(r => !taken(r)); S.formers = (S.formers || []).filter(f => !taken(f)); };
+  const NW = winner === 'I' ? T : noms[winner];
   if (winner === inc && running) {
     P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President${evTxt}`, year); what = `${presTitle()} wins a second term.`;
-    const NV = noms[winner].vp;
+    const NV = NW.vp;
     if (NV && NV.name && !(S.vp && S.vp.name === NV.name)) {   // the convention dumped the Vice President for a new running mate
-      const old = S.vp; seatVP(noms[winner]);
+      const old = S.vp; seatVP(NW);
       if (old) { hist(old, 'Left office as Vice President', year); S.formers = (S.formers || []).concat([{ ...old, b: undefined }]); extra.push(`${S.vp.name} succeeds ${old.name} as Vice President.`); }
       tidy();
     }
   }
   else {
-    const oldT = presTitle(), N = noms[winner], live = liveOf(N, winner);
-    const person = live ? { ...live, b: undefined } : newPerson(winner, pick(STATES)[0]);
-    // the winner leaves their old job
-    const sen = S.members.find(m => m.name === person.name && m.party === winner);
+    const oldT = presTitle(), live = liveOf(NW, winner === 'I' ? null : winner);
+    const person = live ? { ...live, b: undefined } : Object.assign(newPerson(winner, NW.home || NW.state || pick(STATES)[0]), NW.name ? { name: NW.name } : {});
+    // the winner leaves their old job (an independent may be a senator who quit their party)
+    const sen = S.members.find(m => m.name === person.name && (winner === 'I' || m.party === winner));
     if (sen) extra.push(vacateSeat(sen, 'was elected President'));
     const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === person.name);
     if (govCode) { governorSucceeded(govCode, 'was elected President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
-    hist(person, `Elected President of the United States${evTxt}`, year);
-    S.president = { ...person, name: person.name, party: winner, faction: N.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1 };
-    if (N.vp) seatVP(N);
-    else { S.vp = newPerson(winner, pick(STATES)[0]); hist(S.vp, 'Elected Vice President', year); }
+    hist(person, `Elected President of the United States${winner === 'I' ? ' as an independent' : ''}${evTxt}`, year);
+    S.president = { ...person, name: person.name, party: winner, faction: winner === 'I' ? FACTIONS.I[0][0] : NW.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1, ...(winner === 'I' && T.label ? { label: T.label } : {}) };
+    if (NW.vp && NW.vp.name) seatVP(NW);
+    else { S.vp = newPerson(winner, pick(STATES)[0]); S.vp.faction = FACTIONS[winner][0][0]; hist(S.vp, 'Elected Vice President', year); }
     tidy();
     S.pendingCabinet = true;
-    what = (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].short.replace(/s$/, '')} ${N.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${N.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
+    what = winner === 'I' && inc === 'I' ? `${oldT} steps aside, and ${T.label && T.label !== 'Independent' ? `${T.label} candidate` : 'fellow independent'} ${NW.name} keeps the White House outside the two parties, carrying ${iw.length} state${iw.length === 1 ? '' : 's'}.`
+      : winner === 'I' ? `<b>A political earthquake!</b> ${T.label && T.label !== 'Independent' ? `${T.label} candidate` : 'Independent'} ${NW.name} wins the White House, carrying ${iw.length} state${iw.length === 1 ? '' : 's'} and ${evI} electoral votes — the first President in living memory elected outside the two major parties.`
+      : (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].short.replace(/s$/, '')} ${NW.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${NW.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
     if (winner !== inc) S.vacancyBlocked = false;
   }
-  if (houseVote) { const tied = 50 - houseVote.D - houseVote.R; what = `<b>A 269–269 deadlock.</b> The House chose the President, one vote per state delegation: ${houseVote[winner] > houseVote[loser] ? `${houseVote[winner]} delegations to ${houseVote[loser]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${houseVote.D}–${houseVote.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting the ${PARTY[winner].short} prevailed`}. ` + what; }
+  if (houseVote) {
+    const tied = 50 - houseVote.D - houseVote.R, wl = winner === 'D' ? 'R' : 'D';
+    what = `<b>${tie ? 'A 269–269 deadlock.' : `No majority: ${evStr} in the Electoral College.`}</b> ${evI && !tie ? `${names.I}'s ${evI} electoral votes left everyone short of 270, and the delegations, all Democratic or Republican, never seriously considered the independent. ` : ''}The House chose the President, one vote per state delegation: ${houseVote[winner] > houseVote[wl] ? `${houseVote[winner]} delegations to ${houseVote[wl]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${houseVote.D}–${houseVote.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting the ${PARTY[winner].short} prevailed`}. ` + what;
+  }
   S.nominees = null; S._fallbackNames = null;
   if (extra.length) what += ' ' + extra.join(' ');
-  return { states, evD, evR, popD, popR, popI, names, winner, inc, running, what, year, prev: prev ? { year: prev.year, states: prev.states } : null, homes, vps, offices, houseVote };
+  const third = T ? { label: T.label || 'Independent', major: !!T.major, lean: T.lean || 0, color: T.color || null } : null;
+  return { states, evD, evR, evI, popD, popR, popI, names, winner, loser, inc, running, what, year, prev: prev ? { year: prev.year, states: prev.states } : null, homes, vps, offices, houseVote, third };
 }
 
 /* ---------------- the show ---------------- */
@@ -182,7 +206,7 @@ function openNight(data, onDone, opts = {}) {
   const final = !!(window.FF_FAST || opts.final);
   if (NIGHT && NIGHT.timer) clearInterval(NIGHT.timer); // a night left running (re-entry without closing it) must not tick twice
   NIGHT = { ...data, data, tab: tabs.includes(opts.tab) ? opts.tab : tabs[0], tabs, t: final ? 1 : 0, sel: opts.sel || null, onDone, called: new Set(), timer: null,
-    view: ['map', 'table', 'ticker'].includes(opts.view) ? opts.view : 'map', sort: opts.sort || null, fanfared: !!opts.final };
+    view: ['map', 'table', 'ticker'].includes(opts.view) ? opts.view : 'map', sort: opts.sort || null, fanfared: !!opts.final, hview: opts.hview === 'state' ? 'state' : 'dist' };
   let el = $('#night');
   if (!el) { el = document.createElement('div'); el.id = 'night'; document.body.appendChild(el); }
   el.classList.remove('hidden');
@@ -190,7 +214,7 @@ function openNight(data, onDone, opts = {}) {
   // pointerdown (not click) so taps land even while the screen refreshes live
   el.onpointerdown = e => {
     const N = NIGHT; if (!N) return;
-    const t = e.target.closest('[data-tab],[data-code],[data-rtab],[data-sort],#nprev,#nnext,#nskip,#ndone,#fullres');
+    const t = e.target.closest('[data-tab],[data-code],[data-rtab],[data-sort],[data-hview],#nprev,#nnext,#nskip,#ndone,#fullres');
     if (!t) return;
     if (t.dataset.tab) { N.tab = t.dataset.tab; N.sel = null; sfx.click(); }
     else if (t.dataset.code) {
@@ -199,6 +223,7 @@ function openNight(data, onDone, opts = {}) {
       if (contests(N.tab).some(c => c.code === t.dataset.code)) { N.sel = t.dataset.code; sfx.click(); }
     }
     else if (t.dataset.rtab) { N.view = t.dataset.rtab; sfx.click(); }
+    else if (t.dataset.hview) { N.hview = t.dataset.hview; N.sort = null; sfx.click(); }
     else if (t.dataset.sort) { const k = t.dataset.sort; N.sort = N.sort && N.sort.k === k ? { k, d: -N.sort.d } : { k, d: k === 'state' ? 1 : -1 }; sfx.click(); }
     else if (t.id === 'nprev') return stepRace(-1);
     else if (t.id === 'nnext') return stepRace(1);
@@ -230,11 +255,11 @@ function closeNight() {
 function nightToExplorer() {
   const N = NIGHT; if (!N || typeof resExplorer !== 'function') return;
   const rec = typeof resRecordFor === 'function' ? resRecordFor(N.data) : null; if (!rec) return;
-  const { data, onDone, tab, view, sort, sel } = N;
+  const { data, onDone, tab, view, sort, sel, hview } = N;
   if (N.timer) clearInterval(N.timer);
   document.removeEventListener('keydown', nightKeys);
   NIGHT = null;
-  resExplorer(rec, () => openNight(data, onDone, { final: true, tab, view, sort, sel }));
+  resExplorer(rec, () => openNight(data, onDone, { final: true, tab, view, sort, sel, hview }));
 }
 
 // each tab's list of contests: { code, call, margin (D minus R, or winner-perspective), ... }
@@ -267,17 +292,21 @@ function tallies() {
   const sen = { ...cont }, und = { n: 0 };
   for (const r of N.races) { if (isCalled({ call: r.call })) sen[r.wParty]++; else und.n++; }
   out.senate = { D: sen.D, R: sen.R, I: sen.I, und: und.n };
-  if (N.pres) { let d = 0, r = 0, u = 0; for (const s of Object.values(N.pres.states)) { if (NIGHT.t >= s.call) { if (s.w === 'D') d += s.ev; else r += s.ev; } else u += s.ev; } out.pres = { D: d, R: r, und: u }; }
+  if (N.pres) { const p = { D: 0, R: 0, I: 0, und: 0 }; for (const s of Object.values(N.pres.states)) { if (NIGHT.t >= s.call) p[s.w] += s.ev; else p.und += s.ev; } out.pres = p; }
   if (N.gov && N.gov.length) { const up = new Set(N.gov.map(r => r.code)), g = { D: 0, R: 0, I: 0, und: 0 }; for (const [c, p] of Object.entries(N.govBefore || {})) if (!up.has(c)) g[p]++; for (const r of N.gov) { if (isCalled({ call: r.call })) g[r.wParty]++; else g.und++; } out.gov = g; }
-  { let d = 0, r = 0, u = 0; for (const s of Object.values(N.house.states)) { if (NIGHT.t >= s.call) { d += s.d; r += s.r; } else u += s.n; } out.house = { D: d, R: r, und: u }; }
+  { let d = 0, r = 0, u = 0; const HD = N.house.districts;
+    if (HD) { for (const L of Object.values(HD)) for (const x of L) { if (NIGHT.t >= x.call) { if (x.w === 'D') d++; else r++; } else u++; } }
+    else for (const s of Object.values(N.house.states)) { if (NIGHT.t >= s.call) { d += s.d; r += s.r; } else u += s.n; }
+    out.house = { D: d, R: r, und: u }; }
   return out;
 }
-function barChart(label, a, total, need, sub, foot = '') {
+// sepI: a third candidate's own count (electoral votes), not independents who caucus with the Democrats
+function barChart(label, a, total, need, sub, foot = '', sepI = false) {
   const w = v => (v / total * 100).toFixed(2) + '%';
   return `<div class="tcard"><div class="tl"><b>${label}</b><span>${sub || ''}</span></div>
     <div class="tbar"><div style="width:${w(a.D)};background:${PARTY.D.color}"></div>${a.I ? `<div style="width:${w(a.I)};background:${PARTY.I.color}"></div>` : ''}<div style="width:${w(a.und)};background:#3a4250"></div><div style="width:${w(a.R)};background:${PARTY.R.color}"></div>
     <i class="need" style="left:${w(need)}"></i><i class="need" style="left:${w(total - need)}"></i></div>
-    <div class="tl"><span style="color:${PARTY.D.color};font-weight:800">D ${a.D}${a.I ? ` <span style="color:${PARTY.I.color}">+ I ${a.I}</span>` : ''}</span><span style="color:var(--dim)">${a.und ? `${a.und} uncalled` : 'all called'} · ${need} to win</span><span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span></div>${foot ? `<div class="res-foot">${foot}</div>` : ''}</div>`;
+    <div class="tl"><span style="color:${PARTY.D.color};font-weight:800">D ${a.D}${a.I && !sepI ? ` <span style="color:${PARTY.I.color}">+ I ${a.I}</span>` : ''}</span><span style="color:var(--dim)">${a.I && sepI ? `<b style="color:${PARTY.I.color}">I ${a.I}</b> · ` : ''}${a.und ? `${a.und} uncalled` : 'all called'} · ${need} to win</span><span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span></div>${foot ? `<div class="res-foot">${foot}</div>` : ''}</div>`;
 }
 
 function nightMap() {
@@ -287,19 +316,26 @@ function nightMap() {
     cls: 'nmap',
     fill: code => {
       const c = byCode[code]; if (!c) return null;
+      if (N.tab === 'house' && N.house.districts) {   // shaded by the seats called so far, fainter until the whole delegation is in
+        const L = N.house.districts[code] || [], k = L.filter(x => N.t >= x.call); if (!k.length) return { c: '#4a5366' };
+        const sh = k.filter(x => x.w === 'D').length / k.length; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: (0.35 + Math.abs(sh - 0.5) * 1.3) * (k.length < L.length ? 0.7 : 1) };
+      }
       if (!isCalled(c)) return { c: '#4a5366' };
       if (N.tab === 'senate' || N.tab === 'gov') { const s = shade(c.r.wParty, c.r.margin); return { c: s.fill, op: s.op }; }
-      if (N.tab === 'pres') { const s = shade(c.s.w, c.s.dPct - c.s.rPct); return { c: s.fill, op: s.op }; }
+      if (N.tab === 'pres') { const s = shade(c.s.w, presWM(c.s)); return { c: s.fill, op: s.op }; }
       const sh = c.s.d / c.s.n; return { c: sh > 0.5 ? PARTY.D.color : sh < 0.5 ? PARTY.R.color : '#8a8fa0', op: 0.35 + Math.abs(sh - 0.5) * 1.3 };
     },
     sub: code => {
       const c = byCode[code]; if (!c) return '';
       if (N.tab === 'pres') return c.s.ev;
+      if (N.tab === 'house' && N.house.districts && !isCalled(c)) { const k = (N.house.districts[code] || []).filter(x => N.t >= x.call); return k.length ? `${k.filter(x => x.w === 'D').length}–${k.filter(x => x.w === 'R').length}…` : N.t > c.call * 0.6 ? '…' : ''; }
       if (!isCalled(c)) return N.t > c.call * 0.6 ? '…' : '';
       if (N.tab === 'senate' || N.tab === 'gov') return c.r.flip ? 'FLIP' : '';
       return `${c.s.d}–${c.s.r}`;
     },
-    ring: code => { const c = byCode[code]; if (N.sel === code) return '#fff'; if (!c || !isCalled(c)) return null; return ((N.tab === 'senate' || N.tab === 'gov') && c.r.flip) || (N.tab === 'house' && c.s.d !== c.s.prevD) ? '#f6d27a' : null; },
+    ring: code => { const c = byCode[code]; if (N.sel === code) return '#fff'; if (!c) return null;
+      if (N.tab === 'house' && N.house.districts) return (N.house.districts[code] || []).some(x => x.flip && N.t >= x.call) ? '#f6d27a' : null;
+      if (!isCalled(c)) return null; return ((N.tab === 'senate' || N.tab === 'gov') && c.r.flip) || (N.tab === 'house' && c.s.d !== c.s.prevD) ? '#f6d27a' : null; },
     attr: code => byCode[code] ? `data-code="${code}"` : '',
   });
 }
@@ -329,8 +365,17 @@ function detailPanel() {
     const rows = [[P.names.D, 'D', s.dVotes, s.dPct], [P.names.R, 'R', s.rVotes, s.rPct]].concat(P.names.I ? [[P.names.I, 'I', s.iVotes, s.iPct]] : []).map(x => { if (!called) { x[2] *= rep; } return [...x, called && x[1] === s.w]; }).sort((a, b) => b[3] - a[3]);
     const prev = P.prev && P.prev.states && P.prev.states[c.code] != null ? P.prev.states[c.code] : null;
     body = `<h3>${stName(c.code)} · President</h3><div class="nsub"><b>${s.ev} electoral votes</b> · ${leanLabel(stLean(c.code))} · ${status}</div>
-      ${rows.map(x => candRow(x[0], x[1], x[2], x[3], x[4])).join('')}<div class="nsub">${Math.round(rep * 100)}% reported${called ? ` · margin ${pct(Math.abs(s.dPct - s.rPct))} · ${prev == null ? 'first presidential election on record' : `swing ${resSwing(s.dPct - s.rPct - prev)} since ${P.prev.year}`}` : ''}</div>
+      ${rows.map(x => candRow(x[0], x[1], x[2], x[3], x[4])).join('')}<div class="nsub">${Math.round(rep * 100)}% reported${called ? ` · margin ${pct(presWM(s))} · ${prev == null ? 'first presidential election on record' : `swing ${resSwing(s.dPct - s.rPct - prev)} since ${P.prev.year}`}` : ''}</div>
       ${resPresNotes(P, c.code, called)}`;
+  } else if (N.house.districts) {
+    // every district in the state, called one by one
+    const s = c.s, L = N.house.districts[c.code] || [], isC = x => N.t >= x.call, k = L.filter(isC), d = k.filter(x => x.w === 'D').length;
+    const gD = k.filter(x => x.flip && x.w === 'D').length, gR = k.filter(x => x.flip && x.w === 'R').length, open = k.filter(x => x.open).length;
+    const flips = gD || gR ? `${gD ? `<b style="color:${PARTY.D.color}">D +${gD}</b> ` : ''}${gR ? `<b style="color:${PARTY.R.color}">R +${gR}</b>` : ''} in flips` : k.length ? 'no seat has changed hands' : '';
+    body = `<h3>${stName(c.code)} · House</h3><div class="nsub"><b>${s.n} seat${s.n > 1 ? 's' : ''}</b> · ${leanLabel(stLean(c.code))} · ${status}</div>${hdDots(L, isC)}
+      <div class="nsub">${k.length < L.length ? `${k.length} of ${L.length} called · ` : ''}<b style="color:${PARTY.D.color}">D ${d}</b> · <b style="color:${PARTY.R.color}">R ${k.length - d}</b> · ${flips}${open ? ` · ${open} open seat${open > 1 ? 's' : ''}` : ''}</div>
+      ${candRow('Democrats (all districts)', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('Republicans (all districts)', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}
+      <div class="lh hd-lh">${L.length === 1 ? 'The at-large seat' : `Every district · ${L.length}`}</div><div class="res-scroll hd-list" data-keep="hd-${c.code}">${L.map(x => hdRowHTML(x, isC(x), reporting({ call: x.call }))).join('')}</div>`;
   } else {
     const s = c.s, ch = s.d - s.prevD;
     body = `<h3>${stName(c.code)} · House</h3><div class="nsub"><b>${s.n} seat${s.n > 1 ? 's' : ''}</b> · ${leanLabel(stLean(c.code))} · ${status}</div>
@@ -340,30 +385,34 @@ function detailPanel() {
   }
   return nav + body;
 }
-function marginOf(c) { return c.r ? c.r.margin : c.s.dPct - c.s.rPct; }
+function marginOf(c) { return c.r ? c.r.margin : presWM(c.s); }
 function raceList() {
   const L = navList();
   return L.map(c => {
     const called = isCalled(c);
     let st;
-    if (!called) st = `<span style="color:var(--dim)">${NIGHT.t > c.call * 0.6 && Math.abs(marginOf(c)) < 5 ? 'Too close' : 'Waiting'}</span>`;
+    const HL = NIGHT.tab === 'house' && NIGHT.house.districts ? NIGHT.house.districts[c.code] || [] : null, part = HL ? HL.filter(x => NIGHT.t >= x.call) : [];
+    if (!called && part.length) st = `<span style="color:var(--dim)">${part.length}/${HL.length} in ·</span> <b style="color:${PARTY.D.color}">${part.filter(x => x.w === 'D').length}</b>–<b style="color:${PARTY.R.color}">${part.filter(x => x.w === 'R').length}</b>`;
+    else if (!called) st = `<span style="color:var(--dim)">${NIGHT.t > c.call * 0.6 && Math.abs(marginOf(c)) < 5 ? 'Too close' : 'Waiting'}</span>`;
     else if (c.r) st = `<b style="color:${PARTY[c.r.wParty].color}">${c.r.wParty} +${c.r.margin.toFixed(1)}</b>${c.r.flip ? ' <span class="call flip">FLIP</span>' : ''}`;
-    else if (NIGHT.tab === 'pres') st = `<b style="color:${PARTY[c.s.w].color}">${c.s.w} +${Math.abs(c.s.dPct - c.s.rPct).toFixed(1)}</b> · ${c.s.ev} EV`;
+    else if (NIGHT.tab === 'pres') st = `<b style="color:${PARTY[c.s.w].color}">${c.s.w} +${presWM(c.s).toFixed(1)}</b> · ${c.s.ev} EV`;
     else st = `<b style="color:${PARTY.D.color}">${c.s.d}</b>–<b style="color:${PARTY.R.color}">${c.s.r}</b>${c.s.d !== c.s.prevD ? ` <span class="call flip">${c.s.d > c.s.prevD ? 'D' : 'R'} +${Math.abs(c.s.d - c.s.prevD)}</span>` : ''}`;
     return `<div class="lrow ${NIGHT.sel === c.code ? 'on' : ''}" data-code="${c.code}"><span><b>${c.code}</b> ${stName(c.code)}</span><span>${st}</span></div>`;
   }).join('');
 }
 // diverging bar chart of the closest called contests
 function closestChart() {
-  const L = contests(NIGHT.tab).filter(isCalled).map(c => ({ code: c.code, m: c.r ? (c.r.wParty === 'D' ? -1 : 1) * c.r.margin : c.s.rPct - c.s.dPct, flip: c.r && c.r.flip, ind: c.r && c.r.wParty === 'I' }))
-    .sort((a, b) => Math.abs(a.m) - Math.abs(b.m)).slice(0, 10);
+  const N = NIGHT, HD = N.tab === 'house' && N.house.districts;
+  const L = (HD ? [].concat(...Object.values(HD)).filter(x => N.t >= x.call).map(x => ({ code: x.id.slice(0, 2), lbl: x.id, m: -x.m, flip: x.flip }))
+    : contests(N.tab).filter(isCalled).map(c => ({ code: c.code, lbl: c.code, m: c.r ? (c.r.wParty === 'D' ? -1 : 1) * c.r.margin : c.s.w === 'I' ? presWM(c.s) : c.s.rPct - c.s.dPct, flip: c.r && c.r.flip, ind: c.r ? c.r.wParty === 'I' : c.s.w === 'I' })))
+    .sort((a, b) => Math.abs(a.m) - Math.abs(b.m)).slice(0, HD ? 12 : 10);
   if (!L.length) return '<div class="nsub">No races called yet.</div>';
   const W = 420, H = L.length * 20 + 24, mx = Math.max(10, ...L.map(x => Math.abs(x.m)));
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="cchart"><line x1="${W / 2}" y1="0" x2="${W / 2}" y2="${H - 16}" stroke="#666"/>`;
   L.forEach((x, i) => {
     const y = i * 20 + 4, len = Math.abs(x.m) / mx * (W / 2 - 40), right = x.m > 0;
     svg += `<g class="lrow" data-code="${x.code}" style="cursor:pointer"><rect x="${right ? W / 2 : W / 2 - len}" y="${y}" width="${Math.max(2, len)}" height="14" rx="3" fill="${x.ind ? PARTY.I.color : right ? PARTY.R.color : PARTY.D.color}"/>
-      <text x="${right ? W / 2 - 6 : W / 2 + 6}" y="${y + 11}" font-size="11" fill="#ddd" text-anchor="${right ? 'end' : 'start'}" font-weight="700">${x.code}${x.flip ? ' ★' : ''}</text>
+      <text x="${right ? W / 2 - 6 : W / 2 + 6}" y="${y + 11}" font-size="11" fill="#ddd" text-anchor="${right ? 'end' : 'start'}" font-weight="700">${x.lbl}${x.flip ? ' ★' : ''}</text>
       <text x="${right ? W / 2 + len + 4 : W / 2 - len - 4}" y="${y + 11}" font-size="10" fill="#9aa3b2" text-anchor="${right ? 'start' : 'end'}">${Math.abs(x.m).toFixed(1)}</text></g>`;
   });
   svg += `<text x="4" y="${H - 3}" font-size="10" fill="${PARTY.D.color}">◀ Democratic margin</text><text x="${W - 4}" y="${H - 3}" font-size="10" fill="${PARTY.R.color}" text-anchor="end">Republican margin ▶</text></svg>`;
@@ -381,7 +430,8 @@ function popularVote(T) {
     const H = N.house; let d = 0, r = 0;
     for (const s of Object.values(H.states)) { const rp = reporting({ call: s.call }); d += s.dVotes * rp; r += s.rVotes * rp; }
     const tot = d + r || 1;
-    return `<b>National House vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 98.4)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 98.4)}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)}</span><span>Before: D ${H.before.D} – R ${H.before.R}</span><span>${nfmt(r)}</span></div>`;
+    const fl = H.districts ? [].concat(...Object.values(H.districts)).filter(x => x.flip && N.t >= x.call) : null, g = p => fl.filter(x => x.w === p).length;
+    return `<b>National House vote</b><div class="pv"><div style="width:${d / tot * 100}%;background:${PARTY.D.color}">D ${pct(d / tot * 98.4)}</div><div style="width:${r / tot * 100}%;background:${PARTY.R.color}">R ${pct(r / tot * 98.4)}</div></div><div class="nsub" style="display:flex;justify-content:space-between"><span>${nfmt(d)}</span><span>Before: D ${H.before.D} – R ${H.before.R}</span><span>${nfmt(r)}</span></div>${fl ? `<div class="nsub">Pickups so far: <b style="color:${PARTY.D.color}">D +${g('D')}</b> · <b style="color:${PARTY.R.color}">R +${g('R')}</b> · net ${g('D') === g('R') ? 'even' : `<b style="color:${PARTY[g('D') > g('R') ? 'D' : 'R'].color}">${g('D') > g('R') ? 'D' : 'R'} +${Math.abs(g('D') - g('R'))}</b>`}</div>` : ''}`;
   }
   let d = 0, r = 0, ind = 0;
   for (const x of (N.tab === 'gov' ? N.gov : N.races)) { const rp = reporting({ call: x.call }); for (const c of x.cands || []) { if (c.party === 'D') d += c.votes * rp; else if (c.party === 'R') r += c.votes * rp; else ind += c.votes * rp; } }
@@ -405,19 +455,19 @@ function renderNight() {
   for (const el of scrollers()) keep[el.dataset.keep || el.className] = el.scrollTop;
   const govB = N.govBefore ? Object.values(N.govBefore).reduce((a, p) => { a[p] = (a[p] || 0) + 1; return a; }, { D: 0, R: 0, I: 0 }) : null;
   const calls = N.tabs.reduce((a, tab) => a + contests(tab).filter(isCalled).length, 0);
-  const sub = `<div class="res-sub">${[['map', '🗺 Map'], ['table', '☰ Table'], ['ticker', `📰 Decision Desk <small>${calls}</small>`]].map(([k, l]) => `<button class="btn ${N.view === k ? 'on' : ''}" data-rtab="${k}">${l}</button>`).join('')}<span class="res-subhint">${N.view === 'table' ? 'click a header to sort · click a row to select' : N.view === 'ticker' ? 'every call of the night · click one to jump to it' : 'click a state to select it'}</span></div>`;
-  const main = N.view === 'table' ? `<div class="res-scroll" data-keep="table-${N.tab}">${resNightTable()}</div>` : N.view === 'ticker' ? `<div class="res-scroll" data-keep="ticker">${resTickerHTML()}</div>` : nightMap();
+  const sub = `<div class="res-sub">${[['map', '🗺 Map'], ['table', '☰ Table'], ['ticker', `📰 Decision Desk <small>${calls}</small>`]].map(([k, l]) => `<button class="btn ${N.view === k ? 'on' : ''}" data-rtab="${k}">${l}</button>`).join('')}${N.tab === 'house' && N.view === 'table' && N.house.districts ? `<span class="hd-tog">${[['dist', 'Districts'], ['state', 'States']].map(([k, l]) => `<button class="btn ${N.hview === k ? 'on' : ''}" data-hview="${k}">${l}</button>`).join('')}</span>` : ''}<span class="res-subhint">${N.view === 'table' ? 'click a header to sort · click a row to select' : N.view === 'ticker' ? 'every call of the night · click one to jump to it' : 'click a state to select it'}</span></div>`;
+  const main = N.view === 'table' ? `<div class="res-scroll" data-keep="table-${N.tab}${N.tab === 'house' ? N.hview : ''}">${resNightTable()}</div>` : N.view === 'ticker' ? `<div class="res-scroll" data-keep="ticker">${resTickerHTML()}</div>` : nightMap();
   $('#night').innerHTML = `<div class="nwrap">
     <div class="nhead"><div><div class="kicker">Election Night ${N.year} · ${N.t >= 1 ? 'Final results' : 'LIVE'}</div><h2>${clockText(N.t)}</h2></div>
       <div class="ntabs">${N.tabs.map(t => `<button class="btn ${N.tab === t ? 'on' : ''}" data-tab="${t}">${tabName[t]}</button>`).join('')}</div>
       <div class="res-hbtns">${N.t < 1 ? '<button class="btn" id="nskip">⏩ Skip to final results</button>' : `${typeof resExplorer === 'function' ? '<button class="btn" id="fullres">📊 Full results</button>' : ''}<button class="btn primary" id="ndone">Continue →</button>`}</div></div>
     ${N.pres ? resBannerHTML(T) : ''}
-    <div class="ntally">${N.pres ? barChart(`President · ${N.pres.names.D} vs ${N.pres.names.R}`, T.pres, 538, 270, 'electoral votes', resPresFoot(N.pres)) : ''}
+    <div class="ntally">${N.pres ? barChart(`President · ${N.pres.names.D} vs ${N.pres.names.R}${N.pres.evI ? ` vs ${N.pres.names.I}` : ''}`, T.pres, 538, 270, 'electoral votes', resPresFoot(N.pres), true) : ''}
       ${barChart('Senate', T.senate, 100, 51, `${N.races.length} seats up`, resSeatFoot(N.before, T.senate, 51, 'the Senate'))}${barChart('House', T.house, 435, 218, 'all 435 seats', resSeatFoot(N.house.before, T.house, 218, 'the House'))}${T.gov ? barChart('Governors', T.gov, 50, 26, `${N.gov.length} races`, resSeatFoot(govB, T.gov, 26, 'most governorships')) : ''}</div>
     <div class="nbody"><div class="nmapwrap">${sub}${main}${N.tab !== 'pres' ? resNightSnake(T) : ''}<div class="npop">${popularVote(T)}</div></div>
       <div class="nside"><div class="ndetail">${detailPanel()}</div>
         <div class="nlist"><div class="lh">All ${tabName[N.tab].toLowerCase()} results · ← → to browse</div>${raceList()}</div>
-        <div class="nchart"><div class="lh">Closest races</div>${closestChart()}</div></div></div></div>`;
+        ${N.tab === 'house' ? resHouseFlips() : ''}<div class="nchart"><div class="lh">Closest ${N.tab === 'house' && N.house.districts ? 'districts' : 'races'}</div>${closestChart()}</div></div></div></div>`;
   for (const el of scrollers()) { const k = keep[el.dataset.keep || el.className]; if (k != null) el.scrollTop = k; }
   // a chime as races are called
   const nowCalled = contests(N.tab).filter(isCalled).length;
@@ -425,35 +475,48 @@ function renderNight() {
   N.lastCalled = nowCalled;
 }
 
+// the national list of House seats changing hands, latest call first
+function resHouseFlips() {
+  const N = NIGHT, HD = N.house.districts; if (!HD) return '';
+  const L = [].concat(...Object.values(HD)).filter(x => x.flip && N.t >= x.call).sort((a, b) => b.call - a.call), g = p => L.filter(x => x.w === p).length;
+  return `<div class="nchart"><div class="lh">Seats changing hands · ${L.length}${L.length ? ` · <span style="color:${PARTY.D.color}">D +${g('D')}</span> <span style="color:${PARTY.R.color}">R +${g('R')}</span>` : ''}</div>${L.length ? `<div class="res-scroll hd-flips" data-keep="hd-flips">${L.map(x => { const w = x.w === 'D' ? x.dName : x.rName, l = x.w === 'D' ? x.rName : x.dName;
+    return `<div class="lrow ${N.sel === x.id.slice(0, 2) ? 'on' : ''}" data-code="${x.id.slice(0, 2)}"><span><b>${x.id}</b> <b style="color:${PARTY[x.w].color}">${w}</b> <small style="color:var(--dim)">${x.inc ? `unseats ${l}` : 'takes the open seat'}</small></span><span>${hdTag(x.w, x.m)}</span></div>`; }).join('')}</div>` : '<div class="nsub">No House seat has changed hands yet.</div>'}</div>`;
+}
+
 /* ---------------- the Decision Desk: banner, ticker, tables, snakes ---------------- */
 const resSwing = d => `<b style="color:${d >= 0 ? PARTY.D.color : PARTY.R.color}">${d >= 0 ? 'D' : 'R'}+${Math.abs(d).toFixed(1)}</b>`;
 const resMarginTag = (p, m) => `<b style="color:${PARTY[p].color}">${p} +${Math.abs(m).toFixed(1)}</b>`;
 // the state whose electoral votes put the winner past 270, counting the winner's states from safest to closest
 function resTipping(P) {
-  const L = Object.entries(P.states).filter(([, s]) => s.w === P.winner).sort((a, b) => Math.abs(b[1].dPct - b[1].rPct) - Math.abs(a[1].dPct - a[1].rPct));
-  let ev = 0; for (const [code, s] of L) { ev += s.ev; if (ev >= 270) return { code, ev: s.ev, m: Math.abs(s.dPct - s.rPct) }; }
+  const L = Object.entries(P.states).filter(([, s]) => s.w === P.winner).sort((a, b) => presWM(b[1]) - presWM(a[1]));
+  let ev = 0; for (const [code, s] of L) { ev += s.ev; if (ev >= 270) return { code, ev: s.ev, m: presWM(s) }; }
   return null;
 }
 // states that voted with the winner and mirrored the national popular vote within a point and a half
 function resBellwethers(P) {
-  const tot = P.popD + P.popR + (P.popI || 0) || 1, nat = (P.popD - P.popR) / tot * 100, off = s => Math.abs(s.dPct - s.rPct - nat);
+  const tot = P.popD + P.popR + (P.popI || 0) || 1, nat = (P.popD - P.popR) / tot * 100, natI = (P.popI || 0) / tot * 100, off = s => Math.abs(s.dPct - s.rPct - nat) + Math.abs((s.iPct || 0) - natI);
   return Object.entries(P.states).filter(([, s]) => s.w === P.winner && off(s) < 1.5).sort((a, b) => off(a[1]) - off(b[1])).slice(0, 3).map(x => x[0]);
 }
-function resClosest(P) { return Object.entries(P.states).sort((a, b) => Math.abs(a[1].dPct - a[1].rPct) - Math.abs(b[1].dPct - b[1].rPct))[0][0]; }
+function resClosest(P) { return Object.entries(P.states).sort((a, b) => presWM(a[1]) - presWM(b[1]))[0][0]; }
 // when (and with which state) the winner's called electoral votes first reached 270
 function resProjTime(P) {
   let ev = 0;
   for (const [code, s] of Object.entries(P.states).sort((a, b) => a[1].call - b[1].call)) if (s.w === P.winner) { ev += s.ev; if (ev >= 270) return { t: s.call, code }; }
   return null;
 }
-function resDecided(T) { const t = (T || tallies()).pres; return NIGHT.t >= 1 || t.D >= 270 || t.R >= 270; }
+const resWin270 = t => t.D >= 270 ? 'D' : t.R >= 270 ? 'R' : (t.I || 0) >= 270 ? 'I' : null;
+// the tickets in a tally from most to fewest electoral votes
+const resOrder = (t, P) => ['D', 'R', 'I'].filter(p => p !== 'I' || (P.names.I && (t.I || P.evI))).sort((a, b) => (t[b] || 0) - (t[a] || 0));
+function resDecided(T) { const t = (T || tallies()).pres; return NIGHT.t >= 1 || !!resWin270(t); }
 // home states, running mates, the tipping point and the bellwethers, for one state's detail panel
 function resPresNotes(P, code, called) {
   const notes = [], s = P.states[code];
-  for (const p of ['D', 'R']) {
+  for (const p of ['D', 'R', 'I']) {
+    if (!P.names[p]) continue;
     if (P.homes && P.homes[p] === code) notes.push(`🏠 ${P.names[p]}'s home state${called ? (s.w === p ? ' · carried it' : ' · <b style="color:var(--no)">lost at home</b>') : ''}`);
     if (P.vps && P.vps[p] && P.vps[p].state === code) notes.push(`🤝 Running mate ${P.vps[p].name}'s home state (${p})${called ? (s.w === p ? ' · delivered' : ' · <b style="color:var(--no)">couldn\'t deliver</b>') : ''}`);
   }
+  if (called && s.w === 'I') notes.push(`<b style="color:${PARTY.I.color}">★ Carried by ${P.names.I}${P.third && P.third.label && P.third.label !== 'Independent' ? ` (${P.third.label})` : ''}</b> · ${pct(s.iPct)} beat both major parties`);
   if (called && resDecided()) {
     const tip = resTipping(P); if (tip && tip.code === code) notes.push(`⚖ <b>Tipping-point state</b> · its ${s.ev} electoral votes put ${P.names[P.winner]} past 270`);
     if (resBellwethers(P).includes(code)) notes.push('🔔 <b>Bellwether</b> · mirrored the national popular vote');
@@ -464,7 +527,7 @@ function resPresNotes(P, code, called) {
 // the White House line under the electoral-vote bar: the stakes while the count runs, the outcome once it is final
 function resPresFoot(P) {
   const inc = PARTY[P.inc].short, kept = P.winner === P.inc;
-  if (NIGHT.t < 1) return `${inc} hold the White House · ${P.running ? `${P.names[P.inc]} seeks a second term` : 'open race'}`;
+  if (NIGHT.t < 1) return `${inc} hold the White House · ${P.running ? `${P.names[P.inc]} seeks a second term` : 'open race'}${P.names.I && P.third && P.third.major ? ` · a serious ${P.third.label === 'Independent' ? 'independent' : P.third.label} challenge` : ''}`;
   return `${inc} ${kept ? 'hold' : 'lose'} the White House · ${P.running ? `${P.names[P.inc]} ${kept ? 'wins' : 'is denied'} a second term` : `open race · ${P.names[P.winner]} (${P.winner}) ${kept ? 'keeps it for the ' + inc : 'takes it'}`}${P.houseVote ? ' · decided in the House' : ''}`;
 }
 // before → after seat counts, the net for your party and a projection once a side clinches
@@ -481,37 +544,38 @@ function resSeatFoot(before, now, need, what) {
 }
 // the big board: PROJECTION once a ticket's called electoral votes reach 270, drama while it stays close
 function resBannerHTML(T) {
-  const N = NIGHT, P = N.pres, t = T.pres;
-  if (t.D >= 270 || t.R >= 270) {
-    const w = t.D >= 270 ? 'D' : 'R', pj = resProjTime(P), re = w === P.inc && P.running;
+  const N = NIGHT, P = N.pres, t = T.pres, w0 = resWin270(t);
+  if (w0) {
+    const w = w0, pj = resProjTime(P), re = w === P.inc && P.running, rest = resOrder(t, P).filter(p => p !== w);
     if (!N.fanfared) { N.fanfared = true; sfx.fanfare(); }
     return `<div class="res-banner" style="--pc:${PARTY[w].color}"><div class="res-blabel">★ Projection · ${clockText(pj ? pj.t : N.t)}${pj ? ` · ${stName(pj.code)} puts it over the top` : ''}</div>
       <div class="res-bhead">${P.names[w].toUpperCase()} ${re ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div>
-      <div class="res-bsub">${PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${t[other(w)]}`}${w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
+      <div class="res-bsub">${w === 'I' ? `${P.third && P.third.label && P.third.label !== 'Independent' ? `${P.third.label} candidate` : 'Independent'} · <b>${P.inc === 'I' ? 'the White House stays outside the two parties' : 'the first President from outside the two parties in living memory'}</b>` : PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${rest.map(p => t[p] || 0).join(' and ')}`}${w === 'I' ? '' : w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
   }
-  const left = Object.entries(P.states).filter(([, s]) => N.t < s.call).sort((a, b) => b[1].ev - a[1].ev), lead = t.D >= t.R ? 'D' : 'R', trail = other(lead);
+  const left = Object.entries(P.states).filter(([, s]) => N.t < s.call).sort((a, b) => b[1].ev - a[1].ev), ord = resOrder(t, P), lead = ord[0], trail = ord[1];
   if (N.t >= 1 || !left.length) {
-    const hv = P.houseVote, w = P.winner, tied = hv ? 50 - hv.D - hv.R : 0;
-    const house = hv ? (hv[w] > hv[other(w)] ? ` — <b>${hv[w]} delegations to ${hv[other(w)]}</b>${tied ? `, ${tied} split` : ''} —` : ` — the delegations split ${hv.D} to ${hv.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting`) : ' —';
-    return `<div class="res-banner close"><div class="res-blabel">Decision Desk${N.t < 1 ? ` · ${clockText(N.t)}` : ''}</div><div class="res-bhead">DEADLOCK · ${t.D}–${t.R}</div>
-    <div class="res-bsub">Nobody reaches 270. Under the Twelfth Amendment the House chooses the President, one vote per state delegation${house} <b>${P.names[w]}</b> (${w}) ${w === P.inc && P.running ? 'keeps the White House' : 'prevails'}.</div></div>`;
+    const hv = P.houseVote, w = P.winner, l = w === 'D' ? 'R' : 'D', tied = hv ? 50 - hv.D - hv.R : 0, tie = t.D === 269 && t.R === 269;
+    const house = hv ? (hv[w] > hv[l] ? ` — <b>${hv[w]} delegations to ${hv[l]}</b>${tied ? `, ${tied} split` : ''} —` : ` — the delegations split ${hv.D} to ${hv.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting`) : ' —';
+    return `<div class="res-banner close"><div class="res-blabel">Decision Desk${N.t < 1 ? ` · ${clockText(N.t)}` : ''}</div><div class="res-bhead">${tie ? `DEADLOCK · ${t.D}–${t.R}` : `NO MAJORITY · ${ord.map(p => `${p} ${t[p] || 0}`).join(' · ')}`}</div>
+    <div class="res-bsub">Nobody reaches 270${t.I ? `: ${P.names.I}'s ${t.I} electoral votes deny both parties a majority` : ''}. Under the Twelfth Amendment the House chooses the President, one vote per state delegation${house} <b>${P.names[w]}</b> (${w}) ${w === P.inc && P.running ? 'keeps the White House' : 'prevails'}.</div></div>`;
   }
   if (N.t >= 0.5 && (left.length <= 12 || t.und <= 150)) {
-    const need = 270 - t[lead], brink = left.length && need <= left[0][1].ev;
+    const need = 270 - t[lead], brink = left.length && need <= left[0][1].ev, third = ord[2] && t[ord[2]] ? ` ${P.names[ord[2]]} holds ${t[ord[2]]}.` : '';
     return `<div class="res-banner close"><div class="res-blabel">Decision Desk · ${clockText(N.t)}</div><div class="res-bhead">${brink ? `ON THE BRINK · ${P.names[lead].toUpperCase()} IS ONE STATE AWAY` : 'TOO CLOSE TO CALL'}</div>
-    <div class="res-bsub">${P.names[lead]} leads <b>${t[lead]}–${t[trail]}</b> and needs <b>${need}</b> of the ${t.und} electoral votes still out in ${left.length} state${left.length === 1 ? '' : 's'}: ${left.map(([c, s]) => `${c} (${s.ev})`).join(', ')}. ${P.names[trail]} needs ${270 - t[trail]}${270 - t[trail] > t.und ? ' — more than remain' : ''}.</div></div>`;
+    <div class="res-bsub">${P.names[lead]} leads <b>${t[lead]}–${t[trail] || 0}</b> and needs <b>${need}</b> of the ${t.und} electoral votes still out in ${left.length} state${left.length === 1 ? '' : 's'}: ${left.map(([c, s]) => `${c} (${s.ev})`).join(', ')}. ${P.names[trail]} needs ${270 - (t[trail] || 0)}${270 - (t[trail] || 0) > t.und ? ' — more than remain' : ''}.${third}</div></div>`;
   }
   return '';
 }
 // popular vote vs. the Electoral College, turnout and the third-party share
 function resPopCallout(P, t, d, r, i) {
-  const N = NIGHT, tot = d + r + i || 1, ecW = t.D >= 270 ? 'D' : t.R >= 270 ? 'R' : null, pvW = d >= r ? 'D' : 'R', gap = Math.abs(d - r), pts = gap / tot * 100, final = N.t >= 1;
+  const N = NIGHT, tot = d + r + i || 1, ecW = resWin270(t), V = { D: d, R: r, I: i }, pv = ['D', 'R', 'I'].sort((a, b) => V[b] - V[a]), pvW = pv[0], gap = V[pv[0]] - V[pv[1]], pts = gap / tot * 100, final = N.t >= 1;
   const turn = `${final ? 'Total turnout' : 'Votes counted so far'}: <b>${nfmt(d + r + i)}</b>${i ? ` · third party <b style="color:${PARTY.I.color}">${pct(i / tot * 100)}</b> (${P.names.I})` : ' · no third-party candidate of note'}`;
+  const ecTxt = w => `<b>${t[w]}–${resOrder(t, P).filter(p => p !== w).map(p => t[p] || 0).join('–')}</b>`;
   let line;
   // a split decision is only declared once every vote is in: early returns favor whichever side's states close first
-  if (final && ecW && ecW !== pvW) line = `<span class="res-split">⚠ Split decision:</span> <b>${P.names[ecW]}</b> wins the Electoral College while losing the popular vote by <b>${nfmt(gap)}</b> votes (${pct(pts)}).`;
-  else if (final && ecW) line = `<b>${P.names[ecW]}</b> wins the Electoral College <b>${t[ecW]}–${t[other(ecW)]}</b> and the popular vote by ${nfmt(gap)} votes (+${pts.toFixed(1)}).`;
-  else if (final) line = `The Electoral College deadlocks at <b>${t.D}–${t.R}</b>; ${P.names[pvW]} wins the popular vote by ${nfmt(gap)} votes (${pct(pts)})${P.winner !== pvW ? `, but the House chooses <b>${P.names[P.winner]}</b>` : ' and the House confirms it'}.`;
+  if (final && ecW && ecW !== pvW) line = `<span class="res-split">⚠ Split decision:</span> <b>${P.names[ecW]}</b> wins the Electoral College while ${P.names[pvW]} wins the popular vote by <b>${nfmt(gap)}</b> votes (${pct(pts)}).`;
+  else if (final && ecW) line = `<b>${P.names[ecW]}</b> wins the Electoral College ${ecTxt(ecW)} and the popular vote by ${nfmt(gap)} votes (+${pts.toFixed(1)}).`;
+  else if (final) line = `The Electoral College ${t.D === 269 && t.R === 269 ? `deadlocks at <b>269–269</b>` : `gives no one a majority (${resOrder(t, P).map(p => `${p} ${t[p] || 0}`).join(', ')})`}; ${P.names[pvW]} wins the popular vote by ${nfmt(gap)} votes (${pct(pts)})${P.winner !== pvW ? `, but the House chooses <b>${P.names[P.winner]}</b>` : ' and the House confirms it'}.`;
   else if (ecW) line = `<b>${P.names[ecW]}</b> is projected to win the Electoral College and ${ecW === pvW ? 'leads' : '<span class="res-split">trails</span>'} the popular vote so far by ${nfmt(gap)} votes (${pct(pts)}) with ${t.und} electoral votes still out.`;
   else line = `${P.names[pvW]} leads the popular vote by ${nfmt(gap)} (${pct(pts)}) with ${t.und} electoral votes still out.`;
   return `<div class="res-callout">${line}<br><small>${turn}</small></div>`;
@@ -525,8 +589,8 @@ function resTickerHTML() {
   return `<div class="res-ticker"><div class="lh">Decision Desk · ${rows.length} call${rows.length === 1 ? '' : 's'} · latest first</div>${rows.map(({ tab, c }) => {
     let party, who, mg, flip;
     if (c.r) { party = c.r.wParty; who = `${c.r.wName} (${party})`; mg = resMarginTag(party, c.r.margin); flip = c.r.flip; }
-    else if (tab === 'pres') { party = c.s.w; who = `${N.pres.names[party]} (${party})`; mg = `${resMarginTag(party, c.s.dPct - c.s.rPct)} · ${c.s.ev} EV`; }
-    else { const ch = c.s.d - c.s.prevD; party = c.s.d > c.s.r ? 'D' : c.s.r > c.s.d ? 'R' : 'I'; who = `<span style="color:${PARTY.D.color}">${c.s.d}D</span>–<span style="color:${PARTY.R.color}">${c.s.r}R</span>`; mg = ch ? `<b style="color:${PARTY[ch > 0 ? 'D' : 'R'].color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>` : '<span style="color:var(--dim)">no change</span>'; flip = !!ch; }
+    else if (tab === 'pres') { party = c.s.w; who = `${N.pres.names[party]} (${party})`; mg = `${resMarginTag(party, presWM(c.s))} · ${c.s.ev} EV`; }
+    else { const ch = c.s.d - c.s.prevD, fl = ((N.house.districts || {})[c.code] || []).filter(x => x.flip); party = c.s.d > c.s.r ? 'D' : c.s.r > c.s.d ? 'R' : 'I'; who = `<span style="color:${PARTY.D.color}">${c.s.d}D</span>–<span style="color:${PARTY.R.color}">${c.s.r}R</span>`; mg = (ch ? `<b style="color:${PARTY[ch > 0 ? 'D' : 'R'].color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>` : '<span style="color:var(--dim)">no net change</span>') + (fl.length ? ` · ${fl.map(x => `<b style="color:${PARTY[x.w].color}">${x.id}</b>`).join(', ')} flip${fl.length > 1 ? '' : 's'}` : ''); flip = !!fl.length; }
     return `<div class="res-tick" data-tab-go="${tab}" data-code="${c.code}"><span class="res-tt">${clockText(c.call)}</span><span class="res-tk ${tab}">${kind[tab]}</span><span class="res-tb"><b style="color:${PARTY[party].color}">${stName(c.code)}</b> · ${who} · ${mg}${flip ? ' <span class="call flip">★ FLIP</span>' : ''}</span></div>`;
   }).join('')}</div>`;
 }
@@ -548,7 +612,15 @@ function resNightTable() {
     const P = N.pres;
     cols = [{ k: 'state', l: 'State' }, { k: 'ev', l: 'EV', num: 1 }, { k: 'd', l: 'D %', num: 1 }, { k: 'r', l: 'R %', num: 1 }].concat(P.names.I ? [{ k: 'i', l: 'I %', num: 1 }] : []).concat([{ k: 'margin', l: 'Margin', num: 1 }, { k: 'swing', l: `Swing${P.prev ? ` vs ${P.prev.year}` : ''}`, num: 1 }, { k: 'call', l: 'Called', num: 1 }]);
     rows = L.map(c => { const s = c.s, called = isCalled(c), m = s.dPct - s.rPct, prev = P.prev && P.prev.states ? P.prev.states[c.code] : null;
-      return { code: c.code, cls: called ? '' : 'res-pending', c: { state: st(c), ev: num(s.ev), d: pc('D', s.dPct), r: pc('R', s.rPct), i: pc('I', s.iPct), margin: called ? num(m, resMarginTag(s.w, m)) : null, swing: called && prev != null ? num(m - prev, resSwing(m - prev)) : null, call: when(c) } }; });
+      return { code: c.code, cls: called ? '' : 'res-pending', c: { state: st(c), ev: num(s.ev), d: pc('D', s.dPct), r: pc('R', s.rPct), i: pc('I', s.iPct), margin: called ? num(m, resMarginTag(s.w, s.w === 'I' ? presWM(s) : m)) : null, swing: called && prev != null ? num(m - prev, resSwing(m - prev)) : null, call: when(c) } }; });
+  } else if (tab === 'house' && N.hview !== 'state' && N.house.districts) {
+    // all 435 districts; percentages appear as each one is called
+    cols = [{ k: 'dist', l: 'District' }, { k: 'win', l: 'Winner' }, { k: 'd', l: 'D %', num: 1 }, { k: 'r', l: 'R %', num: 1 }, { k: 'margin', l: 'Margin', num: 1 }, { k: 'swing', l: 'Swing', num: 1 }, { k: 'seat', l: 'Seat', num: 1 }, { k: 'call', l: 'Called', num: 1 }];
+    rows = [].concat(...Object.values(N.house.districts)).map(x => { const called = N.t >= x.call, c = { code: x.id.slice(0, 2), call: x.call, s: { dPct: x.dPct, rPct: x.rPct } }, w = x.w === 'D' ? x.dName : x.rName, sw = x.prev != null ? x.m - x.prev : null;
+      return { code: c.code, cls: called ? (x.flip ? 'hd-fliprow' : '') : 'res-pending', c: { dist: { v: x.id, h: `<b>${x.id}</b>` },
+        win: called ? { v: w, h: `<b style="color:${PARTY[x.w].color}">${w}</b>${x.flip && x.inc ? ` <small style="color:var(--dim)">def. ${x.w === 'D' ? x.rName : x.dName}</small>` : ''}` } : { v: 'zzz', h: `<span style="color:var(--dim)">${x.inc ? `${x.incName} (${x.inc}, inc.)` : 'open seat'}</span>` },
+        d: called ? pc('D', x.dPct) : null, r: called ? pc('R', x.rPct) : null, margin: called ? num(Math.abs(x.m), hdTag(x.w, x.m)) : null, swing: called && sw != null ? num(sw, resSwing(sw)) : null,
+        seat: called ? num(x.flip ? 2 : x.open ? 1 : 0, x.flip ? `<span class="call flip">${x.w} FLIP</span>` : x.open ? `<span class="hd-open" title="${hdWhy[x.why] || ''}">OPEN</span>` : '<span class="hd-inc">INC</span>') : null, call: when(c) } }; });
   } else if (tab === 'house') {
     cols = [{ k: 'state', l: 'State' }, { k: 'n', l: 'Seats', num: 1 }, { k: 'd', l: 'D', num: 1 }, { k: 'r', l: 'R', num: 1 }, { k: 'dp', l: 'D %', num: 1 }, { k: 'rp', l: 'R %', num: 1 }, { k: 'ch', l: 'Change', num: 1 }, { k: 'call', l: 'Called', num: 1 }];
     rows = L.map(c => { const s = c.s, called = isCalled(c), ch = s.d - s.prevD;
@@ -582,6 +654,11 @@ function resNightSnake(T) {
     for (const r of N.races) cells.push(isCalled(r) ? { p: r.wParty, m: r.margin, flip: r.flip, code: r.code, title: `${stName(r.code)}: ${r.wName} (${r.wParty}) +${r.margin.toFixed(1)}${r.flip ? ' · FLIP' : ''}` } : { p: null, m: 0, code: r.code, title: `${stName(r.code)}: not yet called` });
     const t = T.senate;
     return resSnakeHTML(cells, 51, 100, `${dot('D')}D ${t.D}</span>${t.I ? ` · ${dot('I')}I ${t.I}</span>` : ''} · ${t.und ? `${t.und} seat${t.und === 1 ? '' : 's'} uncalled` : 'all 100 seats accounted for'} · ${dot('R')}R ${t.R}</span> · 51 for control · seats sorted by margin, flips outlined in gold`);
+  }
+  if (tab === 'house' && N.house.districts) {
+    for (const L of Object.values(N.house.districts)) for (const x of L) cells.push(N.t >= x.call ? { p: x.w, m: Math.abs(x.m), code: x.id.slice(0, 2), flip: x.flip, title: `${x.id}: ${x.w === 'D' ? x.dName : x.rName} (${x.w}) +${Math.abs(x.m).toFixed(1)}${x.flip ? ' · FLIP' : ''}` } : { p: null, m: 0, code: x.id.slice(0, 2), title: `${x.id}: not yet called` });
+    const t = T.house;
+    return resSnakeHTML(cells, 218, 435, `${dot('D')}D ${t.D}</span> · ${t.und ? `${t.und} seats uncalled` : 'all 435 seats called'} · ${dot('R')}R ${t.R}</span> · 218 for control · every district sorted by margin, flips outlined in gold`);
   }
   if (tab === 'house') {
     for (const [code, s] of Object.entries(N.house.states)) {
