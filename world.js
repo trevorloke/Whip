@@ -107,7 +107,8 @@ function governorsMap() {
 }
 
 /* ---------------- the Pulse: coverage of the national mood ---------------- */
-function genericBallot() { return clamp(50 + S.mood * 0.9 + (S.president.party === S.side ? (S.president.approval - 50) * 0.15 : -(S.president.approval - 50) * 0.15), 30, 70); }
+// the generic ballot: your party's share. In an independent career, the Democrats' share (an independent President is neutral)
+function genericBallot() { return clamp(IND() ? 50 + envSign(S.president.party) * (S.president.approval - 50) * 0.15 : 50 + S.mood * 0.9 + (S.president.party === S.side ? (S.president.approval - 50) * 0.15 : -(S.president.approval - 50) * 0.15), 30, 70); }
 function rightTrack() { return clamp(Math.round(38 + (S.president.approval - 50) * 0.7 + (S.war && S.war.support < 45 ? -6 : 0) + (S.shutdown ? -8 : 0)), 12, 75); }
 function pulseTick() {
   S.pulse = S.pulse || [];
@@ -139,12 +140,12 @@ function pulseNominees() { const N = S.nominees; return !!(N && N.D && N.R && N.
 // your ticket's two-way national margin: convMargin carries the decayed convention bounce and party unity
 function pulseMargin() {
   if (typeof convMargin === 'function') return convMargin();
-  const s = presSetup(); return (s.inc === S.side ? 1 : -1) * s.base;
+  const s = presSetup(); return IND() ? presEnvD(s) : (s.inc === S.side ? 1 : -1) * s.base;   // independent career: the Democratic frame
 }
 function pulseShares(m) { m = clamp(m, -40, 40); return { me: 47 + m / 2, them: 47 - m / 2, und: 6 }; }
 // the Electoral College at that national margin (presProjection's map, moved to the bounce-adjusted environment)
 function pulseProj(m) {
-  const s = presSetup(), sg = S.side === 'D' ? 1 : -1, by = {};
+  const s = presSetup(), sg = frameP() === 'D' ? 1 : -1, by = {};
   let evMine = 0;
   const states = Object.keys(EV).map(c => { const x = { c, m: stateMarginD(c, sg * m, s.noms) * sg, ev: EV[c] }; by[c] = x; if (x.m > 0) evMine += x.ev; return x; });
   return { states, by, evMine, noms: s.noms, battle: states.filter(x => Math.abs(x.m) < 8).sort((a, b) => b.ev - a.ev || Math.abs(a.m) - Math.abs(b.m)) };
@@ -165,12 +166,13 @@ function pulseTicketHTML(p) {
     <br><small>${vp ? `${vpP && vpP.seed != null ? pulsePic(vpP, 26) : '🎗'} with <b>${vp.name}</b>${vp.state ? ` of ${stName(vp.state)}` : ''}` : '<i style="color:var(--dim)">Running mate: to be named at the convention</i>'}</small>${conv}</div></div>`;
 }
 function pulsePollBar(m) {
-  const s = pulseShares(m), N = S.nominees, me = S.side, them = other(me);
+  const s = pulseShares(m), N = S.nominees, me = frameP(), them = other(me);
   const seg = (w, c, t, al) => `<div style="width:${w}%;background:${c};padding:5px 6px;text-align:${al};white-space:nowrap;overflow:hidden">${t}</div>`;
   return `<div style="display:flex;border-radius:6px;overflow:hidden;font-size:12px;font-weight:800;color:#fff;margin:6px 0">${seg(s.me, PARTY[me].color, `${lastName(N[me])} ${s.me.toFixed(1)}`, 'left')}${seg(s.und, '#3a4250', '', 'center')}${seg(s.them, PARTY[them].color, `${s.them.toFixed(1)} ${lastName(N[them])}`, 'right')}</div>`;
 }
 function pulseRead(m, ev) {
-  const N = S.nominees, my = lastName(N[S.side]), their = lastName(N[other(S.side)]), lead = `${Math.abs(m).toFixed(1)}-point`;
+  if (IND()) return pulseReadInd(m, ev);
+  const N = S.nominees, my = lastName(N[frameP()]), their = lastName(N[other(frameP())]), lead = `${Math.abs(m).toFixed(1)}-point`;
   if (m > 0 && ev < 270) return `<b>A split-decision nightmare.</b> ${my} leads the popular vote by a ${lead} margin and still comes up ${270 - ev} electoral votes short. The map, not the polls, decides this.`;
   if (m < 0 && ev >= 270) return `<b>Losing the vote, winning the map.</b> ${my} trails nationally by ${Math.abs(m).toFixed(1)} but the battlegrounds hold: ${ev} electoral votes.`;
   if (Math.abs(m) < 1.5 && ev >= 240 && ev <= 300) return `<b>A coin flip${ev >= 270 ? ', tilted your way' : ''}.</b> ${my} and ${their} are inside the margin of error, and ${my} sits at ${ev} electoral votes. ${ev >= 270 ? 'Every battleground is a must-hold.' : `${270 - ev} more and the White House is yours.`}`;
@@ -181,6 +183,16 @@ function pulseRead(m, ev) {
   if (ev >= 200) return `<b>An uphill fight.</b> ${my} needs ${270 - ev} more electoral votes, and the battlegrounds lean ${their}'s way.`;
   return `<b>A long shot.</b> ${ev} electoral votes. ${my}'s campaign is quietly moving money into Senate races.`;
 }
+// the independent career reads the two-party race from the outside: m and ev are the Democrat's (D frame)
+function pulseReadInd(m, ev) {
+  const N = S.nominees, d = lastName(N.D), r = lastName(N.R), lead = m >= 0 ? d : r, trail = m >= 0 ? r : d, evL = m >= 0 ? ev : 538 - ev, pts = Math.abs(m).toFixed(1);
+  const third = N.I && N.I.name ? ` ${N.I.yours ? 'Your caucus\'s ticket' : 'The independent'}, ${lastName(N.I)}, is the wild card: carry a few states and nobody gets to 270.` : '';
+  if ((m >= 0) !== (ev >= 270) && Math.abs(m) >= 0.05) return `<b>A split-decision nightmare.</b> ${lead} leads the popular vote by ${pts} and still trails on the map, ${evL}–${538 - evL}.${third}`;
+  if (Math.abs(m) < 1.5 && ev >= 240 && ev <= 300) return `<b>A coin flip.</b> ${d} and ${r} are inside the margin of error; ${d} sits at ${ev} electoral votes.${third || ' Both parties will need friends in the Senate either way.'}`;
+  if (evL >= 330) return `<b>A rout in the making.</b> ${lead} leads by ${pts} with ${evL} electoral votes. ${trail}'s donors are calling your office to ask about the Senate.${third}`;
+  if (evL >= 270) return `<b>${lead} has the edge.</b> A ${pts}-point lead and ${evL} electoral votes. Whoever wins will need your caucus to govern.${third}`;
+  return `<b>Too close to call.</b> ${lead} leads by ${pts}, but nobody has 270 yet.${third}`;
+}
 // the trend: this cycle's ticks (pm), labeled by season, plus today
 function pulseRaceTrend(m) {
   const yy = String(electionYear(nextElectionK())).slice(2), seen = {};
@@ -190,7 +202,7 @@ function pulseRaceTrend(m) {
   });
   const s = pulseShares(m); ticks.push({ lbl: 'Today', short: 'Today', me: s.me, them: s.them });
   if (typeof campChart === 'function') return campChart({ polls: ticks });
-  return lineChart([{ pts: ticks.map(t => t.me), color: PARTY[S.side].color, label: lastName(S.nominees[S.side]) }, { pts: ticks.map(t => t.them), color: PARTY[other(S.side)].color, label: lastName(S.nominees[other(S.side)]) }]);
+  return lineChart([{ pts: ticks.map(t => t.me), color: PARTY[frameP()].color, label: lastName(S.nominees[frameP()]) }, { pts: ticks.map(t => t.them), color: PARTY[other(frameP())].color, label: lastName(S.nominees[other(frameP())]) }]);
 }
 function pulseRaceHTML() {
   const year = electionYear(nextElectionK());
@@ -198,7 +210,7 @@ function pulseRaceHTML() {
     const P = S.president;
     return `<div class="presbox"><b>🇺🇸 The race for the White House · ${year}</b><p style="margin:6px 0">Presidential primaries open in the spring. ${P.terms < 2 ? `${presTitle()} is expected to seek a second term; the ${PARTY[other(P.party)].short} are auditioning challengers in Iowa diners.` : `${presTitle()} is term-limited: both nominations are wide open, and half the Senate has been spotted in New Hampshire.`}</p></div>`;
   }
-  const m = pulseMargin(), P = pulseProj(m), me = S.side, N = S.nominees, chip = x => { const col = x.m >= 0 ? PARTY[me].color : PARTY[other(me)].color; return `<span class="bchip" style="border-color:${col}">${x.c} <small style="color:var(--dim)">${x.ev}</small> <b style="color:${col}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b></span>`; };
+  const m = pulseMargin(), P = pulseProj(m), me = frameP(), N = S.nominees, chip = x => { const col = x.m >= 0 ? PARTY[me].color : PARTY[other(me)].color; return `<span class="bchip" style="border-color:${col}">${x.c} <small style="color:var(--dim)">${x.ev}</small> <b style="color:${col}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b></span>`; };
   const map = usMap({
     fill: c => { const x = P.by[c]; return x ? { c: PARTY[x.m >= 0 ? me : other(me)].color, op: 0.3 + Math.min(0.7, Math.abs(x.m) / 15) } : null; },
     sub: c => P.by[c] ? `${EV[c]}` : '',
@@ -257,13 +269,13 @@ function pulseSenateHTML(O) {
 function openPulse(back) {
   const P = S.president, gb = genericBallot(), rt = rightTrack(), pts = S.pulse || [];
   const sal = Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]), maxS = Math.max(...sal.map(x => x[1]), 1);
-  const presYr = isPresYear(nextElectionK()), race = presYr && pulseNominees(), O = pulseSenate();
-  const hm = race ? pulseMargin() : 0, hs = pulseShares(hm), N = S.nominees, me = S.side, dp = hs.me.toFixed(0) === hs.them.toFixed(0) && Math.abs(hm) >= 0.05 ? 1 : 0; // a lead never rounds into a tie
+  const presYr = isPresYear(nextElectionK()), race = presYr && pulseNominees(), O = IND() ? null : pulseSenate();
+  const hm = race ? pulseMargin() : 0, hs = pulseShares(hm), N = S.nominees, me = frameP(), dp = hs.me.toFixed(0) === hs.them.toFixed(0) && Math.abs(hm) >= 0.05 ? 1 : 0; // a lead never rounds into a tie
   const chyrons = [
-    `SENATE OUTLOOK: ~${Math.round(O.exp)} SEATS FOR THE ${PARTY[me].short.toUpperCase()} — ${Math.round(O.pCtrl * 100)}% CHANCE OF CONTROL`,
+    IND() ? (typeof cauPulseChyron === 'function' ? cauPulseChyron() : '') : `SENATE OUTLOOK: ~${Math.round(O.exp)} SEATS FOR THE ${PARTY[me].short.toUpperCase()} — ${Math.round(O.pCtrl * 100)}% CHANCE OF CONTROL`,
     race ? `WHITE HOUSE: ${lastName(N[me]).toUpperCase()} ${hs.me.toFixed(dp)}, ${lastName(N[other(me)]).toUpperCase()} ${hs.them.toFixed(dp)} — ${pulseProj(hm).evMine} ELECTORAL VOTES FOR ${lastName(N[me]).toUpperCase()}` : presYr ? `THE ${electionYear(nextElectionK())} FIELD TAKES SHAPE: PRIMARIES OPEN IN THE SPRING` : '',
     P.approval >= 52 ? `${presTitle().toUpperCase()} RIDING HIGH AT ${P.approval}%` : P.approval <= 42 ? `${presTitle().toUpperCase()} SINKS TO ${P.approval}% — LOWEST YET` : `${presTitle().toUpperCase()} STUCK AT ${P.approval}%`,
-    S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : (gbm => gbm ? `GENERIC BALLOT: ${PARTY[S.side].short.toUpperCase()} ${gbm > 0 ? 'LEAD' : 'TRAIL'} BY ${Math.abs(gbm)} POINT${Math.abs(gbm) === 1 ? '' : 'S'}` : 'GENERIC BALLOT: DEAD EVEN')(+gb.toFixed(0) - +(100 - gb).toFixed(0)),
+    S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : (gbm => gbm ? `GENERIC BALLOT: ${PARTY[frameP()].short.toUpperCase()} ${gbm > 0 ? 'LEAD' : 'TRAIL'} BY ${Math.abs(gbm)} POINT${Math.abs(gbm) === 1 ? '' : 'S'}` : 'GENERIC BALLOT: DEAD EVEN')(+gb.toFixed(0) - +(100 - gb).toFixed(0)),
     `TOP ISSUE: ${TAG[sal[0][0]][1].toUpperCase()} — ${rt}% SAY COUNTRY ON RIGHT TRACK`,
     typeof localPulseChyron === 'function' ? localPulseChyron() : '',
     S.shutdown ? 'SHUTDOWN DRAGS ON — FEDERAL WORKERS MISS PAYCHECKS' : S.mood >= 3 ? `${PARTY[S.side].short.toUpperCase()} MOMENTUM BUILDS AHEAD OF ${electionYear(nextElectionK())}` : S.mood <= -3 ? `${PARTY[S.side].short.toUpperCase()} IN TROUBLE: VOTERS SOUR` : 'VOTERS SPLIT AS WASHINGTON GRIDLOCK GRINDS ON',
@@ -275,15 +287,15 @@ function openPulse(back) {
   showModal(`<div class="kicker">The Pulse · ${season(S.career.bills + 1)} ${billYear(S.career.bills + 1)}</div><h2>The Mood of the Country</h2>
     <div class="pulsecards">
       <div class="pc"><small>${presTitle()} approval</small><b style="color:${P.approval >= 50 ? 'var(--yes)' : 'var(--no)'}">${P.approval}%</b></div>
-      <div class="pc"><small>Generic ballot</small><b><span style="color:${PARTY[S.side].color}">${PARTY[S.side].short[0]} ${gb.toFixed(0)}</span> – <span style="color:${PARTY[other(S.side)].color}">${(100 - gb).toFixed(0)} ${PARTY[other(S.side)].short[0]}</span></b></div>
+      <div class="pc"><small>Generic ballot</small><b><span style="color:${PARTY[frameP()].color}">${PARTY[frameP()].short[0]} ${gb.toFixed(0)}</span> – <span style="color:${PARTY[other(frameP())].color}">${(100 - gb).toFixed(0)} ${PARTY[other(frameP())].short[0]}</span></b></div>
       <div class="pc"><small>Right track / wrong track</small><b>${rt} / ${100 - rt}</b></div>
-      <div class="pc"><small>National mood for your party</small><b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b></div>
+      <div class="pc"><small>${IND() ? 'Independent mood' : 'National mood for your party'}</small><b style="color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)}</b></div>
       ${S.war ? `<div class="pc war"><small>⚔ War in ${S.war.place}</small><b>${S.war.support}% support</b></div>` : ''}
     </div>
     <div class="chyron">${chyrons.map(c => `<span>${c}</span>`).join('')}</div>
     ${presYr ? pulseRaceHTML() : ''}
-    ${pulseSenateHTML(O)}
-    <div class="pulsegrid"><div><b>Trends</b>${pts.length > 1 ? lineChart([{ pts: pts.map(p => p.ap), color: PARTY[P.party].color, label: 'Approval' }, { pts: pts.map(p => p.gb), color: '#e3b54a', label: 'Your party' }]) : '<p style="color:var(--dim)">Trends appear after your first bill.</p>'}</div>
+    ${IND() ? (typeof cauPulseHTML === 'function' ? cauPulseHTML() : '') : pulseSenateHTML(O)}
+    <div class="pulsegrid"><div><b>Trends</b>${pts.length > 1 ? lineChart([{ pts: pts.map(p => p.ap), color: PARTY[P.party].color, label: 'Approval' }, { pts: pts.map(p => p.gb), color: '#e3b54a', label: IND() ? 'Democrats' : 'Your party' }]) : '<p style="color:var(--dim)">Trends appear after your first bill.</p>'}</div>
       <div><b>What voters care about</b>${sal.map(([t, v]) => `<div class="salrow"><span>${TAG[t][0]} ${TAG[t][1]}</span><span class="mbar"><i style="width:${v / maxS * 100}%;background:#e3b54a"></i></span></div>`).join('')}<small style="color:var(--dim)">Bills on the top issues move public opinion more.</small></div></div>
     <div class="voices"><b>Voices from the states</b>${voices}</div>
     <div class="choices"><button class="btn primary adv" id="pulseok">Back</button></div>`);
@@ -306,9 +318,9 @@ function worldNews() {
     S.eos.push({ name, tag, party: P.party, year: currentYear() });
     S.salience[tag] = (S.salience[tag] || 1) + 2;
     if (Math.random() < 0.5) P.approval += 1;
-    if (P.party === S.side) S.mood += 0.3; else S.mood -= 0.3;
+    if (!IND()) { if (P.party === S.side) S.mood += 0.3; else S.mood -= 0.3; }
     if (Math.random() < 0.4) S.laws.push({ name: `${presTitle()}'s ${name}`, party: P.party, inBills: ri(1, 3), eo: true });
-    out.push(`🖋️ ${presTitle()} signs the <b>${name}</b> (${TAG[tag][1]}).${P.party === S.side ? '' : ' Your base is furious.'}`);
+    out.push(`🖋️ ${presTitle()} signs the <b>${name}</b> (${TAG[tag][1]}).${IND() || P.party === S.side ? '' : ' Your base is furious.'}`);
   }
   // cabinet turnover
   if (Math.random() < 0.06) {
@@ -484,10 +496,10 @@ function govNewCand(party, code, year) {
 function govMargin(f, year) {
   const A = f.A, code = f.code, sg = A === S.side ? 1 : -1, P = S.president, inPres = P.party === A ? 1 : P.party === other(A) ? -1 : 0;
   const adv = (A === 'R' ? ST[code].lean : -ST[code].lean) * 0.35;
-  let pm = sg * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8) - (inPres > 0 && year % 4 ? 2 : 0);
+  let pm = (IND() ? envSign(A) * (((S.election && S.election.wave) || 0) * 0.8) : sg * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8)) - (inPres > 0 && year % 4 ? 2 : 0);
   if (year % 2) pm += inPres * ((P.approval - 50) * 0.12 - 1.5); // the off-year: a referendum on the President
   const star = (f.starA ? 1.5 : 0) - (f.starB ? 1.5 : 0); // a big-city mayor or a Speaker brings a following
-  return adv + pm + (f.open ? 0 : 5) + star + sg * cashEff((S.election && S.election.govCash) || 0, 1.2);
+  return adv + pm + (f.open ? 0 : 5) + star + (IND() ? 0 : sg * cashEff((S.election && S.election.govCash) || 0, 1.2));
 }
 let govLastRun = null; // the latest even-year governors' races, for local.js's results log (not saved)
 function runGovernors(year) { const races = runGovernorsIn(Object.keys(S.governors).filter(c => govUp(c, year)), year); govLastRun = { year, races }; return races; }
@@ -497,7 +509,7 @@ function runGovernorsIn(codes, year, opts = {}) {
   for (const code of codes) {
     const g = S.governors[code]; if (!g) continue;
     const f = (opts.fields && opts.fields[code]) || govField(code, year), A = f.A, open = f.open;
-    const mg = govMargin(f, year) + (A === S.side ? 1 : -1) * ((opts.help && opts.help[code]) || 0) + gauss() * 8;
+    const mg = govMargin(f, year) + youSign(A) * ((opts.help && opts.help[code]) || 0) + gauss() * 8;
     const np = mg >= 0 ? A : other(A), wc = np === A ? f.cA : f.cB, lc = np === A ? f.cB : f.cA;
     const wPct = clamp(49.25 + Math.abs(mg) / 2, 49.5, 75), lPct = 98.5 - wPct, tv = turnout(code), sc = `${wPct.toFixed(0)}–${lPct.toFixed(0)}`;
     let winner;
@@ -523,7 +535,7 @@ function execHTML() {
   const lastTheirs = (S.eos || []).slice().reverse().find(e => e.party !== S.side && !e.sued);
   const nextPrimaryIn = (() => { for (let k = 1; k <= 8; k++) { const n = S.career.bills + k; if (n % 6 === 4 && billYear(n) % 4 === 0) return k; } return 99; })();
   const underUsed = S.underUsed === S.career.bills;
-  const undermine = yours ? `<details class="cdet under"><summary>🗡️ Undermine the President${S.undermine ? ` · undermined ${S.undermine}×` : ''}${S.challenger ? ' · challenger recruited' : ''}</summary>
+  const undermine = yours && !IND() ? `<details class="cdet under"><summary>🗡️ Undermine the President${S.undermine ? ` · undermined ${S.undermine}×` : ''}${S.challenger ? ' · challenger recruited' : ''}</summary>
       <p style="font-size:12px;color:var(--dim)">${presTitle()} leads your party, but you don't have to follow. Undermining drags down their approval (and your party's mood with it) and weakens them in a primary. It also starts a feud: the President stops making calls for you, backs challengers against your wing, can veto your bills and will hit back between bills (see <b>You and the President</b> below). One move between bills.</p>
       <div class="shop">
         <button class="btn" data-und="leak" ${underUsed || S.career.capital < 1 ? 'disabled' : ''}><span>Leak damaging stories<small>Approval −3 to −6, your party's mood −0.4.</small></span><span class="cost">1 cap</span></button>

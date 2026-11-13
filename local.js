@@ -164,7 +164,7 @@ function localSweep() {
 // the national environment down the ballot, Democratic-positive points: the mood, the wave, and the President's drag off-cycle
 function locEnvD(year) {
   const P = S.president, E = S.election, pres = P.party === 'D' ? 1 : P.party === 'R' ? -1 : 0, ref = (P.approval - 50) * 0.12;
-  let d = (S.side === 'D' ? 1 : -1) * (S.mood * 0.5 + ((E && E.wave) || 0) * 0.8) + gauss() * 1.2;
+  let d = (frameP() === 'D' ? 1 : -1) * (partyMood() * 0.5 + ((E && E.wave) || 0) * 0.8) + gauss() * 1.2;
   if (year % 2) d += pres * (ref - 3); else if (year % 4 === 2) d += pres * (ref - 2);
   return d;
 }
@@ -176,7 +176,7 @@ function locVote(o, c, frac, envD) {
 }
 function locRunLegis(list, year, envD, help = 0) {
   return list.map(({ code, chamber, frac }) => {
-    const L = S.legis[code], o = L[chamber], n = locVote(o, code, frac, envD + (S.side === 'D' ? 1 : -1) * help);
+    const L = S.legis[code], o = L[chamber], n = locVote(o, code, frac, envD + (frameP() === 'D' ? 1 : -1) * help);
     L[chamber] = n;
     const was = locCtrl(o), now = locCtrl(n);
     if (was !== now && L.spk && L.spk.party !== locCtrl(L.lower || L.upper)) { hist(L.spk, `Lost the gavel when ${now ? `the ${PARTY[now].short} took` : 'a tie froze'} the ${locChName(code, L.lower ? 'lower' : 'upper')}`, year); delete L.spk; }
@@ -311,20 +311,21 @@ function locOffPreview(plan, go) {
   const govCands = c2 => { const f = plan.fields[c2], B = other(f.A); return [[f.cA, f.A, f.offA], [f.cB, B, f.offB]]; };
   const pname = (p, party, off) => p ? `<b style="color:${locPc(party)}">${p.name}</b> <small>(${party}${off ? `, ${off === 'Governor' ? 'incumbent' : off}` : ''})</small>` : `<b style="color:${locPc(party)}">the ${PARTY[party].short} nominee</b>`;
   const contests = plan.mayors.filter(F => locSideOf(F) !== 0).slice(0, 2);
+  // an independent career has no national party to send and no statehouse caucuses: only a city hall with an independent running
   const opts = [
-    ...plan.gov.map(cd => [`gov:${cd}`, `✈️ Send the national party to ${stName(cd)}`, `+3 points for your candidate · your chance now ${Math.round(locGovChance(plan, cd) * 100)}%`]),
-    ...(plan.legis.length ? [['leg', '🏛 Fund the statehouse caucuses', `${locList([...new Set(plan.legis.map(x => stName(x.code)))])}: a better shot at ${plan.legis.length} chamber${plan.legis.length > 1 ? 's' : ''}`]] : []),
+    ...(IND() ? [] : plan.gov.map(cd => [`gov:${cd}`, `✈️ Send the national party to ${stName(cd)}`, `+3 points for your candidate · your chance now ${Math.round(locGovChance(plan, cd) * 100)}%`])),
+    ...(IND() ? [] : (plan.legis.length ? [['leg', '🏛 Fund the statehouse caucuses', `${locList([...new Set(plan.legis.map(x => stName(x.code)))])}: a better shot at ${plan.legis.length} chamber${plan.legis.length > 1 ? 's' : ''}`]] : [])),
     ...contests.map(F => [`may:${F.key}`, `🎤 Headline a rally in ${LOC_CITY[F.key][1]}`, `+4 for ${(F.c1.party === me ? F.c1 : F.c2).p.name} · your chance now ${Math.round(locMayChance(plan, F) * 100)}%`]),
   ];
   const draw = () => {
     const left = Math.min(2 - plan.picks.length, c.capital);
     locShow(`<div class="kicker">Off-Year Elections · Fall ${y}</div><h2>November ${y}: The Off-Year Races</h2>
       <p>No Senate seats on the ballot, but ${locList([plan.gov.length ? `${plan.gov.length} governor${plan.gov.length > 1 ? 's' : ''} (${locList(plan.gov.map(stName))})` : '', plan.legis.length ? `${plan.legis.length} legislative chamber${plan.legis.length > 1 ? 's' : ''}` : '', plan.mayors.length ? `${plan.mayors.length} mayors` : ''].filter(Boolean))} are. Every pundit in Washington will read the results as a verdict on ${presTitle()} (${P.approval}%), ${P.party === 'I' ? 'and with an independent in the White House, neither party can count on the usual swing.' : `and history favors the ${PARTY[out].short}: the party out of the White House usually gains.`}</p>
-      ${plan.gov.length ? `<div class="loc-prev">${plan.gov.map(cd => { const ch = locGovChance(plan, cd); return `<div class="race"><span><b>${stName(cd)}</b> <small style="color:var(--dim)">Governor${plan.fields[cd].open ? ' · open seat' : ''}</small><br>${govCands(cd).map(x => pname(...x)).join(' <small>vs</small> ')}</span><span class="chance"><b style="color:${chanceColor(ch)}">${Math.round(ch * 100)}%</b><span class="mbar"><i style="width:${ch * 100}%;background:${chanceColor(ch)}"></i></span><small>your chance</small></span></div>`; }).join('')}</div>` : ''}
+      ${plan.gov.length ? `<div class="loc-prev">${plan.gov.map(cd => { const ch = locGovChance(plan, cd); return `<div class="race"><span><b>${stName(cd)}</b> <small style="color:var(--dim)">Governor${plan.fields[cd].open ? ' · open seat' : ''}</small><br>${govCands(cd).map(x => pname(...x)).join(' <small>vs</small> ')}</span><span class="chance"><b style="color:${chanceColor(ch)}">${Math.round(ch * 100)}%</b><span class="mbar"><i style="width:${ch * 100}%;background:${chanceColor(ch)}"></i></span><small>${IND() ? `${PARTY[other(plan.fields[cd].A)].short} chance` : 'your chance'}</small></span></div>`; }).join('')}</div>` : ''}
       ${plan.legis.length ? `<p class="loc-chips"><b>Statehouses:</b> ${plan.legis.map(x => { const o = S.legis[x.code][x.chamber], p = locCtrl(o); return `<span class="bchip" style="border-color:${p ? locPc(p) : '#6b7280'}">${locChName(x.code, x.chamber)} <b style="color:${p ? locPc(p) : 'var(--ink)'}">${o.D}–${o.R}</b></span>`; }).join(' ')}</p>` : ''}
       ${plan.mayors.length ? `<p class="loc-chips"><b>City halls:</b> ${plan.mayors.slice(0, 8).map(F => `<span class="bchip">${LOC_CITY[F.key][1]} <small>${F.c1.inc ? `${F.c1.p.name} (${F.c1.party}) seeks a ${S.mayors[F.key].acting ? 'full' : 'new'} term` : `open: ${F.c1.p.name} (${F.c1.party}) vs ${F.c2.p.name} (${F.c2.party})`}</small></span>`).join(' ')}${plan.mayors.length > 8 ? ` <small style="color:var(--dim)">and ${plan.mayors.length - 8} more</small>` : ''}</p>` : ''}
       <hr><b>Your fall trips</b> <small style="color:var(--dim)">· up to two, 1 capital each · you have ${c.capital} capital${plan.picks.length ? ` · done: ${plan.picks.length}` : ''}</small>
-      <div class="shop">${opts.map(([k, t, s]) => `<button class="btn" data-choice="${k}" ${left < 1 || plan.picks.includes(k) ? 'disabled' : ''}><span>${t}${plan.picks.includes(k) ? ' ✓' : ''}<small>${s}</small></span><span class="cost">1 cap</span></button>`).join('')}</div>
+      ${IND() && !opts.length ? '<p style="color:var(--dim);font-size:12px">No independent is on a ballot your caucus can help this fall. Watch the parties fight it out.</p>' : ''}<div class="shop">${opts.map(([k, t, s]) => `<button class="btn" data-choice="${k}" ${left < 1 || plan.picks.includes(k) ? 'disabled' : ''}><span>${t}${plan.picks.includes(k) ? ' ✓' : ''}<small>${s}</small></span><span class="cost">1 cap</span></button>`).join('')}</div>
       <div class="choices"><button class="btn primary big adv" id="locgo">Election Night →</button></div>`);
     $('#modal-card').querySelectorAll('[data-choice]').forEach(b => b.onclick = () => {
       const k = b.dataset.choice; if (c.capital < 1 || plan.picks.length >= 2 || plan.picks.includes(k)) return;

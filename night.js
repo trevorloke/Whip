@@ -52,10 +52,11 @@ function presSetup() {
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   const indWH = inc === 'I';
-  let base = (indWH ? 0 : (P.approval - 50) / 5 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1)) + (ref === S.side ? S.mood : -S.mood) * 0.25 + q(ref) - q(other(ref));
+  let base = (indWH ? 0 : (P.approval - 50) / 5 - (running ? 0 : 2) - 1.5 * (S.whStreak - 1)) + (IND() ? 0 : (ref === S.side ? S.mood : -S.mood)) * 0.25 + q(ref) - q(other(ref));
   // the fall campaign (campaign.js) adds its national effects here, from your ticket's point of view
   // the other party runs a professional national campaign too: your ticket starts PRES_EDGE points behind what the fundamentals say
-  base += (ref === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
+  // an independent career has no ticket in the two-party race: only the (D-positive) wave forecasters see and a cabinet-offer endorsement move it
+  base += IND() ? envSign(ref) * (E.waveSignal || 0) + envSign(ref) * (typeof cauPresEnvD === 'function' ? cauPresEnvD() : 0) : (ref === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
   if (S.war && S.war.party === inc && !indWH) base += (S.war.support - 50) / 12;
   return { inc, ref, running, noms, base };
 }
@@ -70,13 +71,13 @@ function stateMarginD(c, envD, noms) {
 function presProjection() {
   const s = presSetup(), envD = presEnvD(s), margins = {};
   let evMine = 0;
-  for (const c of Object.keys(EV)) { margins[c] = stateMarginD(c, envD, s.noms); if ((margins[c] > 0) === (S.side === 'D')) evMine += EV[c]; }
+  for (const c of Object.keys(EV)) { margins[c] = stateMarginD(c, envD, s.noms); if ((margins[c] > 0) === (frameP() === 'D')) evMine += EV[c]; }
   return { margins, evMine, noms: s.noms };
 }
 // the third name on the ballot. Prefer indie.js's S.nominees.I (or an independent President); else the fall campaign's surge
 // candidate; else, only when no independent field was run at all (old saves), the old 30% random minor candidate
 function presThird(s) {
-  if (s.noms.I) { const T = s.noms.I; return { ...T, strength: clamp(+T.strength || 3, 0.5, 45), lean: clamp(+T.lean || 0, -1, 1), home: T.home || T.state || (T.p && T.p.state) || null }; }
+  if (s.noms.I) { const T = s.noms.I; return { ...T, strength: clamp(IND() && typeof cauThirdNat === 'function' ? (+T.strength || 3) + cauThirdNat(T) : +T.strength || 3, 0.5, 45), lean: clamp(+T.lean || 0, -1, 1), home: T.home || T.state || (T.p && T.p.state) || null }; }
   const N = S.nominees || {}, tp = S.election && S.election.camp && S.election.camp.thirdParty;
   if (tp) return { name: tp.name || fullName(), label: 'Independent', strength: clamp((tp.share || 5) * rnd(0.6, 0.95), 1, 12), lean: 0, fixed: true };
   if (!('I' in N) && Math.random() < 0.3) return { name: fullName(), label: 'Independent', strength: rnd(2, 9), lean: 0, fixed: true };
@@ -88,6 +89,7 @@ function presThirdShare(T, c, nat, reg) {
   let x = nat * clamp(1 + 0.22 * T.lean * sl, 0.45, 1.7) * reg[Math.min(2, Math.floor(colOf(c) / 4))] * Math.exp(gauss() * (T.major ? 0.15 : 0.25));
   if (T.home === c) x += T.major ? 10 : 3;
   if (T.vp && T.vp.state === c) x += T.major ? 3 : 1;
+  if (IND() && typeof cauThirdAdj === 'function') x += cauThirdAdj(c, T);   // the caucus's Third Force campaign
   return clamp(x, 0.3, 70);
 }
 // the winner's margin over the runner-up in one state's presidential result
@@ -98,7 +100,7 @@ function runPres() {
   const names = { D: noms.D.name, R: noms.R.name }, T = presThird(s);
   if (T) names.I = T.name;
   // the wave forecasters saw is in base; the rest of it lands on election night
-  const surprise = S.election ? (ref === S.side ? 1 : -1) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
+  const surprise = S.election ? envSign(ref) * ((S.election.wave || 0) - (S.election.waveSignal || 0)) : 0;
   const score = clamp(base + surprise + rnd(-3, 3), -20, 20), envD = ref === 'D' ? score : -score;
   // a real third candidate's night: its national number moves, and so do the regions (west, middle, east)
   const nat = T && !T.fixed ? T.strength * (T.major ? Math.exp(gauss() * 0.2) : rnd(0.65, 1.05)) : 0, reg = [0, 1, 2].map(() => T && T.major ? Math.exp(gauss() * 0.12) : 1);
@@ -120,9 +122,13 @@ function runPres() {
   // nobody at 270: the House chooses, one vote per state delegation (runHouse has already seated the new delegations).
   // The delegations are all Democratic or Republican, so a third candidate's electors only deny a majority. Evenly split delegations
   // abstain; the side with more delegations prevails, and a dead-even House keeps the White House party (or the bigger elector count)
-  let houseVote = null;
-  if (evD < 270 && evR < 270 && evI < 270) { houseVote = { D: 0, R: 0 }; for (const v of Object.values(hdDelegations())) { if (v.D > v.R) houseVote.D++; else if (v.R > v.D) houseVote.R++; } }
-  const winner = evD >= 270 ? 'D' : evR >= 270 ? 'R' : evI >= 270 ? 'I' : houseVote.D > houseVote.R ? 'D' : houseVote.R > houseVote.D ? 'R' : inc !== 'I' ? inc : evD >= evR ? 'D' : 'R';
+  // The Elector Gambit (independent career): electors pledged by your caucus can put a major party's ticket over 270 instead
+  let houseVote = null, electors = null;
+  if (evD < 270 && evR < 270 && evI < 270) {
+    electors = IND() && typeof cauElectors === 'function' ? cauElectors(evD, evR, evI) : null;   // 'D' | 'R' | null
+    if (!electors) { houseVote = { D: 0, R: 0 }; for (const v of Object.values(hdDelegations())) { if (v.D > v.R) houseVote.D++; else if (v.R > v.D) houseVote.R++; } }
+  }
+  const winner = electors || (evD >= 270 ? 'D' : evR >= 270 ? 'R' : evI >= 270 ? 'I' : houseVote.D > houseVote.R ? 'D' : houseVote.R > houseVote.D ? 'R' : inc !== 'I' ? inc : evD >= evR ? 'D' : 'R');
   const tie = evD === 269 && evR === 269, losers = ['D', 'R', 'I'].filter(p => p !== winner && names[p]), loser = losers.sort((a, b) => EVS[b] - EVS[a])[0];
   S.whStreak = winner === inc ? S.whStreak + 1 : 1;
   // the record book: the last six presidential results by state, so the night can show swings
@@ -134,7 +140,7 @@ function runPres() {
   if (T && T.vp && T.vp.name) vps.I = { name: T.vp.name, state: T.vp.state || null };
   const offices = { D: noms.D.office || (noms.D.p === P ? 'President' : null), R: noms.R.office || (noms.R.p === P ? 'President' : null), ...(T ? { I: T.office || (T.incumbent ? 'President' : null) } : {}) };
   const evStr = [['D', evD], ['R', evR], ['I', evI]].filter(x => x[1]).sort((a, b) => b[1] - a[1]).map(([p, v]) => `${v} ${p}`).join('–');
-  const evTxt = houseVote ? (tie ? ' by the House after a 269–269 Electoral College deadlock' : ' by the House after no candidate won a majority in the Electoral College') : `, ${evStr} in the Electoral College`;
+  const evTxt = electors ? ` after the independent electors broke a ${evStr} Electoral College deadlock` : houseVote ? (tie ? ' by the House after a 269–269 Electoral College deadlock' : ' by the House after no candidate won a majority in the Electoral College') : `, ${evStr} in the Electoral College`;
   // the live record behind a nominee or running mate, by name: after a save/load the record's `p` is a detached copy,
   // and someone who left office in this very count (a term-limited governor, a retiring senator) is already among the formers
   const liveOf = (n, p) => { if (!n || !n.name) return null; if (P.name === n.name) return P; if (S.vp && S.vp.name === n.name) return S.vp;
@@ -142,7 +148,7 @@ function runPres() {
   for (const p of losers) {
     if (p === 'I' && !(T.major || T.p || T.incumbent)) continue;
     const lp = liveOf(p === 'I' ? T : noms[p], p === 'I' ? null : p);
-    if (lp) hist(lp, houseVote ? `Lost the presidential election in the House after ${tie ? 'a 269–269 Electoral College deadlock' : 'no candidate won an Electoral College majority'}` : `Lost the presidential election${p === 'I' ? ' as an independent' : ''}, ${EVS[p]}–${EVS[winner]} in the Electoral College`, year);
+    if (lp) hist(lp, electors ? `Lost the presidential election when the independent electors broke a ${evStr} deadlock` : houseVote ? `Lost the presidential election in the House after ${tie ? 'a 269–269 Electoral College deadlock' : 'no candidate won an Electoral College majority'}` : `Lost the presidential election${p === 'I' ? ' as an independent' : ''}, ${EVS[p]}–${EVS[winner]} in the Electoral College`, year);
   }
   let what, extra = [];
   // the running mate takes office: out of the Senate, a governor's mansion, the cabinet or the House
@@ -192,10 +198,11 @@ function runPres() {
     const tied = 50 - houseVote.D - houseVote.R, wl = winner === 'D' ? 'R' : 'D';
     what = `<b>${tie ? 'A 269–269 deadlock.' : `No majority: ${evStr} in the Electoral College.`}</b> ${evI && !tie ? `${names.I}'s ${evI} electoral votes left everyone short of 270, and the delegations, all Democratic or Republican, never seriously considered the independent. ` : ''}The House chose the President, one vote per state delegation: ${houseVote[winner] > houseVote[wl] ? `${houseVote[winner]} delegations to ${houseVote[wl]}${tied ? `, ${tied} split` : ''}` : `the delegations split ${houseVote.D}–${houseVote.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting the ${PARTY[winner].short} prevailed`}. ` + what;
   }
+  if (electors) what = `<b>No majority: ${evStr} in the Electoral College.</b> The independent electors cast their ${evI} votes for ${names[electors]}, and the Electoral College has a winner after all. ` + what;
   S.nominees = null; S._fallbackNames = null;
   if (extra.length) what += ' ' + extra.join(' ');
   const third = T ? { label: T.label || 'Independent', major: !!T.major, lean: T.lean || 0, color: T.color || null } : null;
-  return { states, evD, evR, evI, popD, popR, popI, names, winner, loser, inc, running, what, year, prev: prev ? { year: prev.year, states: prev.states } : null, homes, vps, offices, houseVote, third };
+  return { states, evD, evR, evI, popD, popR, popI, names, winner, loser, inc, running, what, year, prev: prev ? { year: prev.year, states: prev.states } : null, homes, vps, offices, houseVote, third, ...(electors ? { electors } : {}) };
 }
 
 /* ---------------- the show ---------------- */
@@ -533,7 +540,7 @@ function resPresFoot(P) {
 // before → after seat counts, the net for your party and a projection once a side clinches
 // (clinched = ahead by more than the seats still out, which is also how the game counts a majority when independents hold the balance)
 function resSeatFoot(before, now, need, what) {
-  const b = before || { D: 0, R: 0, I: 0 }, side = S.side, held = (b.D || 0) > (b.R || 0) ? 'D' : (b.R || 0) > (b.D || 0) ? 'R' : null;
+  const b = before || { D: 0, R: 0, I: 0 }, side = IND() && !('I' in now) ? frameP() : S.side, held = (b.D || 0) > (b.R || 0) ? 'D' : (b.R || 0) > (b.D || 0) ? 'R' : null;
   const cnt = o => `D ${o.D || 0} · R ${o.R || 0}${o.I ? ` · I ${o.I}` : ''}`;
   let txt = `Before: ${cnt(b)}`;
   if (!now.und) { const net = (now[side] || 0) - (b[side] || 0); txt += ` → after: ${cnt(now)} · <b style="color:${net > 0 ? 'var(--yes)' : net < 0 ? 'var(--no)' : 'var(--dim)'}">${PARTY[side].short} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}</b>`; }
@@ -554,6 +561,9 @@ function resBannerHTML(T) {
   }
   const left = Object.entries(P.states).filter(([, s]) => N.t < s.call).sort((a, b) => b[1].ev - a[1].ev), ord = resOrder(t, P), lead = ord[0], trail = ord[1];
   if (N.t >= 1 || !left.length) {
+    // the Elector Gambit (independent career only): the caucus's electors put a major ticket over 270
+    if (P.electors) { const w = P.winner, ev = (t[w] || 0) + (t.I || 0); return `<div class="res-banner" style="--pc:${PARTY[w].color}"><div class="res-blabel">★ Kingmaker electors${N.t < 1 ? ` · ${clockText(N.t)}` : ''}</div><div class="res-bhead">${P.names[w].toUpperCase()} ELECTED PRESIDENT</div>
+    <div class="res-bsub">Nobody reaches 270 alone (${ord.map(p => `${p} ${t[p] || 0}`).join(' · ')}). Then the independent electors pledged by your caucus cast their ${t.I || 0} votes for <b>${P.names[w]}</b> (${w}): <b>${ev} electoral votes</b>, and the White House.</div></div>`; }
     const hv = P.houseVote, w = P.winner, l = w === 'D' ? 'R' : 'D', tied = hv ? 50 - hv.D - hv.R : 0, tie = t.D === 269 && t.R === 269;
     const house = hv ? (hv[w] > hv[l] ? ` — <b>${hv[w]} delegations to ${hv[l]}</b>${tied ? `, ${tied} split` : ''} —` : ` — the delegations split ${hv.D} to ${hv.R}${tied ? ` with ${tied} tied` : ''}, and after weeks of balloting`) : ' —';
     return `<div class="res-banner close"><div class="res-blabel">Decision Desk${N.t < 1 ? ` · ${clockText(N.t)}` : ''}</div><div class="res-bhead">${tie ? `DEADLOCK · ${t.D}–${t.R}` : `NO MAJORITY · ${ord.map(p => `${p} ${t[p] || 0}`).join(' · ')}`}</div>
@@ -575,7 +585,7 @@ function resPopCallout(P, t, d, r, i) {
   // a split decision is only declared once every vote is in: early returns favor whichever side's states close first
   if (final && ecW && ecW !== pvW) line = `<span class="res-split">⚠ Split decision:</span> <b>${P.names[ecW]}</b> wins the Electoral College while ${P.names[pvW]} wins the popular vote by <b>${nfmt(gap)}</b> votes (${pct(pts)}).`;
   else if (final && ecW) line = `<b>${P.names[ecW]}</b> wins the Electoral College ${ecTxt(ecW)} and the popular vote by ${nfmt(gap)} votes (+${pts.toFixed(1)}).`;
-  else if (final) line = `The Electoral College ${t.D === 269 && t.R === 269 ? `deadlocks at <b>269–269</b>` : `gives no one a majority (${resOrder(t, P).map(p => `${p} ${t[p] || 0}`).join(', ')})`}; ${P.names[pvW]} wins the popular vote by ${nfmt(gap)} votes (${pct(pts)})${P.winner !== pvW ? `, but the House chooses <b>${P.names[P.winner]}</b>` : ' and the House confirms it'}.`;
+  else if (final) line = `The Electoral College ${t.D === 269 && t.R === 269 ? `deadlocks at <b>269–269</b>` : `gives no one a majority (${resOrder(t, P).map(p => `${p} ${t[p] || 0}`).join(', ')})`}; ${P.names[pvW]} wins the popular vote by ${nfmt(gap)} votes (${pct(pts)})${P.electors ? `; the independent electors hand it to <b>${P.names[P.winner]}</b>` : P.winner !== pvW ? `, but the House chooses <b>${P.names[P.winner]}</b>` : ' and the House confirms it'}.`;
   else if (ecW) line = `<b>${P.names[ecW]}</b> is projected to win the Electoral College and ${ecW === pvW ? 'leads' : '<span class="res-split">trails</span>'} the popular vote so far by ${nfmt(gap)} votes (${pct(pts)}) with ${t.und} electoral votes still out.`;
   else line = `${P.names[pvW]} leads the popular vote by ${nfmt(gap)} (${pct(pts)}) with ${t.und} electoral votes still out.`;
   return `<div class="res-callout">${line}<br><small>${turn}</small></div>`;

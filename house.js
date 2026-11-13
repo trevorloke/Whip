@@ -86,7 +86,7 @@ function hdElect(swingSide) {
   // the national environment that reproduces today's House on average, then the swing
   const exp = e => plan.reduce((a, x) => a + normCdf((x.d.lean + e + x.adv) / HD_SD), 0);
   let lo = -45, hi = 45; for (let i = 0; i < 40; i++) { const mid = (lo + hi) / 2; if (exp(mid) < S.house.D) lo = mid; else hi = mid; }
-  const envD = (lo + hi) / 2 + (S.side === 'D' ? swingSide : -swingSide);
+  const envD = (lo + hi) / 2 + (frameP() === 'D' ? swingSide : -swingSide);
   const before = { D: S.house.D, R: S.house.R }, districts = {}, states = {};
   for (const x of plan) {
     const { c, d, why, adv } = x, n = HSEATS(c), rep = d.rep, incP = why ? null : d.party;
