@@ -339,7 +339,7 @@ function cauAsk(next) {
   const choices = ['D', 'R'].map(p => `<button class="btn ${p === 'D' ? 'dem' : 'rep'}" data-choice="bid:${p}">${take(p)}<small>${p === o ? 'PASS' : 'KILL'} it · the ${PARTY[other(p)].short} whip works against you</small></button>`).join('')
     + ['D', 'R'].map(p => `<button class="btn" data-choice="bid:ask:${p}" ${askOK(p) ? '' : 'disabled'}>Name your price to the ${PARTY[p].short}<small>Once a bill · ${Math.round(cauAskOdds(p, B) * 100)}% they sweeten it; otherwise they walk away</small></button>`).join('')
     + `<button class="btn" data-choice="bid:free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits<small>No deal, no ally whip · your caucus likes it (+0.5 each) · Lean eases · independent mood +0.2</small></button>`;
-  cauScreen(`The Bidding · ${season(B.n)} ${billYear(B.n)}`, `${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}`, body, choices,
+  cauScreen(`The Bidding · ${season(B.n)} ${billYear(B.n)}`, `${B.name}${B.landmark ? '<span class="cau-lm">LANDMARK</span>' : ''}`, body, choices,
     `<button class="btn primary big adv" id="cau-free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits</button>`);
   const card = $('#modal-card');
   const finish = () => {
@@ -565,11 +565,11 @@ function cauComeHome(next) {
   $('#modal-card').querySelectorAll('[data-choice^="poach:"]').forEach(b => b.onclick = () => {
     const k = b.dataset.choice.slice(6), lines = [];
     if (k === 'match') { if (c.capital < 2) return; c.capital -= 2; cauRel(X, 2); lines.push(`${lastName(X)} stays, with a new title on the door (relationship +2). The ${PARTY[P].short} grumble about "bidding wars."`); }
-    else if (k === 'let') { cauFlip(X, P); hist(X, `Rejoined the ${PARTY[P].name} Party for a committee gavel`, yr); c.confidence = Math.max(0, c.confidence - 1); lines.push(`${sen(X)} goes home to the ${PARTY[P].short}. The Senate is now ${seats('D')}–${seats('R')}–${seats('I')}. Your caucus wonders who's next (−1 confidence).`); }
+    else if (k === 'let') { cauFlip(X, P); hist(X, `Rejoined the ${PARTY[P].name} Party for a committee gavel`, yr); c.confidence = Math.max(1, c.confidence - 1); lines.push(`${sen(X)} goes home to the ${PARTY[P].short}. The Senate is now ${seats('D')}–${seats('R')}–${seats('I')}. Your caucus wonders who's next (−1 confidence).`); }
     else { S.mood += 1; cauTrust(P, -2); cauRel(X, -0.5); lines.push(`Your press conference leads the evening news: "The ${PARTY[P].short} are shopping for senators." Voters love it (independent mood +1); the ${PARTY[P].short} do not (trust −2).`); }
     sfx.click();
     cauScreen(`${K} · Aftermath`, k === 'let' ? `${lastName(X)} goes home` : `${lastName(X)} stays`, lines.map(t => `<p>${t}</p>`).join(''), null, '<button class="btn primary big adv" id="cau-mok">Back to work</button>');
-    $('#cau-mok').onclick = () => { if (c.confidence <= 0) return gameOver(); next(); };
+    $('#cau-mok').onclick = () => next();
   });
 }
 function cauGoingIndependent(next) {
@@ -596,7 +596,7 @@ HOOKS.worldNews.push(() => {
   const C = S.cau, out = [];
   for (const p of ['D', 'R']) { const t = C.trust[p] * 0.9; C.trust[p] = clamp(Math.sign(t) * Math.floor(Math.abs(t) * 2) / 2, -5, 5); }
   C.lean = +(C.lean * 0.95).toFixed(1);
-  if (Math.abs(C.lean) >= 8) { const P = C.lean < 0 ? 'D' : 'R'; out.push(`🗞 "A ${PARTY[P].name} in all but name": the ${PARTY[other(P)].short} stop returning your calls.`); }
+  if (Math.abs(C.lean) >= 8) { const P = C.lean < 0 ? 'D' : 'R'; out.push(`🗞 "A ${PARTY[P].short.replace(/s$/, '')} in all but name": the ${PARTY[other(P)].short} stop returning your calls.`); }
   return out;
 });
 
@@ -665,9 +665,9 @@ function cauBallot(rc, cands, dry) {
 function cauExp(rc) {
   const i = clamp(cauStr(rc), 3, 60), mg = projMargin(rc), rest = 98.5 - i, A = majorParty(rc);
   const a = clamp(rest / 2 + (mg / 2) * (rest / 98.5), 1, rest - 1);
-  const cands = [{ party: A, pct: a }, { party: other(A), pct: rest - a }, { party: 'I', pct: i }];
-  cauBallot(rc, cands, true);
-  const I = cands.find(c => c.party === 'I'), best = Math.max(...cands.filter(c => c !== I).map(c => c.pct));
+  const I = { party: 'I', pct: i }, cands = [{ party: A, pct: a }, { party: other(A), pct: rest - a }, I];
+  cauBallot(rc, cands, true);   // a ranked-choice count can eliminate the independent: I then drops out of cands
+  const best = Math.max(...cands.filter(c => c !== I).map(c => c.pct));
   return { i: I.pct, margin: I.pct - best };
 }
 function cauRaceChance(rc) { return rc && rc.ind && S.cau ? clamp(normCdf(cauExp(rc).margin / 5.5), 0.01, 0.99) : 0; }
@@ -776,16 +776,17 @@ function cauForecastHTML() {
 function cauElectionVerdict(before, after, races, pres) {
   const C = S.cau, c = S.career, net = after.I - before.I, out = [];
   if (net >= 1) { c.confidence = Math.min(5, c.confidence + 1); const cap = Math.min(6, 2 * net); c.capital += cap; addLegacy(5 * net); out.push(`Your caucus gained ${net} seat${net > 1 ? 's' : ''}: +1 confidence, +${cap} capital.`); }
-  else if (net <= -1) { const d = net <= -3 ? 2 : 1; c.confidence -= d; out.push(`Your caucus lost ${-net} seat${net < -1 ? 's' : ''}: −${d} confidence.`); }
+  else if (net <= -1) { const d = net <= -3 ? 2 : 1; c.confidence = Math.max(0, c.confidence - d); out.push(`Your caucus lost ${-net} seat${net < -1 ? 's' : ''}: −${d} confidence.`); }
   else out.push('Your caucus holds its ground.');
   const E = S.election;
   for (const r of races || []) {
-    if (r.wParty !== 'I' || (r.incumbent && r.incumbent === r.wName)) continue;
-    const m = S.members.find(x => x.party === 'I' && x.name === r.wName && x.state === r.code);
+    if (r.wParty !== 'I') continue;
     const rc = E && E.races.find(x => x.m.state === r.code && x.m.cls === r.cls);
-    if (m) { cauRel(m, Math.max(0, 2 - (m.rel || 0))); if (rc && rc.ind && rc.ind.label && IND_LABELS[rc.ind.label]) m.label = rc.ind.label; else indLabel(m); hist(m, 'Joined the Independent caucus'); }
     if (rc && rc.standDown) unlock('cau_standaside');
     if (rc && rc.rcv) unlock('cau_rcv');
+    if (r.incumbent && r.incumbent === r.wName) continue;   // a returning member keeps label and relationship
+    const m = S.members.find(x => x.party === 'I' && x.name === r.wName && x.state === r.code);
+    if (m) { cauRel(m, Math.max(0, 2 - (m.rel || 0))); if (rc && rc.ind && rc.ind.label && IND_LABELS[rc.ind.label]) m.label = rc.ind.label; else indLabel(m); hist(m, 'Joined the Independent caucus'); }
   }
   if (kingmakerNow()) { c.confidence = Math.min(5, c.confidence + 1); c.capital += 2; addLegacy(5); unlock('cau_balance'); out.push('<b style="color:var(--ind)">Neither party can organize without you</b>: +1 confidence, +2 capital.'); }
   if (seats('I') >= 5) unlock('cau_caucus5');
@@ -827,8 +828,8 @@ function cauRunningMate(next) {
   const ex = lean < -0.1 ? 'D' : lean > 0.1 ? 'R' : pick(['D', 'R']);
   const exSt = pick(STATES.filter(([, , ln]) => ex === 'D' ? ln < -3 : ln > 3))[0];
   const cross = newPerson('I', exSt); cross.exParty = ex; hist(cross, `Served as a ${PARTY[ex].name} governor of ${ST[exSt].name}`, yr - ri(6, 14)); hist(cross, `Left the ${PARTY[ex].name} Party`, yr - ri(1, 4));
-  const kind = pick(['Retired Army general', 'Retired admiral', 'Talk-show host', 'Former NBA All-Star', 'Bestselling author']);
-  const star = newPerson('I', pick(STATES)[0]); hist(star, `Became famous as a ${kind.toLowerCase().replace(/^retired /, '').replace(/^former /, '')}`, yr - ri(6, 20));
+  const [kind, fame] = pick([['Retired Army general', 'Commanded a division overseas'], ['Retired admiral', 'Commanded a carrier strike group'], ['Talk-show host', 'Hosted a top-rated daytime talk show'], ['Former NBA All-Star', 'Played in four NBA All-Star Games'], ['Bestselling author', 'Wrote a bestselling memoir']]);
+  const star = newPerson('I', pick(STATES)[0]); hist(star, fame, yr - ri(6, 20));
   const cards = [
     sen0 ? { who: sen0, title: `Sen. ${sen0.name} (${sen0.state})`, sub: `A caucus senator ${indPill(indLabel(sen0))}. Steady, known, no surprises: +0 strength, the home-state bump in ${ST[sen0.state].name}. If the ticket wins, the seat goes to the governor's pick.`, d: 0 } : null,
     { who: cross, title: `${cross.name}, ex-${ex}`, sub: `Former ${PARTY[ex].name} governor of ${ST[exSt].name}: crossover appeal, +0.6 strength. The ${PARTY[ex].short} will resent it (trust −0.5).`, d: 0.6, ex },
@@ -910,14 +911,14 @@ function cauFallCampaign(done) {
     ], k => { const d = k === 'deb:town' ? 0.5 : Math.random() < 0.4 ? 2 : -1; cp.nat += d; rec.debate = `${k.slice(4)} (${cauSigned(d)})`; rec.lines.push(`Locked out of the debates: ${k === 'deb:town' ? 'a town hall' : d > 0 ? 'the crash works' : 'the crash backfires'} (${cauSigned(d)}).`); october(); });
   };
   // 3. October
-  const october = () => {
+  const october = () => {   // the cabinet offer (never to a sitting President) or the squeeze
     const l = I.lean != null ? +I.lean : cauLabelLean(C.label), p = l < 0 ? 'D' : l > 0 ? 'R' : (C.trust.D >= C.trust.R ? 'D' : 'R'), nom = N[p];
-    if (Math.random() < 0.5 && nom) screen('October', 'The cabinet offer', `<p>${nom.name}'s campaign chair calls: <b>withdraw, endorse ${lastName(nom.p || nom)}, and ${I.name} gets a cabinet seat</b>. The ${PARTY[p].short} would owe your caucus, and your voters would mostly follow you.</p>`, [
+    if (!I.incumbent && Math.random() < 0.5 && nom) screen('October', 'The cabinet offer', `<p>${nom.name}'s campaign chair calls: <b>withdraw, endorse ${lastName(nom.p || nom)}, and ${I.name} gets a cabinet seat</b>. The ${PARTY[p].short} would owe your caucus, and your voters would mostly follow you.</p>`, [
       ['oct:refuse', 'Refuse: we\'re in it to the end', 'Independent mood +1'],
       ['oct:accept', `Withdraw and endorse ${nom.name}`, `About +1.5 points for the ${PARTY[p].short} · ${PARTY[p].short} trust +3 · Lean moves their way · −1 confidence`],
     ], k => {
       if (k === 'oct:accept') {
-        S.cau.presEnvD = { y: year, v: p === 'D' ? 1.5 : -1.5 }; cauTrust(p, 3); cauLean(4 * cauToward(p)); S.career.confidence = Math.max(0, S.career.confidence - 1);
+        S.cau.presEnvD = { y: year, v: p === 'D' ? 1.5 : -1.5 }; cauTrust(p, 3); cauLean(4 * cauToward(p)); S.career.confidence = Math.max(1, S.career.confidence - 1);
         if (I.p) hist(I.p, `Withdrew from the ${year} presidential race and endorsed ${nom.name}`, year);
         rec.october = `withdrew for ${nom.name}`; rec.lines.push(`October: ${I.name} withdraws and endorses ${nom.name} (${PARTY[p].short} +1.5).`);
         S.nominees.I = null; fadeMul = 0;
