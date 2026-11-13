@@ -2,7 +2,8 @@
 
 A browser game about whipping votes in the United States Senate. You are your
 party's whip: count the votes, twist the arms, survive the roll call, then
-survive the next election.
+survive the next election. Or lead the small Independent caucus that holds the
+balance between the two parties (see [Lead the Independents](#lead-the-independents)).
 
 The 50 states, seat counts, electoral votes, House apportionment and election
 calendar are real. Every senator, justice, president and candidate is fictional.
