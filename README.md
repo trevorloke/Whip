@@ -245,6 +245,45 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   dossiers, committee seats, retirements and more. Keep your caucus's
   confidence. Lose it and you're done. Records are saved in your browser.
 
+## Lead the Independents
+
+The third career on the menu. You chair the **Independent caucus**: three
+senators in a Senate split 48–49–3 (which party has 49 is a coin flip), so
+neither party can organize without you.
+
+- **Career start.** Pick your **banner** (Green, Forward, Common Ground,
+  Libertarian, Heartland…): it decides what your caucus stands for. Then hold
+  the **Organizing Resolution**: caucus with the Democrats, with the
+  Republicans, or with no one. Your vote decides who runs the floor, and the
+  winner pays for it in capital, gavels and floor votes.
+- **The Bidding.** On almost every bill both parties' whips put a concession
+  package on the table: the bill's owner pays you to pass it, the other party
+  pays you to kill it. Take a deal, **name your price** (a gamble), or cast a
+  **free vote** on your banner's merits. Your pick sets the aim, your
+  **patron** (whose whip works their own senators for you every night) and
+  your **foe** (whose whip is tonight's rival). Then you whip the whole Senate
+  with the usual tools; your own caucus is twistable, and the rival can't touch
+  it. At the end, concessions are paid or quietly forgotten, **trust** with
+  each party and your **Lean** move, and a bill your votes decided earns a
+  bonus.
+- **Budgets and your own bills.** The floor party writes the budget; selling
+  your votes or killing it is the bid. Your own reform agenda (stock-trading
+  ban, open primaries, right to repair…) reaches the floor through the
+  minority tools and the floor votes your partner owes you.
+- **The Caucus Room.** Between bills: the roster, trust and Lean, courting a
+  defector, banking recruits, a reach-out tour, changing banner, or **the
+  Jeffords** (switching partner mid-Congress). Parties will try to poach your
+  members, and party senators sometimes want in.
+- **Elections.** The party primaries are theirs (you can only meddle). Then
+  comes the **Independent Slate**: recruit independents into open lanes, ask a
+  party to **stand aside**, pick the slate's message. Maine and Alaska count
+  ranked ballots. In presidential years you run the Ballot Alliance primary,
+  pick a running mate and fight a **Third Force** fall campaign for the 15%
+  debate line, with a possible cabinet offer to withdraw and an **Elector
+  Gambit** if nobody reaches 270. The verdict is about caucus size and the
+  balance of power. Lose every seat (unless the President is yours) and the
+  career is over.
+
 ## Look and feel
 
 A real map of the United States (state outlines from US Census boundary data,
@@ -281,6 +320,7 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | `wing.js` | Your wing of the party and the feud with the White House |
 | `night.js` | Election Night: the Electoral College, House results by state, the projection banner, ticker and tables |
 | `results.js` | The election archive, the full-results explorer and the Almanac |
+| `caucus.js` | The independent career: the banner, the Organizing Resolution, the Bidding, the Caucus Room, the slate, the Third Force campaign; `caucus.css` styles it |
 
 ## Testing a shortcut
 
@@ -293,3 +333,9 @@ S.career.bills = 6; electionPrep();
 For a whole presidential cycle, run the primaries first (`S.career.bills = 3;
 primariesModal(() => {})`), then the conventions (`S.career.bills = 4;
 conventionsModal(() => {})`), then the line above.
+
+For the independent career: start it from the menu (**Lead the
+Independents**), or with a headless harness pass `--party I` (it clicks
+`#btn-new-i`, the first banner and an organizing choice). The same
+`S.career.bills = 6; electionPrep();` reaches the Independent Slate, and
+`cauAsk(() => {})` replays the current bill's Bidding.
