@@ -189,7 +189,8 @@ function resXClose() {
 }
 function resXRender() {
   const X = RESX, R = X.rec, names = { pres: 'President', senate: 'Senate', house: 'House', gov: 'Governors', campaign: 'Campaign', table: 'Table' };
-  const keep = [...document.querySelectorAll('#night .res-scroll')].map(el => el.scrollTop);
+  // scroll positions survive a re-render, keyed by pane (data-keep) where one is named, else by position
+  const key = (el, i) => el.dataset.keep || i, keep = {}; [...document.querySelectorAll('#night .res-scroll')].forEach((el, i) => keep[key(el, i)] = el.scrollTop);
   const body = ({ pres: resXPres, senate: resXSenate, house: resXHouse, gov: resXGov, campaign: resXCampaign, table: resXTable })[X.tab](R, X);
   $('#night').innerHTML = `<div class="nwrap res-x">
     <div class="nhead"><div><div class="kicker">Full results · November ${R.year} · ${R.pres ? 'Presidential year' : 'Midterms'}${R.side ? ` · you whipped for the ${PARTY[R.side].short}` : ''}</div><h2>${resHeadline(R)}</h2></div>
@@ -197,7 +198,7 @@ function resXRender() {
       <div class="res-hbtns"><button class="btn primary adv" id="ndone">← Back</button></div></div>
     ${body}
     <div class="res-back"><button class="btn primary big adv" id="resback">← Back</button></div></div>`;
-  [...document.querySelectorAll('#night .res-scroll')].forEach((el, i) => { if (keep[i] != null) el.scrollTop = keep[i]; });
+  [...document.querySelectorAll('#night .res-scroll')].forEach((el, i) => { const k = keep[key(el, i)]; if (k != null) el.scrollTop = k; });
 }
 const resCard = (title, html, cls = '') => `<div class="res-card ${cls}">${title ? `<div class="lh">${title}</div>` : ''}${html}</div>`;
 const resKpi = (label, value, sub = '') => `<div class="res-kpi"><small>${label}</small><b>${value}</b>${sub ? `<i>${sub}</i>` : ''}</div>`;
@@ -318,9 +319,9 @@ function resXHouse(R, X) {
   const cols = [{ k: 'dist', l: 'District' }, { k: 'win', l: 'Winner' }, { k: 'margin', l: 'Margin', num: 1 }, { k: 'swing', l: 'Swing', num: 1 }, { k: 'lean', l: 'Lean', num: 1 }, { k: 'seat', l: 'Seat', num: 1 }];
   const rows = shown.map(x => ({ code: x.c, cls: x.flip ? 'hd-fliprow' : '', c: { dist: { v: x.id, h: `<b>${x.id}</b>` }, win: { v: x.name, h: `${resNm(x.name, x.w)}${x.flip && x.loser ? ` <small style="color:var(--dim)">${x.open ? 'over' : 'def.'} ${x.loser}</small>` : ''}` }, margin: num(Math.abs(x.m), hdTag(x.w, x.m)), swing: x.prev != null ? num(x.m - x.prev, resSwing(x.m - x.prev)) : null, lean: x.lean != null ? num(x.lean, `<span style="color:${x.lean >= 0 ? PARTY.D.color : PARTY.R.color}">${resLeanTxt(x.lean)}</span>`) : null, seat: num(x.flip ? 2 : x.open ? 1 : 0, seatTag(x)) } }));
   const chips = `<div class="hd-filters">${[['all', `All ${all.length}`], ['flips', `Flips ${flips.length}`], ['close', `Within 5 pts ${all.filter(x => Math.abs(x.m) < 5).length}`], ['open', `Open seats ${opens.length}`]].map(([k, l]) => `<span class="res-chip ${hf === k ? 'on' : ''}" data-hf="${k}">${l}</span>`).join('')}${X.sel ? `<span class="res-chip on" data-hf="nosel">✕ ${stName(X.sel)} only</span>` : '<small style="color:var(--dim)">click a row or a state to see one state</small>'}</div>`;
-  const right = `${resSelDetail(R, X.sel)}${mine.length ? resCard(`${stName(X.sel)} · ${mine.length} district${mine.length > 1 ? 's' : ''}`, `<div class="res-scroll hd-list">${mine.map(x => `<div class="hd-row ${x.flip ? 'flip' : ''}"><span class="hd-id">${x.id}</span><span class="hd-who">${resNm(x.name, x.w)} <small>${x.flip ? (x.loser ? `${x.open ? 'over' : 'unseats'} ${x.loser}` : 'pickup') : x.open ? 'open seat' : 'incumbent'} · lean ${resLeanTxt(x.lean)}</small></span><span class="hd-mg">${hdTag(x.w, x.m)}${seatTag(x)}</span></div>`).join('')}</div>`) : ''}
+  const right = `${resSelDetail(R, X.sel)}${mine.length ? resCard(`${stName(X.sel)} · ${mine.length} district${mine.length > 1 ? 's' : ''}`, `<div class="res-scroll hd-list" data-keep="hx-${X.sel}">${mine.map(x => `<div class="hd-row ${x.flip ? 'flip' : ''}"><span class="hd-id">${x.id}</span><span class="hd-who">${resNm(x.name, x.w)} <small>${x.flip ? (x.loser ? `${x.open ? 'over' : 'unseats'} ${x.loser}` : 'pickup') : x.open ? 'open seat' : 'incumbent'} · lean ${resLeanTxt(x.lean)}</small></span><span class="hd-mg">${hdTag(x.w, x.m)}${seatTag(x)}</span></div>`).join('')}</div>`) : ''}
     ${resCard(`Biggest upsets · ${upsets.length}`, upsets.length ? `<div class="res-list">${upsets.map(x => resRow(x.c, `<span><b>${x.id}</b> · ${resNm(x.name, x.w)} ${x.open ? 'takes an open seat' : `unseats ${x.loser || 'the incumbent'}`}<br><small style="color:var(--dim)">a ${resLeanTxt(x.lean)} district</small></span>`, hdTag(x.w, x.m), X.sel === x.c)).join('')}</div>` : '<div class="nsub">Not one seat changed hands.</div>')}
-    ${resCard(`Every district · ${shown.length}`, `${chips}<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'dist', d: 1 })}</div>`)}`;
+    ${resCard(`Every district · ${shown.length}`, `${chips}<div class="res-scroll" data-keep="hx-table">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'dist', d: 1 })}</div>`)}`;
   return `<div class="res-grid"><div class="res-col">${left}</div><div class="res-col">${right}</div></div>`;
 }
 

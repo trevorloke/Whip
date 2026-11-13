@@ -183,7 +183,8 @@ function runPres() {
     else { S.vp = newPerson(winner, pick(STATES)[0]); S.vp.faction = FACTIONS[winner][0][0]; hist(S.vp, 'Elected Vice President', year); }
     tidy();
     S.pendingCabinet = true;
-    what = winner === 'I' ? `<b>A political earthquake!</b> ${T.label && T.label !== 'Independent' ? `${T.label} candidate` : 'Independent'} ${NW.name} wins the White House, carrying ${iw.length} state${iw.length === 1 ? '' : 's'} and ${evI} electoral votes — the first President in living memory elected outside the two major parties.`
+    what = winner === 'I' && inc === 'I' ? `${oldT} steps aside, and ${T.label && T.label !== 'Independent' ? `${T.label} candidate` : 'fellow independent'} ${NW.name} keeps the White House outside the two parties, carrying ${iw.length} state${iw.length === 1 ? '' : 's'}.`
+      : winner === 'I' ? `<b>A political earthquake!</b> ${T.label && T.label !== 'Independent' ? `${T.label} candidate` : 'Independent'} ${NW.name} wins the White House, carrying ${iw.length} state${iw.length === 1 ? '' : 's'} and ${evI} electoral votes — the first President in living memory elected outside the two major parties.`
       : (winner === inc ? `${oldT} steps aside; fellow ${PARTY[winner].short.replace(/s$/, '')} ${NW.name} keeps the White House.` : `<b>A flip!</b> ${PARTY[winner].name} ${NW.name} wins the White House.`) + ` The new President comes from the ${S.president.faction}.`;
     if (winner !== inc) S.vacancyBlocked = false;
   }
@@ -549,7 +550,7 @@ function resBannerHTML(T) {
     if (!N.fanfared) { N.fanfared = true; sfx.fanfare(); }
     return `<div class="res-banner" style="--pc:${PARTY[w].color}"><div class="res-blabel">★ Projection · ${clockText(pj ? pj.t : N.t)}${pj ? ` · ${stName(pj.code)} puts it over the top` : ''}</div>
       <div class="res-bhead">${P.names[w].toUpperCase()} ${re ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div>
-      <div class="res-bsub">${w === 'I' ? `${P.third && P.third.label && P.third.label !== 'Independent' ? `${P.third.label} candidate` : 'Independent'} · <b>the first President from outside the two parties in living memory</b>` : PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${rest.map(p => t[p] || 0).join(' and ')}`}${w === 'I' ? '' : w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
+      <div class="res-bsub">${w === 'I' ? `${P.third && P.third.label && P.third.label !== 'Independent' ? `${P.third.label} candidate` : 'Independent'} · <b>${P.inc === 'I' ? 'the White House stays outside the two parties' : 'the first President from outside the two parties in living memory'}</b>` : PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${rest.map(p => t[p] || 0).join(' and ')}`}${w === 'I' ? '' : w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
   }
   const left = Object.entries(P.states).filter(([, s]) => N.t < s.call).sort((a, b) => b[1].ev - a[1].ev), ord = resOrder(t, P), lead = ord[0], trail = ord[1];
   if (N.t >= 1 || !left.length) {
