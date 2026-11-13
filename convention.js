@@ -60,7 +60,7 @@ function convYear() { return billYear(S.career.bills + 1); }
 const convNum = n => Math.round(n).toLocaleString('en-US');
 const convNth = n => ['first', 'second', 'third', 'fourth', 'fifth'][Math.max(1, n) - 1] || `${n}th`;
 const convFlank = p => p === 'D' ? 'Progressives' : 'Freedom Caucus';
-function convMoodOf(p) { return p === S.side ? S.mood : -S.mood; }
+function convMoodOf(p) { return IND() ? 0 : (p === S.side ? S.mood : -S.mood); }   // an independent career's S.mood is the independents' mood
 function convMoodWord(m) { return m >= 6 ? 'euphoric' : m >= 3 ? 'upbeat' : m >= 1 ? 'hopeful' : m > -1 ? 'wary' : m > -3 ? 'anxious' : m > -6 ? 'sour' : 'despairing'; }
 function convUnityWord(u) { return u >= 0.9 ? 'united' : u >= 0.8 ? 'mostly united' : u >= 0.7 ? 'restless' : u >= 0.6 ? 'fractured' : 'at war with itself'; }
 function convRiskWord(r) { return r >= 0.8 ? 'radioactive' : r >= 0.55 ? 'red flags' : r >= 0.25 ? 'some baggage' : 'clean'; }
@@ -117,19 +117,20 @@ function convEnsureNominees() {
     if (N.vp === undefined) N.vp = null;
   }
 }
-// the two-way national horse race from your side: margin in points for S.side's ticket (bounces already banked included)
+// the two-way national horse race from your side: margin in points for S.side's ticket (bounces already banked included).
+// An independent career reads it from the Democratic frame (frameP)
 function convMargin() {
-  const s = presSetup(); let m = (s.inc === S.side ? 1 : -1) * s.base;
+  const s = presSetup(); let m = IND() ? presEnvD(s) : (s.inc === S.side ? 1 : -1) * s.base;
   const N = S.nominees || {};
-  for (const p of ['D', 'R']) if (N[p] && typeof N[p].bounce === 'number') m += (p === S.side ? 1 : -1) * (0.5 * N[p].bounce + 3 * ((N[p].unity == null ? 1 : N[p].unity) - 1));   // what the fall campaign actually carries (campaignEffects)
+  for (const p of ['D', 'R']) if (N[p] && typeof N[p].bounce === 'number') m += (p === frameP() ? 1 : -1) * (0.5 * N[p].bounce + 3 * ((N[p].unity == null ? 1 : N[p].unity) - 1));   // what the fall campaign actually carries (campaignEffects)
   return m;
 }
 function convShares(m) { const und = 6; m = clamp(m, -40, 40); return { me: (100 - und) / 2 + m / 2, them: (100 - und) / 2 - m / 2, und }; }
 function convPollHTML(before, after, label) {
-  const mine = S.side, theirs = other(mine), N = S.nominees;
+  const mine = frameP(), theirs = other(mine), N = S.nominees;
   const row = (lbl, m) => { const s = convShares(m); return `<div class="conv-pollrow"><span class="conv-plbl">${lbl}</span><div class="conv-pbar"><div style="width:${s.me}%;background:${PARTY[mine].color}">${lastName(N[mine])} ${s.me.toFixed(1)}</div><div style="width:${s.und}%;background:#3a4250"></div><div style="width:${s.them}%;background:${PARTY[theirs].color}">${s.them.toFixed(1)} ${lastName(N[theirs])}</div></div></div>`; };
   const d = after - before;
-  return `<div class="conv-poll"><b>📊 ${label || 'National poll'}</b>${row('Before', before)}${row('After', after)}<small>Your ticket's margin ${fmt(before) === fmt(after) ? 'holds' : `moves from ${before >= 0 ? '+' : ''}${before.toFixed(1)} to ${after >= 0 ? '+' : ''}${after.toFixed(1)}`} (${d >= 0 ? '+' : ''}${d.toFixed(1)}) · 6% undecided</small></div>`;
+  return `<div class="conv-poll"><b>📊 ${label || 'National poll'}</b>${row('Before', before)}${row('After', after)}<small>${IND() ? `The ${PARTY[mine].short}' margin` : `Your ticket's margin`} ${fmt(before) === fmt(after) ? 'holds' : `moves from ${before >= 0 ? '+' : ''}${before.toFixed(1)} to ${after >= 0 ? '+' : ''}${after.toFixed(1)}`} (${d >= 0 ? '+' : ''}${d.toFixed(1)}) · 6% undecided</small></div>`;
 }
 function convUnityHTML(u) { return `<div class="conv-unity"><span>Party unity</span><div class="conv-umeter"><i style="width:${((u - 0.5) / 0.5 * 100).toFixed(0)}%;background:${u >= 0.8 ? 'var(--yes)' : u >= 0.65 ? 'var(--gold)' : 'var(--no)'}"></i></div><b>${Math.round(u * 100)}% · ${convUnityWord(u)}</b></div>`; }
 function convHallHTML(C, big) {
@@ -597,7 +598,7 @@ function convStakes(C) {
   const P = C.P, N = C.N, mood = convMoodOf(C.p), sen = seats(C.p);
   if (C.isPres) return `At stake: a second term. ${presTitle()} stands at ${P.approval}% approval${P.approval >= 50 ? ', a number an incumbent can win on' : P.approval >= 44 ? ', which is survivable with the right fall' : ', and no President has been re-elected from there without a miracle'}; the ${PARTY[C.p].short} hold ${sen} Senate seats.`;
   if (C.holdsWH) { const streak = S.whStreak || 1; return `At stake: holding the White House without the incumbent. ${presTitle()} leaves office at ${P.approval}% approval, ${P.approval >= 50 ? 'an asset the ticket will lean on' : 'a weight the ticket must carry'}; ${streak >= 2 ? `the ${PARTY[C.p].short} are asking for a ${convNth(streak + 1)} straight term, which voters rarely grant` : 'voters have not kept one party in the West Wing for a third term since 1988'}.`; }
-  return `At stake: taking back the White House from ${presTitle()}'s ${PARTY[C.q].short}${P.approval < 45 ? `, who are defending a President at ${P.approval}%` : P.approval >= 52 ? `, who are defending a popular President (${P.approval}%)` : ''}. The ${PARTY[C.p].short} hold ${sen} Senate seats and a mood that is ${convMoodWord(mood)} (${fmt(mood)}).`;
+  return `At stake: taking back the White House from ${presTitle()}'s ${PARTY[C.q].short}${P.approval < 45 ? `, who are defending a President at ${P.approval}%` : P.approval >= 52 ? `, who are defending a popular President (${P.approval}%)` : ''}. The ${PARTY[C.p].short} hold ${sen} Senate seats${IND() ? '.' : ` and a mood that is ${convMoodWord(mood)} (${fmt(mood)}).`}`;
 }
 function convOpeningScreen(C, next) {
   const N = C.N, ru = N.runnerUp, ranked = (S.nominees.ranked || []);
@@ -704,7 +705,7 @@ function convTheirs(p, month, next) {
   showModal(`<div class="kicker">${convKicker(C, 'Watching from across the aisle')}</div><h2>${month === 'late July' ? 'Late July' : 'August'} · The ${PARTY[p].short} gather in ${C.city}</h2>${convHallHTML(C, true)}
     <div class="conv-nominee">${portrait(N0.p)}<div><small>${N0.contested ? 'Their delegate leader' : 'Their presumptive nominee'}</small><b>${N0.name}</b><span>${N0.office} · ${N0.faction} · ${N0.state}</span></div></div>
     <p>${N0.contested ? `Nobody clinched: ${N0.name} brings ${convNum(N0.del)} delegates, ${ru ? `${ru.name} ${convNum(ru.del)}, ` : ''}and ${convNum(C.need)} wins. Their roll call will be real.` : N0.del >= C.total ? `${presTitle()} arrives with every delegate and a party that is ${convUnityWord(unity0)}.` : `${N0.name} arrives with ${convNum(N0.del)} delegates, ${convNum(N0.del - C.need)} to spare${ru ? `; ${ru.name} finished second with ${convNum(ru.del)}` : ''}.`}</p>
-    <div class="conv-facts"><div class="conv-fact"><small>Their mood</small><b style="color:${convMoodOf(p) >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(convMoodOf(p))} · ${convMoodWord(convMoodOf(p))}</b></div>${C.holdsWH ? `<div class="conv-fact"><small>${presTitle()}'s approval</small><b>${C.P.approval}%</b></div>` : ''}<div class="conv-fact"><small>Unity going in</small><b>${Math.round(unity0 * 100)}% · ${convUnityWord(unity0)}</b></div><div class="conv-fact"><small>Your ticket's margin today</small><b>${fmt(margin0)}</b></div></div>
+    <div class="conv-facts">${IND() ? '' : `<div class="conv-fact"><small>Their mood</small><b style="color:${convMoodOf(p) >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(convMoodOf(p))} · ${convMoodWord(convMoodOf(p))}</b></div>`}${C.holdsWH ? `<div class="conv-fact"><small>${presTitle()}'s approval</small><b>${C.P.approval}%</b></div>` : ''}<div class="conv-fact"><small>Unity going in</small><b>${Math.round(unity0 * 100)}% · ${convUnityWord(unity0)}</b></div><div class="conv-fact"><small>${IND() ? `The ${PARTY.D.short}' margin today` : `Your ticket's margin today`}</small><b>${fmt(margin0)}</b></div></div>
     <p>${convStakes(C)}</p>
     <p style="color:var(--dim);font-size:12px">You have no delegates in this hall. Watch the coverage: their running mate, their platform and how big a bounce they take into the fall.</p>
     <div class="choices"><button class="btn primary big adv" id="convth1">Watch the coverage</button></div>`);
