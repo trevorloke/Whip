@@ -76,7 +76,7 @@ EVENTS.push({
   id: 'poison', w: 1, cond: () => !S.bill.nomination && S.bill.day >= 2, weight: () => rivalStyle() === 'schemer' ? 3 : 0.8,
   make: () => {
     const a = worstAmendment(); if (!a) return null;
-    const B = S.bill, odds = clamp(0.45 + (seats(S.side) - 50) * 0.03 + (isMajority() ? 0.12 : 0), 0.25, 0.85);
+    const B = S.bill, odds = clamp(0.45 + ((IND() ? seats('I') + (S.bill.patron ? seats(S.bill.patron) : 0) : seats(S.side)) - 50) * 0.03 + (isMajority() ? 0.12 : 0), 0.25, 0.85);
     return { title: `Poison Pill: the ${a[0]}`, paper: 'storm', text: `Sen. ${S.rival} moves to attach the <b>${a[0]}</b> to your bill. It's built to split your coalition: ${Object.entries(a[1]).map(([t, v]) => `${TAG[t][1]} ${v > 0 ? '+' : '−'}${Math.abs(v)}`).join(', ')}. The amendment vote is tonight.`, choices: [
       { t: 'Whip against it', s: `2 actions · ${Math.round(odds * 100)}% chance to defeat it`, can: () => S.bill.ap >= 2, f: B => { B.ap -= 2; if (Math.random() < odds) { log(`You beat back the ${a[0]}.`, 'good'); unlock('pill'); } else { applyFx(`${a[0]} (poison pill)`, a[1]); log(`The ${a[0]} passed despite you.`, 'bad'); } } },
       { t: 'Move to table it', s: '2 capital · the majority controls procedure', can: () => isMajority() && S.career.capital >= 2, f: () => { S.career.capital -= 2; log(`You tabled the ${a[0]}.`, 'good'); unlock('pill'); } },
@@ -120,10 +120,10 @@ function platformHTML() {
 function adoptPromises() {
   const E = S.election, plat = E.platform || [];
   if (!plat.length) return '';
-  if (!isMajority()) { S.promises = []; return `<p>🤞 Your party lost the Senate, so nobody will hold you to your platform.</p>`; }
+  if (IND() ? !caucusDecides() : !isMajority()) { S.promises = []; return IND() ? `<p>🤞 Your caucus doesn't hold the balance of power, so nobody will hold you to your platform.</p>` : `<p>🤞 Your party lost the Senate, so nobody will hold you to your platform.</p>`; }
   S.promises = plat.map(id => ({ id, due: S.career.bills + 6, done: false, count: 0, broken: false }));
   S.termBudgets = { passed: 0, total: 0 };
-  return `<p>🤞 <b>You won, so now you have to deliver:</b> ${plat.map(id => promiseOf(id)[1]).join(', ')}. You have six bills.</p>`;
+  return `<p>🤞 <b>${IND() ? 'You hold the balance, so now you have to deliver:' : 'You won, so now you have to deliver:'}</b> ${plat.map(id => promiseOf(id)[1]).join(', ')}. You have six bills.</p>`;
 }
 // a bill just finished: credit any promises it fulfills
 function creditPromises(won, isLaw) {

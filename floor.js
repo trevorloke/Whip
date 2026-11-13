@@ -28,9 +28,9 @@ function floorByline() {
 function flNomDue() { return !!(S.nominee && S.court.length < 9 && (S.nominee.party || S.side) === S.president.party); }
 function flForced() {
   const out = [];
-  if (S.pendingAUMF) out.push({ name: `War vote: Authorization for Use of Military Force in ${S.pendingAUMF}`, why: `${presTitle()} asked Congress for a war vote`, aim: 'pass' });
-  if (S.docket) out.push({ name: S.docket.name, why: S.docket.forced ? 'a bipartisan bloc forced it onto the floor' : 'already on the calendar', aim: 'pass' });
-  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
+  if (S.pendingAUMF) out.push({ name: `War vote: Authorization for Use of Military Force in ${S.pendingAUMF}`, why: `${presTitle()} asked Congress for a war vote`, aim: IND() ? flAimI(FL_AUMF_FX, S.president.party) : 'pass' });
+  if (S.docket) out.push({ name: S.docket.name, why: S.docket.forced ? 'a bipartisan bloc forced it onto the floor' : 'already on the calendar', aim: IND() ? flAimI(S.docket.tpl[2], billParty(S.docket.tpl[0]) || (S.docket.forced ? floorParty() : 'I')) : 'pass' });
+  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: IND() ? flNomination().aim : (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
   return out;
 }
 function forcedNext(n) {
@@ -41,15 +41,18 @@ function forcedNext(n) {
 
 /* ---------------- the schedule ---------------- */
 // one slot: { name, tpl: [name, blurb, fx], aim, by: 'you'|'them', note, sup?, lm? (landmark), win? (forced on by a minority tool), ride? (your rider's tag) }
+// independent career: the caucus's aim is its Banner's verdict on the bill (caucus.js), whoever owns it
+const flAimI = (fx, owner) => typeof cauAim === 'function' ? cauAim(fx, owner) : 'pass';
+const FL_AUMF_FX = { security: 3, taxes: -1, welfare: -1 };
 function flItem(t, by, extra) {
   const lm = t.length > 3, p = billParty(t[0]);
-  return { name: t[0], tpl: [t[0], t[1], t[lm ? 3 : 2]], aim: by === 'them' && p && p !== S.side ? 'kill' : 'pass', by, note: '', ...(lm ? { sup: t[2], lm: true } : {}), ...extra };
+  return { name: t[0], tpl: [t[0], t[1], t[lm ? 3 : 2]], aim: IND() ? flAimI(t[lm ? 3 : 2], by === 'you' && !p ? 'I' : p || floorParty()) : by === 'them' && p && p !== S.side ? 'kill' : 'pass', by, note: '', ...(lm ? { sup: t[2], lm: true } : {}), ...extra };
 }
 // the queue; when control of the floor changes, the old majority's picks fall off (bills forced on by petition stay)
 // (always the same array, edited in place: callers hold on to it)
 function flQueue() {
   if (!Array.isArray(S.schedule)) S.schedule = [];
-  const q = S.schedule, ctl = isMajority() ? 'you' : 'them', flip = S.schedCtl !== ctl;
+  const q = S.schedule, ctl = isMajority() ? 'you' : IND() ? 'them:' + floorParty() : 'them', flip = S.schedCtl !== ctl;
   for (let i = q.length - 1; i >= 0; i--) { const x = q[i]; if (!x || !x.tpl || (!S.war && warIsWPR(x)) || (flip && !x.win)) q.splice(i, 1); }
   S.schedCtl = ctl;
   return q;
@@ -73,8 +76,8 @@ function flFill() {
 }
 // startBill asks here for every bill that isn't the budget
 function docketTemplate(n) {
-  if (S.pendingAUMF) { const place = S.pendingAUMF; return { tpl: [`Authorization for Use of Military Force in ${place}`, `The President asks Congress to authorize force in ${place}. A simple majority; the nation is watching.`, { security: 3, taxes: -1, welfare: -1 }], aumf: place, aim: 'pass', by: 'you', note: `${presTitle()} asked for it` }; }
-  if (S.docket) { const d = S.docket; S.docket = null; S.docketOffer = null; return { ...flItem(d.tpl, d.forced ? 'them' : 'you'), aim: 'pass', note: d.forced ? 'Forced onto the floor by a bipartisan bloc' : '', wpr: warIsWPR(d) }; }
+  if (S.pendingAUMF) { const place = S.pendingAUMF; return { tpl: [`Authorization for Use of Military Force in ${place}`, `The President asks Congress to authorize force in ${place}. A simple majority; the nation is watching.`, { security: 3, taxes: -1, welfare: -1 }], aumf: place, aim: IND() ? flAimI(FL_AUMF_FX, S.president.party) : 'pass', by: 'you', note: `${presTitle()} asked for it` }; }
+  if (S.docket) { const d = S.docket; S.docket = null; S.docketOffer = null; return { ...flItem(d.tpl, d.forced ? 'them' : 'you'), aim: IND() ? flAimI(d.tpl[2], billParty(d.tpl[0]) || (d.forced ? floorParty() : 'I')) : 'pass', note: d.forced ? 'Forced onto the floor by a bipartisan bloc' : '', wpr: warIsWPR(d) }; }
   if (flNomDue()) return flNomination();
   const it = flFill().shift();
   return { ...it, wpr: warIsWPR(it) };
@@ -83,8 +86,9 @@ function flNomination() {
   const N = S.nominee, p = N.party || S.side, pr = PARTY[p === 'I' ? other(S.side) : p].prior, fx = {}, mod = 1 / (1 + (N.tries || 0)), mine = p === S.side;
   TAGS.slice().sort((a, b) => Math.abs(pr[b] || 0) - Math.abs(pr[a] || 0)).slice(0, 3).forEach(t => fx[t] = Math.round((pr[t] || 0) * 2 * mod) || Math.sign(pr[t] || 0));
   return { tpl: [`Confirmation of Judge ${N.name}`, mine ? `${presTitle()}'s nominee for the Supreme Court. No filibuster: a simple majority confirms. The other side calls the nominee an extremist.`
+    : IND() ? `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARTY[floorParty()].name} majority. No filibuster for judges: a simple majority confirms. Both parties will bid for your caucus's votes.`
     : `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARTY[other(S.side)].name} majority. No filibuster for judges: a simple majority confirms. Your caucus calls the nominee an extremist; peel off enough of theirs and the seat stays open.`, fx],
-    nomination: true, aim: mine ? 'pass' : 'kill', by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '' };
+    nomination: true, aim: IND() ? flAimI(fx, p) : (mine ? 'pass' : 'kill'), by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '' };
 }
 // old saves call this
 function billPool() { return AGENDA[S.side].concat(AGENDA.both).filter(b => !(S.history || []).slice(-8).some(h => h.name === b[0])); }
@@ -128,10 +132,10 @@ function flRowHTML(r, i, U) {
   const who = r.forced ? `<i>${r.why}</i>` : r.by === 'them' ? `their pick${billParty(r.name) ? '' : ' · a bipartisan deal'}` : r.win ? 'your bill, forced on' : maj ? 'your pick' : 'your bill';
   const ctl = r.forced ? '<span class="fl-lock">🔒 can\'t wait</span>'
     : maj ? `<button class="btn fl-mini ${U.sel === r.qi ? 'on' : ''}" data-slot="${r.qi}">${U.sel === r.qi ? 'Choosing…' : 'Change'}</button>${r.qi > 0 ? `<button class="btn fl-mini" data-mv="${r.qi}" title="Move up">▲</button>` : ''}`
-    : r.by === 'them' && !billParty(r.name) ? `<button class="btn fl-mini" data-aim="${r.qi}">${r.aim === 'kill' ? 'Back it instead' : 'Oppose it instead'}</button>` : '';
+    : r.by === 'them' && (IND() || !billParty(r.name)) ? `<button class="btn fl-mini" data-aim="${r.qi}">${r.aim === 'kill' ? 'Back it instead' : 'Oppose it instead'}</button>` : '';
   return `<div class="fl-slot ${r.aim} ${r.forced ? 'forced' : ''} ${maj && U.sel === r.qi ? 'sel' : ''}"><span class="fl-when">${when}</span>
     <span class="fl-what"><b>${r.name}</b>${r.lm ? ' <span class="fl-lm">LANDMARK</span>' : ''}${star}<small>${who}${r.tpl ? ` · ${flNeed(r)} · ${flFx(r.tpl[2])}` : ''}${r.ride ? ` · <b class="fl-star">your ${TAG[r.ride][1]} rider rides along</b>` : ''}${r.note ? ` · ${r.note}` : ''}</small></span>
-    <span class="fl-tag ${r.aim}">${r.aim === 'kill' ? 'KILL' : 'PASS'}</span><span class="fl-ctl">${ctl}</span></div>`;
+    <span class="fl-tag ${r.aim}">${r.aim === 'kill' ? 'KILL' : 'PASS'}</span>${IND() && typeof cauRowChip === 'function' ? cauRowChip(r) : ''}<span class="fl-ctl">${ctl}</span></div>`;
 }
 function docketHTML() {
   const U = flState(), maj = isMajority(), c = S.career, rows = flRows(), promTags = flPromTags(), them = PARTY[other(S.side)];
@@ -158,13 +162,14 @@ function docketHTML() {
     body = `<p class="fl-sub">Your bill${pk ? `: <b>${pk.name}</b> <small>${flFx(pk.tpl[2])}</small>` : ''}. Pick one, then use the minority's tools to fight for floor time:</p>
       <div class="shop docket">${U.offers.map(offerBtn).join('')}</div>${own}
       <div class="shop fl-tools">${tool('data-mt="discharge"', 'discharge', '📜 Discharge petition', '60% odds: a majority of senators sign, and your bill is pried out of committee. It takes their next slot; theirs goes to the back.', 2, !!pk)}
+        ${IND() && S.cau && S.cau.floorOwed > 0 ? tool('data-mt="owed"', 'owed', '🎫 Call in a floor vote', `The ${PARTY[floorParty()].short} owe your caucus ${S.cau.floorOwed} floor vote${S.cau.floorOwed > 1 ? 's' : ''}: your bill goes in right after this week's.`, 0, !!pk) : ''}
         ${tool('data-mt="uc"', 'uc', '🎯 Unanimous-consent ambush', 'A 30% shot: ask for a vote while their whip is at lunch. Your bill goes in right after this week\'s.', 1, !!pk)}
         ${tool('data-mt="pull"', 'pull', '🧱 Threaten to filibuster everything', head ? `50% they blink and postpone the ${head.name} to the back of the line.` : 'Nothing of theirs to bump.', 2, !!head)}
         ${tool('data-mt="ride"', 'ride', '🐎 Ride it as an amendment', rideOn && rideT ? `Offer your ${TAG[rideT][1]} language as an amendment on the ${rideOn.name}: an extra card in that fight.` : 'Pick a bill, and they need a bill your caucus backs on the schedule.', 1, !!(rideOn && rideT && !rideOn.ride))}
         ${tool('data-mt="message"', 'message', '📣 Message vote', pk ? `Force a show vote on the ${pk.name}. It fails, but their senators up in ${electionYear(nextElectionK())} from states that like it go on the record (record back home −2); your party's mood rises.` : 'Pick a bill first.', 1, !!pk)}
         ${wpr ? tool('data-wpr', 'wpr', `☮ War Powers Resolution on ${S.war.place}`, '60% odds: force a vote to bring the troops home.', 2) : ''}</div>`;
   }
-  return `<hr><div class="fl-dock"><b>📋 The Floor Schedule</b> <small style="color:var(--dim)">· ${maj ? 'your party controls the floor: you set the picks and the order' : `the ${them.name} majority controls the floor: they set the schedule, and you fight it`}${S.nuclear ? ' · <b style="color:var(--gold2)">the filibuster is gone</b>' : ''}</small>
+  return `<hr><div class="fl-dock"><b>📋 The Floor Schedule</b> <small style="color:var(--dim)">· ${maj ? 'your party controls the floor: you set the picks and the order' : IND() ? `the ${them.name} majority controls the floor · flip PASS/KILL on any of their bills (your Banner set the default)` : `the ${them.name} majority controls the floor: they set the schedule, and you fight it`}${S.nuclear ? ' · <b style="color:var(--gold2)">the filibuster is gone</b>' : ''}</small>
     <div class="fl-sched">${rows.map((r, i) => flRowHTML(r, i, U)).join('')}</div>${body}</div>`;
 }
 function flTopTag(fx) { const e = Object.entries(fx).filter(([, v]) => v > 0).sort((a, b) => b[1] - a[1])[0]; return e ? e[0] : null; }
@@ -188,7 +193,7 @@ function bindDocket(redraw0) {
   const place = it => { flFill(); const i = clamp(U.sel, 0, q.length - 1); q[i] = it; };
   card.querySelectorAll('[data-slot]').forEach(b => b.onclick = () => { U.sel = +b.dataset.slot; sfx.click(); redraw(); });
   card.querySelectorAll('[data-mv]').forEach(b => b.onclick = () => { const i = +b.dataset.mv; if (i > 0 && q[i]) { [q[i - 1], q[i]] = [q[i], q[i - 1]]; U.sel = i - 1; sfx.click(); redraw(); } });
-  card.querySelectorAll('[data-aim]').forEach(b => b.onclick = () => { const it = q[+b.dataset.aim]; if (!it || billParty(it.name)) return; it.aim = it.aim === 'kill' ? 'pass' : 'kill'; sfx.click(); toast(it.aim === 'kill' ? `Your caucus will fight the ${it.name}.` : `Your caucus will back the ${it.name}.`); redraw(); });
+  card.querySelectorAll('[data-aim]').forEach(b => b.onclick = () => { const it = q[+b.dataset.aim]; if (!it || (billParty(it.name) && !IND())) return; it.aim = it.aim === 'kill' ? 'pass' : 'kill'; sfx.click(); toast(it.aim === 'kill' ? `Your caucus will fight the ${it.name}.` : `Your caucus will back the ${it.name}.`); redraw(); });
   card.querySelectorAll('[data-dk]').forEach(b => b.onclick = () => {
     const o = U.offers[+b.dataset.dk]; if (!o) return;
     if (!maj) { U.pick = o; sfx.click(); redraw(); return; }
@@ -232,6 +237,11 @@ function flTool(k, pay, done) {
     if (Math.random() > 0.6) return done('The discharge petition fell short of a majority. Leadership keeps its pick.', false);
     const h = flTheirs(q); if (h) q.splice(q.indexOf(h), 1); q.unshift({ ...mine(), note: 'Discharge petition' }); if (h) q.push(h); unlock('discharge');
     return done(`Discharge petition succeeds: the ${pk.name} comes up next.`, true);
+  }
+  if (k === 'owed') {
+    if (!pk || !(S.cau && S.cau.floorOwed > 0) || !pay(k, 0)) return;
+    S.cau.floorOwed--; q.splice(1, 0, { ...mine(), note: 'Owed to the Independent caucus' });
+    return done(`The ${pk.name} goes on the schedule right after this week's bill.`, true);
   }
   if (k === 'uc') {
     if (!pk || !pay(k, 1)) return;
