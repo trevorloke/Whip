@@ -475,7 +475,7 @@ function govField(code, year) {
 function govNewCand(party, code, year) {
   const p = newPerson(party, code, { age: ri(42, 66) }), st = ST[code].name;
   p.faction = pick(FACTIONS[party] || FACTIONS.D)[0];
-  const [office, line] = pick([[`Lieutenant Governor`, `Elected ${st} Lieutenant Governor`], [`${st} Attorney General`, `Elected ${st} Attorney General`], [`Secretary of State`, `Elected ${st} Secretary of State`], [`state treasurer`, `Elected ${st} State Treasurer`], [`state senator`, `Elected to the ${st} State Senate`], [`Rep. (${districtOf(code)})`, `Elected to the U.S. House`], ['businessman', `Built a regional business empire`], [`former mayor of ${p.hometown}`, `Elected mayor of ${p.hometown}`]]);
+  const [office, line] = pick([[`Lieutenant Governor`, `Elected ${st} Lieutenant Governor`], [`${st} Attorney General`, `Elected ${st} Attorney General`], [`Secretary of State`, `Elected ${st} Secretary of State`], [`state treasurer`, `Elected ${st} State Treasurer`], [`state senator`, `Elected to the ${st} State Senate`], [p.gender === 'f' ? 'Congresswoman' : 'Congressman', `Elected to the U.S. House (${districtOf(code)})`], ['businessman', `Built a regional business empire`], [`former mayor of ${p.hometown}`, `Elected mayor of ${p.hometown}`]]);
   hist(p, `Worked as ${p.background}`, year - ri(14, 26)); hist(p, line, year - ri(3, 10));
   return { p, office: office === 'businessman' && p.gender === 'f' ? 'businesswoman' : office };
 }
