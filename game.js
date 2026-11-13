@@ -345,7 +345,7 @@ function baseSupport(m) {
   // the bill's own party lines up behind it, the other party against it
   if (m.party === spon) s += 16 * loyal;
   else if (IND() ? spon !== 'I' && m.party === other(spon) : m.party === other(spon)) s -= 16 * loyal; // nobody whips against a caucus bill as a party
-  if (IND() && m.party === 'I' && spon !== 'I') s += 10 * aimSign(); // caucus discipline: your members lean your caucus's way
+  if (IND() && m.party === 'I' && spon !== 'I') s += 20 * aimSign(); // caucus discipline: your members lean your caucus's way
   // relationships and grudges are with you: they pull a senator toward your caucus's position
   s += m.rel * 6 * aimSign();
   if (m.grudge) s -= 15 * aimSign();
@@ -1003,7 +1003,7 @@ function finishVote(results, y, n) {
     r.m.rec = clamp(r.m.rec + (r.v === 'yes' ? fit : -fit * 0.5), -15, 15);
     if (r.v === mine && side(r.m) !== 'you') r.m.rel = clamp(r.m.rel + 0.5, -4, 4);
   }
-  if (IND()) B.cauVotes = results.filter(r => r.m.party === 'I' && r.v !== 'abs').map(r => r.v); // how your caucus voted (cohesion, at settle)
+  if (IND()) { B.cauVotes = results.filter(r => r.m.party === 'I' && r.v !== 'abs').map(r => r.v); B.cauConf0 = S.career.confidence; } // how your caucus voted, and your confidence going in (cohesion, at settle)
   const tally = `${vpNote}Senate: ${y}–${n}${pass !== k && spare > 0 ? `, ${spare} to spare` : ''}.`;
   if (!pass) {
     if (!k) return settle(false, B.override ? `${tally} The override fell ${B.super - y} short. The veto stands.` : `${tally}${thr ? ` ${thr - y} short of ${thr}.` : ''}`, 'THE BILL FAILS');
@@ -1544,7 +1544,7 @@ function countBallots() {
     } else hist(m, `Re-elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${rc.bruised ? ' after a tough primary' : ''}`, E.year);
     w.name = winner.name;
     races.push({ code: m.state, cls: m.cls, cands, wName: w.name, wParty: np, lName: l.name, lParty: l.party, wPct: w.pct, lPct: l.pct, wVotes: w.votes, lVotes: l.votes,
-      margin: w.pct - l.pct, flip, open: rc.retiring || rc.primaried, incumbent: rc.retiring || rc.primaried ? null : m.name, threeWay: !!rc.ind, call: callTime(m.state, w.pct - l.pct) });
+      margin: w.pct - l.pct, flip, open: rc.retiring || rc.primaried, incumbent: rc.retiring || rc.primaried ? null : m.name, threeWay: IND() ? !!rc.ind && !rc.standDown : !!rc.ind, call: callTime(m.state, w.pct - l.pct) });
   }
   for (const m of S.members) m.defy = 0;
   for (const m of S.members) m.rec = 0;

@@ -266,10 +266,11 @@ neither party can organize without you.
   with the usual tools; your own caucus is twistable, and the rival can't touch
   it. At the end, concessions are paid or quietly forgotten, **trust** with
   each party and your **Lean** move, and a bill your votes decided earns a
-  bonus.
+  bonus. If most of your caucus breaks ranks on a deal and that costs you the
+  vote, the blame is yours.
 - **Budgets and your own bills.** The floor party writes the budget; selling
   your votes or killing it is the bid. Your own reform agenda (stock-trading
-  ban, open primaries, right to repair…) reaches the floor through the
+  ban, open primaries, the Fix It Yourself Act…) reaches the floor through the
   minority tools and the floor votes your partner owes you.
 - **The Caucus Room.** Between bills: the roster, trust and Lean, courting a
   defector, banking recruits, a reach-out tour, changing banner, or **the

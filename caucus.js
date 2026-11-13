@@ -14,11 +14,13 @@
    ===================================================================== */
 
 /* ---------------- 7.1 data, at load ---------------- */
+// two of the contract's names ('Right to Repair Act', 'Insulin Price Cap Act') are already Democratic agenda bills (content.js):
+// billParty() would make them D bills with a filibuster, so the caucus versions carry their own names
 if (!AGENDA.I) AGENDA.I = [
   ['Congressional Stock Trading Ban', 'No member of Congress trades individual stocks. Ever.', { economy: 1, tech: 1, taxes: 1 }],
   ['Open Primaries Act', 'Every voter gets a primary ballot, party card or not.', { urban: 1, rural: 1, tech: 1 }],
-  ['Right to Repair Act', 'Farmers and families can fix what they own.', { rural: 2, tech: 1, economy: 1 }],
-  ['Insulin Price Cap Act', '$35 a month, for everyone.', { welfare: 2, taxes: -1 }],
+  ['Fix It Yourself Act', 'Farmers and families can fix what they own: parts, manuals and software, at fair prices.', { rural: 2, tech: 1, economy: 1 }],
+  ['Insulin for Everyone Act', '$35 a month, insured or not, from every maker.', { welfare: 2, taxes: -1 }],
   ['Pay-As-You-Go Restoration Act', 'Every new dollar of spending needs a dollar of savings.', { taxes: 2, welfare: -1, economy: 1 }],
   ['Rural Hospitals Rescue Act', 'Keep the lights on in county hospitals.', { rural: 2, welfare: 2, taxes: -1 }],
   ['Housing Supply Act', 'Zoning-reform money for towns that build.', { urban: 2, economy: 1 }],
@@ -104,7 +106,8 @@ function cauInit() {
   const styles = shuffle(Object.keys(RIVAL_STYLES)), used = new Set();
   const nm = () => { let n = pick(RIVAL_FIRST) + ' ' + pick(LAST); for (let i = 0; i < 30 && used.has(n); i++) n = pick(RIVAL_FIRST) + ' ' + pick(LAST); used.add(n); return n; };
   S.cau = {
-    label: 'Common Ground', partner: null, orgK: 0, jeffK: -1, gavels: 0, floorOwed: 0,
+    // orgK is −1 until the first Organizing Resolution, so a reload during the career-start screens reruns them
+    label: 'Common Ground', partner: null, orgK: -1, jeffK: -1, gavels: 0, floorOwed: 0,
     trust: { D: 0, R: 0 }, lean: 0,
     whips: { D: { name: nm(), style: styles[0] }, R: { name: nm(), style: styles[1] } },
     pivots: 0, causes: [], promised: [], recruits: 0, defectAt: -99, momentAt: -99, poachAt: -99,
@@ -268,7 +271,7 @@ function cauShortFor(B) {
 function cauOfferBudget(p, B) {
   const C = S.cau, toward = p === 'D' ? -C.lean : C.lean;
   if (toward <= -8) return 0;
-  const pts = 1.5 + (B.landmark ? 1.5 : 0) + (B.pivot && B.pivot.decisive ? 1 : 0) + 0.3 * C.trust[p] + (C.partner ? 0 : 1) - (C.partner === p ? 0.5 : 0) - (toward >= 6 ? 2 : 0);
+  const pts = 2 + (B.landmark ? 1.5 : 0) + (B.pivot && B.pivot.decisive ? 1 : 0) + 0.3 * C.trust[p] + (C.partner ? 0 : 1) - (C.partner === p ? 0.5 : 0) - (toward >= 6 ? 2 : 0);
   return clamp(Math.round(pts), 0, 5);
 }
 // the caucus member a deferred concession names (picked once per bill and party)
@@ -323,6 +326,7 @@ function cauOfferCard(p, B) {
 }
 function cauAsk(next) {
   const B = S.bill, C = S.cau, c = S.career;
+  if (C.orgK < 0) return cauStartModal(() => { hideModal(); startBill(); save(); });   // saved before the Banner and the Organizing Resolution were done: do them now
   render();
   B.labelAim = cauAim(B.fx, B.owner);
   if (!B.offers) B.offers = { D: cauMakeOffer('D', B), R: cauMakeOffer('R', B) };
@@ -433,9 +437,12 @@ function cauSettle(won, enacted, headline) {
     lines.push(`🗝 Your ${seats('I')} votes decided it: +1 capital`);
     if (C.pivots >= 10) unlock('cau_kingmaker');
   }
-  if (B.cauVotes && B.cauVotes.length >= 2) {
+  if (!won && p && B.cauVotes && B.cauVotes.length >= 2) {   // cohesion: only a split that broke a deal and cost you the vote is held against you
     const against = B.cauVotes.filter(v => v === (B.aim === 'pass' ? 'no' : 'yes')).length;
-    if (against >= Math.ceil(B.cauVotes.length / 2)) { c.confidence--; lines.push(`Half your caucus broke ranks (${against} of ${B.cauVotes.length}): −1 confidence`); }
+    if (against * 2 > B.cauVotes.length) {   // the split takes away the minority's no-blame pass; it never stacks on a loss that already cost confidence
+      if (B.cauConf0 != null && c.confidence < B.cauConf0) lines.push(`Most of your caucus broke ranks (${against} of ${B.cauVotes.length}), and everyone noticed`);
+      else { c.confidence--; lines.push(`Most of your caucus broke ranks (${against} of ${B.cauVotes.length}) and it cost you the vote: −1 confidence`); }
+    }
   }
   if ((B.deal || []).includes('rider') && enacted && B.cauRider) {
     C.causes.push({ name: B.name, tag: B.cauRider, y: billYear(B.n) }); if (C.causes.length > 12) C.causes.shift();
@@ -464,7 +471,7 @@ function cauHeadline(won, headline, y, n) {
 }
 
 /* ---------------- 7.5 between bills: the Caucus Room ---------------- */
-function cauDefectOdds(m) { return clamp(0.25 + 0.08 * (m.rel || 0) + 0.05 * (m.defy || 0) + (Math.abs(ST[m.state].lean) <= 6 ? 0.1 : 0), 0.1, 0.6); }
+function cauDefectOdds(m) { return clamp(0.35 + 0.08 * (m.rel || 0) + 0.05 * (m.defy || 0) + (Math.abs(ST[m.state].lean) <= 6 ? 0.1 : 0), 0.1, 0.6); }
 function cauDefectTarget() {
   const pool = S.members.filter(m => (m.party === 'D' || m.party === 'R') && !T(m, 'leader') && !(typeof evtOnTicket === 'function' && evtOnTicket(m))
     && (m.faction === MODERATE[m.party] || m.faction === CROSS[m.party]) && ((m.rel || 0) >= 1 || (m.defy || 0) >= 1));
@@ -742,7 +749,7 @@ function cauSlate(E, next) {
       if (bank) C.recruits--; else c.capital -= 2;
       E.cauRecruits++;
       const code = rc.m.state, lean = ST[code].lean;
-      rc.ind = { name: fullName(), label: cauRecruitLabel(code), cause: pick(IND_CAUSES), str: rnd(12, 19) + (rc.primaried ? 6 : 0) + (Math.abs(lean) <= 8 ? 3 : 0) + (bank ? 4 : 0), recruited: true };
+      rc.ind = { name: fullName(), label: cauRecruitLabel(code), cause: pick(IND_CAUSES), str: rnd(20, 27) + (rc.primaried ? 6 : 0) + (Math.abs(lean) <= 8 ? 3 : 0) + (bank ? 4 : 0), recruited: true };
       E.cauSlateNews.push(`✍ ${rc.ind.name} files to run in ${ST[code].name} under the ${rc.ind.label} banner.`);
       sfx.up();
     } else if (k[1] === 'sd') {
