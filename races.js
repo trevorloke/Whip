@@ -197,7 +197,7 @@ function rsNews(N) {
     const tag = `data-rsel="${P.i}:${P.party}"`;
     if (r.incLost) out.push([10, `<p ${tag}>🗡️ <b>Sen. ${inc.name} is out.</b> ${w.name} (${w.faction}) takes the ${st} ${pn} primary: ${rsIncLine(r)}${(inc.p.defy || 0) > 0 ? `; ${inc.p.defy} vote${inc.p.defy > 1 ? 's' : ''} against the party line came home to roost` : r.endorsed === w.name ? ', with your fingerprints all over it' : `, ${pick(['ending a career in a single night', 'the first incumbent in the state to lose a primary in a generation', 'and the caucus is already counting the cost'])}`}.</p>`]);
     else if (inc && P.field.length > 1 && r.rows.find(x => x.inc).pct < 60) out.push([6, `<p ${tag}>😰 Sen. ${inc.name} survives the ${st} ${pn} primary${r.runoff ? ` in a runoff, ${rsP(r.runoff.rows[0].pct)},` : `, ${rsP(r.rows.find(x => x.inc).pct)},`} against ${r.rows.find(x => !x.inc).name}: closer than anyone in the caucus wants to admit.</p>`]);
-    if (r.endorsed && !r.meddle) out.push([9, `<p ${tag}>${r.endorsed === w.name ? `✅ <b>Your pick wins:</b> ${w.name} takes the ${st} ${pn} primary with ${rsP(f[0].pct)}.` : `❌ <b>Your pick loses:</b> ${r.endorsed} falls to ${w.name} in ${st}.`}</p>`]);
+    if (r.endorsed && !r.meddle) out.push([9, `<p ${tag}>${r.endorsed === w.name ? `✅ <b>Your pick wins:</b> ${w.name} takes the ${st} ${pn} primary with ${rsP(f[0].pct)}${r.runoff ? ' in the runoff' : ''}${P.plan.attack && !r.backfire ? `, and the attack on ${P.plan.attack} did its job` : ''}.` : `❌ <b>Your pick loses:</b> ${r.endorsed} falls to ${w.name} in ${st}, ${rsP(f[0].pct)} to ${rsP((f.find(x => x.name === r.endorsed) || r.rows.find(x => x.name === r.endorsed)).pct)}${f.some(x => x.name === r.endorsed) ? '' : ' in the first round'}.`}</p>`]);
     if (r.meddle) out.push([8, `<p ${tag}>🕶️ ${r.endorsed === w.name ? `Your quiet money worked: ${w.name} is the ${pn} nominee in ${st}.` : `Your quiet money for ${r.endorsed} in ${st} bought nothing; ${w.name} won.`}${r.leak ? ' <b>And it leaked:</b> the winner thanked "our friends across the aisle" in a fundraising email.' : ''}</p>`]);
     if (r.runoff) out.push([5, `<p ${tag}>🔁 No one cleared 50% in ${st}: ${r.rows[0].name} (${rsP(r.rows[0].pct)}) and ${r.rows[1].name} (${rsP(r.rows[1].pct)}) went to a runoff, and ${w.name} won it ${rsP(r.runoff.rows[0].pct)} to ${rsP(r.runoff.rows[1].pct)}.</p>`]);
     if (r.upset && !r.incLost) out.push([7, `<p ${tag}>⚡ <b>Upset in ${st}:</b> ${w.name} (${w.office}) beat ${r.fav}, who led the final poll ${r.rows.find(x => x.name === r.fav).poll.toFixed(0)}% to ${r.rows.find(x => x.name === w.name).poll.toFixed(0)}%, for the ${pn} nomination.</p>`]);
@@ -215,7 +215,7 @@ function rsHead(N) {
   if (lost.length) { const P = lost[0], inc = P.field.find(c => c.inc); return { h: `${lastName(P.winner).toUpperCase()} TOPPLES SEN. ${lastName(inc).toUpperCase()}`, s: `${stName(P.code)}'s ${PARTY[P.party].name} voters fire their senator: ${P.winner.name} wins by ${rsN((P.rec.runoff || P.rec).rows[0].votes - (P.rec.runoff || P.rec).rows[1].votes)} votes${P.rec.runoff ? ' in the runoff' : ''}.`, c: PARTY[P.party].color }; }
   if (mine.length) { const won = mine.filter(P => P.rec.endorsed === P.winner.name).length; return { h: won === mine.length ? `${L}: THE WHIP'S PICKS ${won > 1 ? 'SWEEP' : 'DELIVER'}` : won ? `${L}: A SPLIT NIGHT FOR THE WHIP` : `${L}: THE WHIP'S PICK${mine.length > 1 ? 'S' : ''} GO DOWN`, s: mine.map(P => `${stName(P.code)}: ${P.winner.name} ${P.rec.endorsed === P.winner.name ? '✓' : `beats ${P.rec.endorsed}`}`).join(' · '), c: PARTY[S.side].color }; }
   if (ups.length) { const P = ups[0]; return { h: `UPSET IN ${stName(P.code).toUpperCase()}`, s: `${P.winner.name} beats ${P.rec.fav} for the ${PARTY[P.party].name} nomination after trailing ${P.rec.rows.find(x => x.name === P.rec.fav).poll.toFixed(0)}% to ${P.rec.rows.find(x => x.name === P.winner.name).poll.toFixed(0)}% in the final poll.`, c: PARTY[P.party].color }; }
-  return { h: `${L}: THE FAVORITES HOLD`, s: `${contested} contested primar${contested === 1 ? 'y' : 'ies'} in ${states} state${states === 1 ? '' : 's'}; every frontrunner made it through.`, c: '#e3b54a' };
+  return { h: `${L}: ${pick(['THE FAVORITES HOLD', 'NO SURPRISES', 'THE FRONTRUNNERS ROLL ON', 'A NIGHT FOR THE ESTABLISHMENT'])}`, s: `${contested} contested primar${contested === 1 ? 'y' : 'ies'} in ${states} state${states === 1 ? '' : 's'}; every frontrunner made it through.`, c: '#e3b54a' };
 }
 // an open-seat nominee's pull in November (your-side points come from the difference between the two)
 function rsQuality(rc, P) {
@@ -269,7 +269,7 @@ function rsApply(L) {
       continue;
     }
     if (won) {
-      if (c.inc) c.p.rel += 2; else { c.p.rel = (c.p.rel || 0) + 2; c.p.whipPick = yr; }
+      if (c.inc) c.p.rel += 2; else (S.rsPicks = S.rsPicks || []).push({ n: c.name, s: P.code, y: yr });
       if (inc && !c.inc) unlock('primary');
       addLegacy(1);
       lines.push(`✅ ${st}: ${pl.cand} won the primary you endorsed${c.inc ? ' and owes you one (+2 relationship)' : ' and owes you (+2 relationship if they reach the Senate)'}.`);
@@ -502,8 +502,22 @@ function raceCampaignAdj(rc) {
 function rsEff(a) { return a > 0 ? 4.5 * Math.tanh(a / 4.5) : a; }
 function raceDetailBtn(rc, i) { return S.election && rc && rc.m ? ` <button class="btn rs-rbtn" data-rroom="${i}" title="Open the race room">🔍 Race</button>` : ''; }
 function bindRaceDetails(card, draw) {
-  card.querySelectorAll('[data-rroom]').forEach(b => b.onclick = e => { e.stopPropagation(); const rc = S.election && S.election.races[+b.dataset.rroom]; if (rc) { sfx.click(); rsRoom(rc, draw); } });
+  card.querySelectorAll('[data-rroom]').forEach(b => b.onclick = e => {
+    e.stopPropagation(); const rc = S.election && S.election.races[+b.dataset.rroom]; if (!rc) return;
+    const sc = card.scrollTop; sfx.click(); rsRoom(rc, () => { draw(); $('#modal-card').scrollTop = sc; });
+  });
 }
+// the nominees you endorsed who won their seats arrive owing you (the first interlude after the election)
+HOOKS.worldNews.push(() => {
+  if (!S.rsPicks || !S.rsPicks.length) return [];
+  const out = [], yr = currentYear();
+  S.rsPicks = S.rsPicks.filter(k => {
+    const m = S.members.find(x => x.name === k.n && x.state === k.s);
+    if (m) { m.rel = (m.rel || 0) + 2; hist(m, `Arrived in the Senate owing the whip, who endorsed them in the ${k.y} primary`); out.push(`🤝 Sen. ${m.name} (${m.party}-${m.state}), your pick in the ${k.y} primary, arrives in the Senate owing you (+2 relationship).`); return false; }
+    return yr <= k.y;
+  });
+  return out;
+});
 function rsWork(rc) { const E = S.election; E.raceWork = E.raceWork || {}; return E.raceWork[rsKey(rc)] = E.raceWork[rsKey(rc)] || { adj: 0, done: [], notes: [], neg: 0 }; }
 // both nominees as people; only needed if the primaries didn't run
 function rsPeople(rc) {
