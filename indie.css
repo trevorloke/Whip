@@ -1,1 +1,21 @@
-/* Floor Fight — styles for indie.js */
+/* Floor Fight — styles for indie.js: third-party labels, the independent primary tab, the third ticket and the third podium */
+.ind-pill{--ic:#a78bfa;display:inline-block;vertical-align:middle;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;line-height:1.5;padding:0 7px;border-radius:999px;border:1px solid var(--ic);color:var(--ic);background:color-mix(in srgb,var(--ic) 14%,transparent);white-space:nowrap;font-family:var(--sans,inherit)}
+.ind-pill.big{font-size:12px;padding:1px 10px}
+.ind-pills{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
+.ind-none{align-items:center;gap:12px;border-color:#a78bfa66}
+.ind-major{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;background:#e3b54a;color:#1a1405;padding:1px 6px;border-radius:4px}
+.camp-tk.ind-tk{flex:.7;min-width:220px;background:linear-gradient(180deg,#1d1a2c,#151424)}
+.camp-tk.ind-tk svg,.camp-tk.ind-tk .camp-noport{width:46px;height:46px}
+.ind-podium{border:1px solid;border-left-width:5px;border-radius:8px;padding:8px 10px;margin:10px 0 0;background:#181628}
+.ind-podium small{display:block;color:var(--dim);font-size:10px;letter-spacing:1.5px;text-transform:uppercase}
+.ind-podium b{display:flex;align-items:center;gap:8px;font-size:15px;margin:2px 0}
+.ind-podium p{margin:4px 0 6px!important;font-size:13px!important}
+.ind-podium .camp-fx{margin-right:6px}
+.ind-conv{background:#141821;border:1px solid var(--line);border-radius:8px;padding:8px 10px;margin:8px 0;overflow-x:auto}
+.ind-conv table{width:100%;border-collapse:collapse;font-size:12px}
+.ind-conv th{text-align:left;font-size:10px;letter-spacing:1px;text-transform:uppercase;color:var(--dim);padding:4px 6px;border-bottom:1px solid var(--line)}
+.ind-conv td{padding:5px 6px;border-bottom:1px dashed #2a3242}
+.ind-conv td.win{font-weight:800;color:var(--yes)}
+.ind-conv td.out{color:var(--dim);text-decoration:line-through}
+.ind-conv .nsub{margin-top:6px}
+@media (max-width:640px){.camp-tk.ind-tk{flex:1 1 100%}}

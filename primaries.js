@@ -63,7 +63,7 @@ function primaryField(party, withIncumbent) {
 // a candidate's pull in one state: talent, money, faction fit, home state, momentum and this round's campaign
 function primStrength(R, f, code, noise) {
   const fx = (FACTIONS[f.party].find(x => x[0] === f.faction) || [0, {}])[1];
-  let fit = 0; if (ST[code]) for (const t of TAGS) fit += (fx[t] || 0) * ST[code].voter[t] * 0.08;
+  let fit = 0; if (f.party === 'I') fit = indFit(f, code); else if (ST[code]) for (const t of TAGS) fit += (fx[t] || 0) * ST[code].voter[t] * 0.08;
   let s = f.charisma * f.money * clamp(1 + fit, 0.4, 1.8) * (f.state === code ? 1.6 : 1) * (1 + f.mo) * (R.endorsed && R.endorsed() === f.name ? 1.08 : 1);
   const pl = R.plans && R.plans[f.name];
   if (pl) s *= 1 + 0.09 * Math.min(pl.visits[code] || 0, 4) + 0.25 * (1 - Math.exp(-(pl.ads[code] || 0) / 12)) + (pl.favor.includes(code) ? 0.12 : 0) + (pl.msg && ST[code] ? 0.06 * (ST[code].voter[pl.msg] - 1) : 0);
@@ -94,6 +94,7 @@ function primaryPoll(R) {
   return out;
 }
 function primTurnout(R, code) {
+  if (R.party === 'I') return indTurnout(code);
   const sh = clamp(0.5 - stLean(code) / 70, 0.2, 0.8), share = R.party === 'D' ? sh : 1 - sh;
   return POP[code] * 1e6 * (PRIM_CAUCUS.includes(code) ? rnd(0.08, 0.12) : rnd(0.17, 0.26)) * share * (R.incumbentRace ? 0.75 : 1);
 }
@@ -231,7 +232,7 @@ function runPrimaryFor(party, endorsed, withIncumbent) {
 function primDetailHTML(R, code) {
   const r = R.results[code]; if (!r) return '';
   const w = r.rows[0];
-  return `<div class="prim-detail"><div class="prim-dh"><b>${stName(code)} ${r.caucus ? 'caucuses' : 'primary'}</b><span>${PARTY[R.party].name} · ${primN(r.delTot)} delegates · 100% reporting</span>${r.upset ? '<span class="prim-tag up">UPSET</span>' : ''}${r.margin < 1.5 ? '<span class="prim-tag ph">PHOTO FINISH</span>' : ''}</div>
+  return `<div class="prim-detail"><div class="prim-dh"><b>${stName(code)} ${r.caucus ? 'caucuses' : 'primary'}</b><span>${R.party === 'I' ? 'Independent Ballot Alliance' : PARTY[R.party].name} · ${primN(r.delTot)} delegates · 100% reporting</span>${r.upset ? '<span class="prim-tag up">UPSET</span>' : ''}${r.margin < 1.5 ? '<span class="prim-tag ph">PHOTO FINISH</span>' : ''}</div>
     <table class="prim-table"><thead><tr><th>Candidate</th><th>Votes</th><th>Share</th><th>Final poll</th><th>Delegates</th></tr></thead><tbody>
     ${r.rows.map((x, i) => `<tr class="${i === 0 ? 'win' : ''}"><td><span class="dot" style="background:${x.color}"></span>${x.name}${i === 0 ? ' <span class="check">✓</span>' : ''}</td><td>${primN(x.votes)}</td><td><b>${pct(x.pct)}</b><span class="prim-bar"><i style="width:${x.pct}%;background:${x.color}"></i></span></td><td class="${x.pct - x.poll >= 3 ? 'beat' : x.pct - x.poll <= -3 ? 'miss' : ''}">${x.poll.toFixed(0)}% <small>(${x.pct - x.poll >= 0 ? '+' : '−'}${Math.abs(x.pct - x.poll).toFixed(1)})</small></td><td>${x.del ? primN(x.del) : '—'}</td></tr>`).join('')}
     </tbody></table><div class="nsub">${primN(r.total)} votes cast · ${w.name} wins by ${primN(w.votes - (r.rows[1] ? r.rows[1].votes : 0))} votes (${r.margin.toFixed(1)} points)${r.rows.some(x => x.pct < 15 && x.pct > 0) ? ' · candidates under 15% win no delegates' : ''}</div></div>`;
@@ -247,9 +248,12 @@ function primariesModal(done) {
     contest[p] = challenged[p];
   }
   let endorsed = null, lastLabel = '', view = contest[mine] ? mine : theirs, screen = 'board', hqPlan = null, note = '';
-  const endorsedHist = [], sel = { D: null, R: null }, state = {};
+  const endorsedHist = [], sel = { D: null, R: null, I: null }, state = {};
   const myEnd = () => endorsed;
   for (const p of ['D', 'R']) state[p] = contest[p] ? runPrimaryFor(p, p === mine ? myEnd : null, !!challenged[p]) : null;
+  // the independents' Ballot Alliance runs its own contests on the same dates (indie.js); IR.none = no field this year
+  const IR = typeof indPrimaryFor === 'function' ? indPrimaryFor(year) : null;
+  state.I = IR && !IR.none ? IR : null;
   const allDone = () => ['D', 'R'].every(p => !state[p] || state[p].done());
   const myRace = () => state[mine];
   const myCand = () => { const R = myRace(); return R && endorsed ? R.field.find(f => f.name === endorsed) : null; };
@@ -261,7 +265,8 @@ function primariesModal(done) {
     for (const p of ['D', 'R']) if (state[p] && !state[p].done()) lbl = state[p].nextContest() || lbl;
     if (!lbl) { const nx = nextLabel(); lbl = nx ? nx[0] : lastLabel; }
     lastLabel = lbl; hqPlan = null;
-    for (const p of ['D', 'R']) { const R = state[p]; if (R && R.rounds.length) { const last = R.rounds[R.rounds.length - 1]; if (last.label === lbl) sel[p] = last.results.slice().sort((a, b) => a.margin - b.margin)[0].code; } }
+    if (state.I) indCatchUp(state.I, allDone() ? null : lbl);
+    for (const p of ['D', 'R', 'I']) { const R = state[p]; if (R && R.rounds.length) { const last = R.rounds[R.rounds.length - 1]; if (last.label === lbl) sel[p] = last.results.slice().sort((a, b) => a.margin - b.margin)[0].code; } }
     const f = myCand(); if (endorsed && f && !f.active) note = `${f.name} is out of the race. Endorse someone still running to take over their campaign, or sit out the rest.`;
   };
   // the end of the primaries: delegate leaders, runners-up and whether anyone actually clinched.
@@ -305,6 +310,7 @@ function primariesModal(done) {
     }
     S.challenger = false; S.undermine = 0;
     const n = S.nominees, outParty = other(P.party);
+    const ind = typeof indFinish === 'function' ? indFinish(IR, state, n, year) : null;
     const head = p => n[p].contested ? `NO ONE CLINCHES: A CONTESTED ${PARTY[p].name.toUpperCase()} CONVENTION LOOMS` : `${lastName(n[p].p).toUpperCase()} CLINCHES THE ${PARTY[p].name.toUpperCase()} NOMINATION`;
     const headline = n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
     const para = p => {
@@ -315,10 +321,23 @@ function primariesModal(done) {
     };
     const sub = `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority${n[mine].contested ? ' either' : ''}.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[P.party].short} in August.`;
     const showNominees = () => {
-      showModal(`${frontPage({ headline, sub, body: [para(mine), para(theirs), ...lines, endorsed || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}
-      <div class="choices"><button class="btn ghost" id="nprof1">Profile: ${n.D.name}</button><button class="btn ghost" id="nprof2">Profile: ${n.R.name}</button><button class="btn primary big adv" id="primdone">On to the summer</button></div>`);
+      const major = ind && ind.major;
+      showModal(`${frontPage({ headline, sub, body: [major ? `<b>Breaking:</b> ${major.name} (${major.office}) is launching an independent campaign for President. <i>See the extra edition.</i>` : '', para(mine), para(theirs), ...lines, ind ? ind.line : '', endorsed || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}
+      <div class="choices"><button class="btn ghost" id="nprof1">Profile: ${n.D.name}</button><button class="btn ghost" id="nprof2">Profile: ${n.R.name}</button>${n.I && !major ? `<button class="btn ghost" id="nprof3">Profile: ${n.I.name}</button>` : ''}${ind && ind.conv ? '<button class="btn ghost" id="nconv">The Alliance convention</button>' : ''}${major ? `<button class="btn primary big adv" id="primbreak">Extra: ${lastName(major.p)} launches an independent bid ▶</button>` : '<button class="btn primary big adv" id="primdone">On to the summer</button>'}</div>`);
       $('#nprof1').onclick = () => profileModal(n.D.p, n.D.contested ? 'Democratic delegate leader' : 'Democratic nominee', showNominees);
       $('#nprof2').onclick = () => profileModal(n.R.p, n.R.contested ? 'Republican delegate leader' : 'Republican nominee', showNominees);
+      if ($('#nprof3')) $('#nprof3').onclick = () => profileModal(n.I.p, `${n.I.label} nominee`, showNominees);
+      if ($('#nconv')) $('#nconv').onclick = () => indConvModal(ind.conv, IR, year, showNominees);
+      if ($('#primdone')) $('#primdone').onclick = done;
+      if ($('#primbreak')) $('#primbreak').onclick = () => { sfx.gavel(); showLaunch(); };
+    };
+    // the rare major independent gets an extra edition of its own
+    const showLaunch = () => {
+      const I = n.I;
+      showModal(`${indLaunchHTML(I, year)}
+      <div class="choices"><button class="btn ghost" id="nprofI">Profile: ${I.name}</button><button class="btn ghost" id="nback">Back to the nominees</button><button class="btn primary big adv" id="primdone">On to the summer</button></div>`);
+      $('#nprofI').onclick = () => profileModal(I.p, 'Independent candidate for President', showLaunch);
+      $('#nback').onclick = showNominees;
       $('#primdone').onclick = done;
     };
     showNominees();
@@ -370,11 +389,12 @@ function primariesModal(done) {
   /* ---- the board: the race, the latest results, every state's full count ---- */
   const draw = () => {
     const R = state[view], yours = view === mine;
-    const tabs = `<div class="ptabs">${[mine, theirs].map(p => `<button class="btn ${view === p ? 'on' : ''}" data-pview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].name}s${p === mine ? ' (your party)' : ' (watch only)'}</button>`).join('')}</div>`;
+    const tabs = `<div class="ptabs">${[mine, theirs].map(p => `<button class="btn ${view === p ? 'on' : ''}" data-pview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].short}${p === mine ? ' (your party)' : ' (watch only)'}</button>`).join('')}${IR ? `<button class="btn ${view === 'I' ? 'on' : ''}" data-pview="I" style="border-color:${PARTY.I.color}">Independents${state.I ? ` (${state.I.field.filter(f => f.active).length} running)` : ' (no field)'}</button>` : ''}</div>`;
     const nx = nextLabel();
     const nextBtn = allDone() ? '<button class="btn primary big adv" id="pfin">See the nominees</button>' : `<button class="btn primary big adv" id="pnext">${playing() ? `Campaign for ${nx ? nx[0] : 'the final contests'} ▶` : `Next: ${nx ? nx[0] : 'final contests'} votes ▶`}</button><button class="btn ghost" id="pskip">Skip to the end</button>`;
     const controls = `<div class="choices">${nextBtn}</div>`;
-    if (!R) {
+    if (!R && view === 'I') showModal(`<div class="kicker">${year} · Presidential primaries</div><h2>The independents</h2>${tabs}${indNoFieldHTML(IR, year)}${controls}`);
+    else if (!R) {
       showModal(`<div class="kicker">${year} · Presidential primaries</div><h2>${PARTY[view].name} primary</h2>${tabs}
         <div class="race"><span class="nomp">${portrait(P)}</span><span>${presTitle()} (approval ${P.approval}%) is running for re-election with no serious challenge${view === mine ? '. To change that, you\'d have to undermine the President and recruit a challenger from the whip\'s office before primary season.' : '.'}</span></div>${controls}`);
     } else {
@@ -388,14 +408,14 @@ function primariesModal(done) {
       const intro = yours
         ? `<p>${primN(R.need)} delegates to win. ${R.field.length} candidate${R.field.length === 1 ? '' : 's'}${inc ? `, including ${presTitle()}, who drew ${R.field.length - 1 === 1 ? 'a challenger' : `${R.field.length - 1} challengers`} at ${P.approval}% approval` : ''}. <b>Endorse one and you run their campaign:</b> before each contest you plan their days on the ground, ads, attacks, message and debate strategy. If your candidate wins the nomination, +4 capital; if they lose, −1. ${started ? 'Switching horses mid-race costs 1 capital (free if your candidate has dropped out).' : 'Endorse freely until Iowa votes.'}</p>
            ${f0 ? `<div class="rankbar">Your candidate: <span class="rk ${f0.active ? '' : 'gone'}" style="border-color:${f0.color}">${f0.name}${f0.active ? '' : ' (out)'}</span>${f0.active ? '' : ' <i>pick someone still running, or sit out the rest</i>'}</div>` : ''}${note && yours ? `<p class="prim-note">${note}</p>` : ''}`
-        : `<p>${primN(R.need)} delegates to win. You're watching from across the aisle${inc ? `, and ${presTitle()} is fighting off a primary challenge` : ''}.</p>`;
+        : view === 'I' ? indIntroHTML(R) : `<p>${primN(R.need)} delegates to win. You're watching from across the aisle${inc ? `, and ${presTitle()} is fighting off a primary challenge` : ''}.</p>`;
       const banner = last ? `<div class="prim-banner" style="--pc:${PARTY[view].color}"><small>${last.label} · ${PARTY[view].name} results</small><b>${last.headline}</b><span>${last.sub}</span></div>` : '';
       const news = last && last.news.length ? `<div class="prim-news">${last.news.map(t => `<p>${t}</p>`).join('')}</div>` : '';
       const srow = code => { const r = R.results[code]; if (!r) return ''; const w = r.rows[0]; return `<div class="prow prim-srow ${code === selCode ? 'on' : ''}" data-pstate="${code}"><span><b>${code}</b> ${stName(code)} <small>${primN(r.delTot)} del.</small>${r.upset ? ' <span class="prim-tag up">UPSET</span>' : ''}${r.margin < 1.5 ? ' <span class="prim-tag ph">CLOSE</span>' : ''}</span><span><b style="color:${w.color}">${lastName({ name: w.name })} ${w.pct.toFixed(1)}%</b> · +${r.margin.toFixed(1)} · ${primN(r.total)} votes</span></div>`; };
       const mapHTML = usMap({
         fill: code => { const r = R.results[code]; return r ? { c: r.rows[0].color, op: 0.5 + Math.min(0.5, r.margin / 30) } : null; },
         sub: code => R.results[code] ? lastName({ name: R.results[code].rows[0].name }).slice(0, 7) : '',
-        ring: code => code === selCode ? '#fff' : null,
+        ring: code => code === selCode ? '#fff' : view === 'I' && !R.results[code] && IND_CAL.some(c => c[1].includes(code)) ? PARTY.I.color : null,
         attr: code => R.results[code] ? `data-pstate="${code}"` : '',
         title: code => R.results[code] ? `${stName(code)}: ${R.results[code].rows.map(x => `${lastName({ name: x.name })} ${x.pct.toFixed(1)}% (${primN(x.votes)})`).join(', ')}` : stName(code),
       });
@@ -403,17 +423,17 @@ function primariesModal(done) {
         const idx = R.field.indexOf(f), mineF = yours && f.name === endorsed;
         const endBtn = yours && f.active && !mineF && canEndorse ? `<button class="btn" data-choice="endorse:${idx}">Endorse &amp; run the campaign</button>` : yours && f.active && !mineF && f0 && f0.active ? `<button class="btn ghost" data-pswitch="${idx}" ${started && S.career.capital < 1 ? 'disabled' : ''}>Switch to them${started ? ' (1 cap)' : ''}</button>` : '';
         const mo = f.mo > 0.1 ? ' <b style="color:var(--yes)">▲</b>' : f.mo < -0.08 ? ' <b style="color:var(--no)">▼</b>' : '';
-        return `<div class="cand2 ${f.active ? '' : 'out'} ${mineF ? 'prim-mine' : ''}" style="${mineF ? `border-color:${f.color}` : ''}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b>${mineF ? ' <b class="prim-you">YOUR CAMPAIGN</b>' : ''}${f.heavy ? ' <small class="prim-tag up">HEAVYWEIGHT</small>' : ''} <small>· ${f.office} · ${f.faction}${f.active ? '' : f.why === 'withdrew' ? ` · withdrew after ${f.out}` : ` · dropped out after ${f.out}`}</small>
+        return `<div class="cand2 ${f.active ? '' : 'out'} ${mineF ? 'prim-mine' : ''}" style="${mineF ? `border-color:${f.color}` : ''}"><span class="cp">${portrait(f.p)}</span><span style="flex:1"><b style="color:${f.color}">${f.name}</b>${f.label ? ' ' + indPill(f.label) : ''}${mineF ? ' <b class="prim-you">YOUR CAMPAIGN</b>' : ''}${f.heavy ? ' <small class="prim-tag up">HEAVYWEIGHT</small>' : ''} <small>· ${f.office}${f.party === 'I' ? '' : ` · ${f.faction}`}${f.active ? '' : f.why === 'withdrew' ? ` · withdrew after ${f.out}` : ` · dropped out after ${f.out}`}</small>
           <div class="dbar"><i style="width:${Math.min(100, f.del / R.need * 100)}%;background:${f.color}"></i></div><small>${f.active || !f.released ? `${primN(f.del)} delegates` : `released ${primN(f.released)} delegates to ${lastName({ name: f.backed })}`} · ${f.wins} state${f.wins === 1 ? '' : 's'} · ${primN(f.votes)} votes${f.active ? ` · polling ${(poll[f.name] || 0).toFixed(0)}%${mo}` : ''}${mineF && f.active ? ` · $${f.cash}M in the bank` : ''}</small></span>
           <span style="display:flex;flex-direction:column;gap:4px;align-items:flex-end"><a href="#" data-cprof="${idx}">profile</a>${endBtn}</span></div>`;
       }).join('');
       const decided = PRIMARY_CAL.filter(([lbl, codes]) => codes.some(c => R.results[c]));
       showModal(`<div class="kicker">${year} · Presidential primaries</div><h2>${last ? `After ${last.label}` : 'The Field'}</h2>${tabs}${banner}${intro}
         ${news}
-        ${selCode ? `<div class="prim-results"><div class="prim-rcol list"><b>🗳️ ${last.label} · click a state for the full count</b>${last.results.map(r => srow(r.code)).join('')}</div><div class="prim-rcol">${primDetailHTML(R, selCode)}</div></div>` : '<p style="color:var(--dim)">No votes cast yet. Iowa is first.</p>'}
+        ${selCode ? `<div class="prim-results"><div class="prim-rcol list"><b>🗳️ ${last.label} · click a state for the full count</b>${last.results.map(r => srow(r.code)).join('')}</div><div class="prim-rcol">${primDetailHTML(R, selCode)}</div></div>` : `<p style="color:var(--dim)">No votes cast yet. ${view === 'I' ? `The Alliance's first contest is ${IND_CAL[0][0]}` : 'Iowa is first'}.</p>`}
         <div class="pollbox"><b>📊 National ${PARTY[view].name} primary poll</b>${field.filter(f => f.active).sort((a, b) => (poll[b.name] || 0) - (poll[a.name] || 0)).map(f => `<div class="salrow"><span style="color:${f.color};font-weight:700">${f.name}</span><span class="mbar"><i style="width:${Math.min(100, (poll[f.name] || 0) * 2)}%;background:${f.color}"></i></span><b>${(poll[f.name] || 0).toFixed(0)}%</b></div>`).join('')}<small style="color:var(--dim)">Undecided ${poll._undecided}% · polls move with wins, debates and beating expectations</small></div>
         <div class="cands">${cands}</div>
-        <div class="campmap">${mapHTML}${selCode ? '<small>Click any state that has voted for its full results</small>' : ''}</div>
+        <div class="campmap">${mapHTML}${selCode ? '<small>Click any state that has voted for its full results</small>' : ''}${view === 'I' ? `<small> · Purple rings: Alliance contests still to come (${IND_CAL.filter(c => c[1].some(x => !R.results[x])).map(c => c[0]).join(', ') || 'none'})</small>` : ''}</div>
         ${decided.length > 1 ? `<details class="cdet"><summary>Every result so far (${Object.keys(R.results).length} states)</summary>${decided.map(([lbl, codes]) => `<div class="plbl">${lbl}</div>${codes.map(srow).join('')}`).join('')}</details>` : ''}
         ${controls}`);
     }

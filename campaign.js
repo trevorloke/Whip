@@ -33,6 +33,7 @@ const CAMP_DEBATE = {
 const CAMP_DEBATE_CITIES = ['Cleveland', 'Houston', 'St. Louis', 'Philadelphia', 'Las Vegas', 'Nashville', 'Milwaukee', 'Salt Lake City', 'Atlanta', 'Denver', 'Miami', 'Detroit'];
 const CAMP_ZINGERS = ['Senator, you\'re no Lincoln, and this is no joke.', 'You can\'t fix a roof with a press release.', 'I\'ve read your plan. It\'s a bumper sticker.', 'Folks, that\'s not a record. That\'s a rap sheet.', 'The only thing you\'ve ever balanced is your campaign\'s books.', 'There you go again, and again, and again.', 'My opponent has a plan for everything except Tuesday.'];
 // [what happened, the headline that followed the running mate's name]
+const CAMP_IND_LINES = ['Both of these people have been in Washington longer than the potholes on my street.', 'You two have run this country like a timeshare.', 'I don\'t need either party\'s permission to tell you the truth.', 'Red team, blue team. I\'m on yours.', 'Every four years they promise you the moon. Look up: it\'s still there.', 'I\'m the only one up here who has never asked a lobbyist for anything.'];
 const CAMP_GAFFES = [['called Ohio "Iowa" twice', 'CALLS OHIO "IOWA" — TWICE'], ['could not name the price of a gallon of milk', 'STUMPED BY THE PRICE OF MILK'], ['said the ticket would "look at" cutting Social Security, then un-said it', 'FLOATS SOCIAL SECURITY CUTS, THEN RETREATS'], ['froze for eleven seconds on a question about the deficit', 'FREEZES ON LIVE TV'], ['called the moderator "sweetheart"', 'CALLS MODERATOR "SWEETHEART"'], ['did not seem to know the ticket\'s own healthcare plan', 'FLUBS THE TICKET\'S OWN HEALTH PLAN'], ['said "the folks in flyover country" to a hall full of them', '"FLYOVER COUNTRY" REMARK STUNS RALLY'], ['promised a tax cut the nominee ruled out last week', 'CONTRADICTS NOMINEE ON TAXES']];
 const CAMP_HURRICANES = ['Beryl', 'Celia', 'Dorian', 'Estelle', 'Fausto', 'Greta', 'Harlan', 'Imelda', 'Lorenzo', 'Nadine'];
 const CAMP_CELEBS = [['Dax Marlowe', 'the country star'], ['Juniper Vale', 'the pop singer'], ['Rook Castellanos', 'the quarterback'], ['Imogen Frye', 'the Oscar winner'], ['DJ Halcyon', 'the festival headliner'], ['Tobias Wrenfield', 'the late-night host'], ['Sienna Okoro', 'the Olympic sprinter'], ['Cal Brightwater', 'the action-movie star']];
@@ -66,6 +67,13 @@ function campCharisma(x) { const c = x ? +x.charisma : 1; return c > 0 ? clamp(c
 function campStars(c) { const n = clamp(Math.round((c - 0.75) / 0.75 * 5), 0, 5); return '★'.repeat(n) + '☆'.repeat(5 - n); }
 function campAdj(code, pts) { const C = campC(); if (!C || !EV[code]) return; C.stateAdj[code] = +((C.stateAdj[code] || 0) + pts * campSign()).toFixed(3); }
 function campLeadText(pt) { const l = pt.me - pt.them; return Math.abs(l) < 1 ? 'a dead heat' : `${l > 0 ? 'you lead' : 'you trail'} by ${Math.abs(l).toFixed(1)}`; }
+// the third candidate on the ballot: the independent nominee (indie.js S.nominees.I), or October's surging independent
+function campTPFrom(I) { const ln = +I.lean || 0; return { name: I.name, share: +clamp(+I.strength || 3, 0.5, 45).toFixed(1), hurts: ln < -0.05 ? 'D' : ln > 0.05 ? 'R' : pick(['D', 'R']), cause: null, label: I.label || 'Independent', major: !!I.major, lean: ln, color: I.color || PARTY.I.color, nom: true }; }
+function campTPShare(v) { const C = campC(), tp = C && C.thirdParty; if (!tp) return; tp.share = +clamp(v, 0.5, 45).toFixed(1); const I = S.nominees && S.nominees.I; if (tp.nom && I && I.name === tp.name) I.strength = tp.share; }
+// what share of the third candidate's vote comes out of the Democratic column (by lean; an unlabeled surge draws evenly)
+function campTPDrawD(tp) { return tp && tp.lean != null ? clamp(0.5 - 0.4 * tp.lean, 0.1, 0.9) : 0.5; }
+const campTPColor = tp => (tp && tp.color) || PARTY.I.color;
+const campTPTag = tp => tp && tp.label && tp.label !== 'Independent' ? tp.label : 'I';
 function campTopSalience(n) { return Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]); }
 
 /* ---------------- the effects night.js reads ---------------- */
@@ -127,11 +135,13 @@ function campEnsureNominees() {
 function campTruth() { const s = presSetup(); return (s.inc === S.side ? 1 : -1) * s.base; }
 function campPoll(lbl, und, truth) {
   const C = campC(); if (truth == null) truth = campTruth();
-  const tp = C.thirdParty ? C.thirdParty.share : 0, pool = 100 - und - tp;
-  // each ticket's share carries its own sampling error (about ±1.5 on the margin); the undecided absorb the difference
-  const me = clamp(pool / 2 + truth / 2 + gauss() * 1.1, pool * 0.3, pool * 0.7), them = clamp(pool / 2 - truth / 2 + gauss() * 1.1, pool * 0.3, pool * 0.7);
+  const tp = C.thirdParty ? C.thirdParty.share : 0, pool = 100 - und - tp, fm = S.side === 'D' ? campTPDrawD(C.thirdParty) : 1 - campTPDrawD(C.thirdParty);
+  // the third candidate takes more from the ticket it sits closer to; each ticket's share carries its own sampling error
+  // (about ±1.5 on the margin); the undecided absorb the difference
+  const me = clamp((100 - und) / 2 + truth / 2 - tp * fm + gauss() * 1.1, pool * 0.3, pool * 0.7), them = clamp((100 - und) / 2 - truth / 2 - tp * (1 - fm) + gauss() * 1.1, pool * 0.3, pool * 0.7);
   const L = CAMP_POLL_LBL[lbl] || [lbl, lbl.toLowerCase()];
-  const pt = { lbl, short: L[0], since: L[1], me: +me.toFixed(1), them: +them.toFixed(1), und: +Math.max(1, 100 - tp - me - them).toFixed(1), tp: +tp.toFixed(1) };
+  const tpS = tp ? Math.max(0.5, tp + gauss() * (tp >= 10 ? 0.7 : 0.25)) : 0;   // the third candidate's number has sampling error too
+  const pt = { lbl, short: L[0], since: L[1], me: +me.toFixed(1), them: +them.toFixed(1), und: +Math.max(1, 100 - tpS - me - them).toFixed(1), tp: +tpS.toFixed(1) };
   C.polls.push(pt); return pt;
 }
 // the tracker: both tickets over the fall, with the moments labeled and the end labels kept apart
@@ -141,7 +151,7 @@ function campChart(C) {
   const narrow = window.innerWidth < 640;
   const W = narrow ? 380 : 640, H = narrow ? 180 : 210, pl = narrow ? 34 : 36, pr = narrow ? 120 : 118, pt = 16, pb = 30, fs = narrow ? 11.5 : 10, fe = narrow ? 13 : 11.5;
   const short = s => s.length > (narrow ? 8 : 11) ? s.slice(0, narrow ? 7 : 10) + '…' : s;
-  const vals = pts.flatMap(p => [p.me, p.them]);
+  const tpLine = C.thirdParty && pts.some(p => p.tp >= 10), vals = pts.flatMap(p => tpLine && p.tp ? [p.me, p.them, p.tp] : [p.me, p.them]);
   let lo = Math.floor((Math.min(...vals) - 3) / 5) * 5, hi = Math.ceil((Math.max(...vals) + 3) / 5) * 5;
   if (hi - lo < 20) { const mid = (hi + lo) / 2; lo = Math.floor((mid - 10) / 5) * 5; hi = lo + 20; }
   const x = i => pl + (n < 2 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (n - 1)), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb);
@@ -149,14 +159,18 @@ function campChart(C) {
   for (let v = lo; v <= hi; v += 5) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 50 ? '#9aa3b2' : '#2a3242'}" stroke-dasharray="${v === 50 ? '4 3' : ''}"/><text x="${pl - 6}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}%</text>`;
   pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/>${!narrow || n <= 5 || (n - 1 - i) % 2 === 0 ? `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${p.short || p.lbl}</text>` : ''}`; });
   const series = [{ k: 'me', color: PARTY[mine].color, label: campLast(noms[mine]) }, { k: 'them', color: PARTY[other(mine)].color, label: campLast(noms[other(mine)]) }];
-  const last = pts[n - 1], ends = series.map(s => y(last[s.k]));
-  if (Math.abs(ends[0] - ends[1]) < 15) { const d = (15 - Math.abs(ends[0] - ends[1])) / 2; if (ends[0] <= ends[1]) { ends[0] -= d; ends[1] += d; } else { ends[0] += d; ends[1] -= d; } }
+  if (tpLine) series.push({ k: 'tp', color: campTPColor(C.thirdParty), label: campLast(C.thirdParty), dash: '6 3' });
+  const last = pts[n - 1], ends = series.map(s => y(last[s.k] || 0));
+  // keep the end labels 15px apart: sort by height and push the lower ones down
+  const ord = ends.map((v, i) => i).sort((a, b) => ends[a] - ends[b]);
+  for (let k = 1; k < ord.length; k++) if (ends[ord[k]] - ends[ord[k - 1]] < 15) ends[ord[k]] = ends[ord[k - 1]] + 15;
   series.forEach((s, si) => {
-    svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(p[s.k])}`).join(' ')}"/>`;
-    pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(p[s.k])}" r="${i === n - 1 ? 4.5 : 2.5}" fill="${s.color}"><title>${p.lbl}: ${s.label} ${p[s.k].toFixed(1)}%</title></circle>`; });
-    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="${fe}" fill="${s.color}" font-weight="800">${short(s.label)} ${last[s.k].toFixed(1)}%</text>`;
+    const on = pts.map((p, i) => [p, i]).filter(([p]) => p[s.k] > 0);
+    svg += `<polyline fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"${s.dash ? ` stroke-dasharray="${s.dash}"` : ''} points="${on.map(([p, i]) => `${x(i)},${y(p[s.k])}`).join(' ')}"/>`;
+    on.forEach(([p, i]) => { svg += `<circle cx="${x(i)}" cy="${y(p[s.k])}" r="${i === n - 1 ? 4.5 : 2.5}" fill="${s.color}"><title>${p.lbl}: ${s.label} ${p[s.k].toFixed(1)}%</title></circle>`; });
+    svg += `<text x="${W - pr + 8}" y="${ends[si] + 4}" font-size="${fe}" fill="${s.color}" font-weight="800">${short(s.label)} ${(last[s.k] || 0).toFixed(1)}%</text>`;
   });
-  if (last.tp) svg += `<text x="${W - pr + 8}" y="${H - pb - 2}" font-size="${fs}" fill="${PARTY.I.color}" font-weight="700">${short(C.thirdParty ? lastName(C.thirdParty) || C.thirdParty.name : 'Ind.')} ${last.tp.toFixed(1)}%</text>`;
+  if (last.tp && !tpLine) svg += `<text x="${W - pr + 8}" y="${H - pb - 2}" font-size="${fs}" fill="${campTPColor(C.thirdParty)}" font-weight="700">${short(C.thirdParty ? lastName(C.thirdParty) || C.thirdParty.name : 'Ind.')} ${last.tp.toFixed(1)}%</text>`;
   return svg + '</svg>';
 }
 function campStartPolls() {
@@ -170,11 +184,13 @@ function campStartPolls() {
 }
 
 /* ---------------- the Electoral College projection ---------------- */
+// a labeled third candidate moves every state's two-party margin by its lopsided draw (D-positive points), as the polls do
+function campTPShiftD() { const C = campC(), tp = C && C.thirdParty; return tp && tp.lean != null ? tp.share * (1 - 2 * campTPDrawD(tp)) : 0; }
 function campProj() {
-  const pr = presProjection(), sg = campSign(), by = {};
-  const states = Object.keys(EV).map(c => { const x = { c, m: pr.margins[c] * sg, ev: EV[c] }; by[c] = x; return x; });
-  const battle = states.filter(x => Math.abs(x.m) < 8).sort((a, b) => b.ev - a.ev);
-  return { pr, states, by, battle, evMine: pr.evMine, evTheirs: 538 - pr.evMine, noms: pr.noms };
+  const pr = presProjection(), sg = campSign(), by = {}, sh = campTPShiftD();
+  const states = Object.keys(EV).map(c => { const x = { c, m: (pr.margins[c] + sh) * sg, ev: EV[c] }; by[c] = x; return x; });
+  const battle = states.filter(x => Math.abs(x.m) < 8).sort((a, b) => b.ev - a.ev), evMine = sh ? states.reduce((a, x) => a + (x.m > 0 ? x.ev : 0), 0) : pr.evMine;
+  return { pr, states, by, battle, evMine, evTheirs: 538 - evMine, noms: pr.noms };
 }
 // where a surrogate or a dollar can matter: the battlegrounds, or the closest states when nothing is close
 function campTargets(P) { return P.battle.length ? P.battle : P.states.slice().sort((a, b) => Math.abs(a.m) - Math.abs(b.m)).slice(0, 8); }
@@ -213,14 +229,23 @@ function campTicketsHTML(noms) {
       <div class="camp-tkn"><b>${n.name}</b>${p === mine ? '<span class="camp-you">your ticket</span>' : ''}${person ? `<a href="#" data-cprof="${p}">profile</a>` : ''}</div>
       <small>${office} · ${n.faction || PARTY[p].name}${n.state && !office.includes(stName(n.state)) ? ' · ' + stName(n.state) : ''}</small>
       <small>${n.vp ? `with <b>${n.vp.name}</b>${n.vp.state ? ` of ${stName(n.vp.state)}` : ''}` : 'no running mate named'}${theme && TAG[theme] ? ` · message: ${TAG[theme][0]} ${TAG[theme][1]}` : ''}${n.unity != null ? ` · party ${Math.round(n.unity * 100)}% united` : ''}</small></div></div>`;
-  }).join('<span class="vs">vs</span>')}</div>`;
+  }).join('<span class="vs">vs</span>')}${campIndCardHTML()}</div>`;
+}
+// the third card: the independent nominee (or October's surging independent), smaller, with where its votes come from
+function campIndCardHTML() {
+  const C = campC(), I = S.nominees && S.nominees.I, tp = C && C.thirdParty ? C.thirdParty : I && I.name ? campTPFrom(I) : null;
+  if (!tp) return '';
+  const person = I && I.name === tp.name ? campPersonOf(I) : null, from = tp.lean == null ? null : tp.lean < -0.12 ? 'D' : tp.lean > 0.12 ? 'R' : 0;
+  return `<span class="vs">vs</span><div class="camp-tk ind-tk" style="border-color:${campTPColor(tp)}">${person && person.seed != null ? portrait(person) : '<span class="camp-noport">🗳️</span>'}<div>
+    <div class="camp-tkn"><b>${tp.name}</b>${typeof indPill === 'function' ? indPill(tp.label || 'Independent') : ''}${tp.major ? '<span class="ind-major">a real contender</span>' : ''}${person ? '<a href="#" data-cprof="I">profile</a>' : ''}</div>
+    <small>${I && I.name === tp.name && I.office ? `${I.office} · ` : ''}polling <b>${tp.share.toFixed(1)}%</b>${from === null ? '' : from ? ` · draws more from ${PARTY[from].short}` : ' · draws from both sides'}${tp.share >= 15 ? ' · qualifies for the debates' : ''}</small></div></div>`;
 }
 function campTrackerHTML() {
   const C = campC(), mine = S.side, noms = campNoms();
   const last = C.polls[C.polls.length - 1], prev = C.polls[C.polls.length - 2];
   const lead = last.me - last.them, trend = prev ? lead - (prev.me - prev.them) : 0;
   return `<div class="camp-card"><div class="camp-ch"><b>📊 National poll of polls</b><span>${last.lbl}</span></div>${campChart(C)}
-    <div class="camp-pop"><span style="color:${PARTY[mine].color}"><b>${last.me.toFixed(1)}</b>${campLast(noms[mine])}</span><span style="color:${PARTY[other(mine)].color}"><b>${last.them.toFixed(1)}</b>${campLast(noms[other(mine)])}</span>${last.tp ? `<span style="color:${PARTY.I.color}"><b>${last.tp.toFixed(1)}</b>${C.thirdParty ? C.thirdParty.name : 'Independent'} (I)</span>` : ''}<span style="color:var(--dim)"><b>${last.und.toFixed(0)}</b>undecided</span></div>
+    <div class="camp-pop"><span style="color:${PARTY[mine].color}"><b>${last.me.toFixed(1)}</b>${campLast(noms[mine])}</span><span style="color:${PARTY[other(mine)].color}"><b>${last.them.toFixed(1)}</b>${campLast(noms[other(mine)])}</span>${last.tp ? `<span style="color:${campTPColor(C.thirdParty)}"><b>${last.tp.toFixed(1)}</b>${C.thirdParty ? `${campLast(C.thirdParty)} (${campTPTag(C.thirdParty)})` : 'Independent'}</span>` : ''}<span style="color:var(--dim)"><b>${last.und.toFixed(0)}</b>undecided</span></div>
     <div class="camp-lead">${campLeadText(last).replace(/^./, ch => ch.toUpperCase())}${prev ? ` · ${trend > 0.3 ? '📈 moving your way' : trend < -0.3 ? '📉 slipping' : '➡ steady'} since ${prev.since || prev.lbl}` : ''}</div>
     <div class="camp-polls">${C.polls.map(p => `<span class="camp-pt">${p.lbl}: <b>${p.me.toFixed(0)}–${p.them.toFixed(0)}</b></span>`).join('')}</div></div>`;
 }
@@ -254,7 +279,7 @@ function campFrame(title, intro, decisions, nextLabel) {
 function campBindCommon() {
   const card = $('#modal-card');
   card.querySelectorAll('[data-pc]').forEach(b => b.onclick = () => { const E = S.election, d = +b.dataset.pc; if (d > 0 && E.cash < 1) return; if (d < 0 && !E.presCash) return; E.presCash += d; E.cash -= d; sfx.click(); CAMP_UI.draw(); });
-  card.querySelectorAll('[data-cprof]').forEach(a => a.onclick = e => { e.preventDefault(); const p = a.dataset.cprof, person = campPersonOf(campNoms()[p]); if (person) profileModal(person, `${PARTY[p].name} nominee`, () => CAMP_UI.draw()); });
+  card.querySelectorAll('[data-cprof]').forEach(a => a.onclick = e => { e.preventDefault(); const p = a.dataset.cprof, person = campPersonOf(p === 'I' ? S.nominees.I : campNoms()[p]); if (person) profileModal(person, p === 'I' ? 'Independent candidate for President' : `${PARTY[p].name} nominee`, () => CAMP_UI.draw()); });
   card.querySelectorAll('[data-camp^="re:"]').forEach(a => a.onclick = e => { e.preventDefault(); const C = campC(); if (C.ui) C.ui[a.dataset.camp.slice(3)] = null; sfx.click(); CAMP_UI.draw(); });
   if ($('#campauto')) $('#campauto').onclick = () => campAutoRun();
 }
@@ -267,6 +292,8 @@ function fallCampaign(done) {
   E.presCash = E.presCash || 0;
   E.camp = { round: 0, stage: 'r1', polls: [], strategy: null, theme: null, themeHot: false, focus: [], debates: [], events: [], surrogates: [], national: 0, stateAdj: {}, thirdParty: null, momentum: false, adBuy: 0, gotv: false, opp: null, ui: {}, autoLog: [] };
   CAMP_UI = { done, draw: null };
+  const IN = S.nominees && S.nominees.I;
+  if (IN && IN.name) { E.camp.thirdParty = campTPFrom(IN); log(`On the ballot too: ${IN.name} (${IN.label || 'Independent'}), polling ${E.camp.thirdParty.share}%.`, 'sys'); }
   campStartPolls();
   log(`The fall campaign begins: ${S.nominees[S.side].name} vs ${S.nominees[other(S.side)].name}.`, 'sys');
   campRound1();
@@ -400,10 +427,31 @@ function campDebate(which, mineKey, prep, theirsKey, city, theirPrep) {
   else text = `${pick(['Both candidates survived; neither won. The panels spent the night arguing about the moderator.', 'Ninety minutes of interruptions and one memorable exchange about the price of eggs. A wash.', `A draw, by any honest scorecard. ${campLast(my)} edged the first half; ${campLast(their)} the second.`])} ${how.charAt(0).toUpperCase() + how.slice(1)}${prepNote}.`;
   C.national += result;
   const rec = { round: which, city, mine: mineKey, theirs: theirsKey, prep: !!prep, theirPrep: !!theirPrep, result: +result.toFixed(2), winner, snap, text };
+  const ind = which === 1 ? campIndDebate() : null; if (ind) rec.ind = ind;
   C.debates.push(rec);
   const wp = W && campPersonOf(W); if (wp) hist(wp, `Won the ${which === 1 ? 'first' : 'second'} ${campYear()} presidential debate in ${city}`, campYear());
   log(`Debate ${which} in ${city}: ${winner ? `${campLast(W)} wins (${snap}% in the snap poll)` : 'a draw'}; ${campNum(result)} for your ticket.`, result > 0.4 ? 'good' : result < -0.4 ? 'bad' : 'sys');
   return rec;
+}
+// a third podium: an independent polling 15% or more makes the first debate. The majors' game plans still decide the winner;
+// the independent picks a fight with one of them (±0.5 for your ticket) and gains or loses ground of their own
+function campIndDebate() {
+  const C = campC(), tp = C.thirdParty; if (!tp || tp.share < 15) return null;
+  const noms = campNoms(), mine = S.side, last = C.polls[C.polls.length - 1], I = S.nominees && S.nominees.I;
+  const target = Math.random() < 0.65 ? (last.me >= last.them ? mine : other(mine)) : pick([mine, other(mine)]);
+  const ch = I && I.name === tp.name ? campCharisma(I) : 1, d = +clamp(rnd(-1.5, 2.5) + (ch - 1) * 4, -2.5, 3.5).toFixed(1), swing = +((target === mine ? -1 : 1) * rnd(0.15, 0.5)).toFixed(2);
+  C.national += swing; campTPShare(tp.share + d);
+  const nm = campLast(tp), tg = campLast(noms[target]);
+  const text = d >= 1 ? `From the third podium, ${tp.name} treated ${tg} like a piñata: "${pick(CAMP_IND_LINES)}" The focus groups' dials went through the roof.`
+    : d <= -1 ? `${nm} had ninety minutes on the biggest stage of a lifetime and spent too many of them on ${pick(['ballot-access law', 'a long story about a toll road', 'the Federal Reserve\'s balance sheet', 'the debate commission\'s rules'])}. ${tg} still took the hits.`
+    : `${nm} landed a few jabs on ${tg} ("${pick(CAMP_IND_LINES)}") and otherwise let the two majors fight.`;
+  const p = I && I.name === tp.name ? campPersonOf(I) : null; if (p) hist(p, `Made the ${campYear()} presidential debate stage at ${tp.share.toFixed(0)}% in the polls`, campYear());
+  log(`Third podium: ${tp.name} went after ${tg} (${campNum(swing)} for your ticket); ${nm} ${d >= 0 ? '+' : '−'}${Math.abs(d).toFixed(1)} in the polls.`, swing >= 0 ? 'good' : 'bad');
+  return { name: tp.name, label: tp.label || 'Independent', target, swing, d, text };
+}
+function campStageLine() {
+  const tp = campC().thirdParty; if (!tp) return '';
+  return tp.share >= 15 ? ` <b>Three podiums:</b> ${tp.name} (${tp.label || 'Independent'}) cleared the commission's 15% bar at ${tp.share.toFixed(1)}% and will be on the stage too.` : ` ${tp.name} (${tp.label || 'Independent'}) polls ${tp.share.toFixed(1)}%, short of the commission's 15% bar, and will hold a protest rally outside the hall.`;
 }
 function campVpDebate() {
   const C = campC(), noms = campNoms(), mine = S.side, my = noms[mine], their = noms[other(mine)], mv = my.vp, tv = their.vp;
@@ -444,15 +492,17 @@ function campBindDebateDecisions(draw) {
 }
 function campScorecard(rec, next) {
   const C = campC(), noms = campNoms(), mine = S.side, my = noms[mine], their = noms[other(mine)], W = rec.winner, wn = W ? noms[W] : null, ln = W ? noms[other(W)] : null;
-  const share = W ? [rec.snap, Math.max(0, 100 - rec.snap - 8), 8] : [rec.snap, 100 - rec.snap - 10, 10];
+  const iw = rec.ind ? clamp(Math.round(12 + rec.ind.d * 4), 5, 30) : 0, s0 = rec.ind ? Math.max(20, rec.snap - Math.round(iw / 2)) : rec.snap;
+  const share = rec.ind ? [s0, Math.max(0, 100 - s0 - iw), iw] : W ? [rec.snap, Math.max(0, 100 - rec.snap - 8), 8] : [rec.snap, 100 - rec.snap - 10, 10];
+  const tpc = rec.ind ? campTPColor(C.thirdParty) : '#3a4250';
   const draw = () => {
     showModal(`<div class="kicker">The Fall Campaign · ${CAMP_ROUNDS[C.round]} · ${campYear()}</div><h2>Debate night in ${rec.city}</h2>${campTicketsHTML(noms)}
       <div class="camp-score" id="campscore"><div class="camp-sc-head">
         <div class="camp-sc-side" style="border-color:${PARTY[mine].color}"><small>${campLast(my)}'s plan</small><b>${CAMP_DEBATE[rec.mine].icon} ${CAMP_DEBATE[rec.mine].name}</b><small>${rec.prep ? 'after debate camp' : 'no prep'}</small></div>
         <div class="camp-sc-verdict"><small>Scorecard</small><b style="color:${W ? PARTY[W].color : 'var(--gold2)'}">${W ? `${campLast(wn)} wins` : 'A draw'}</b><span class="camp-fx ${rec.result > 0.4 ? 'good' : rec.result < -0.4 ? 'bad' : ''}">${campNum(rec.result)} national for your ticket</span></div>
         <div class="camp-sc-side" style="border-color:${PARTY[other(mine)].color}"><small>${campLast(their)}'s plan</small><b>${CAMP_DEBATE[rec.theirs].icon} ${CAMP_DEBATE[rec.theirs].name}</b><small>${rec.theirPrep ? 'after debate camp' : 'no prep'}${C.ui && C.ui.hint ? (C.ui.hint === rec.theirs ? ' · the leak was right' : ' · the leak was wrong') : ''}</small></div></div>
-        <div class="camp-snap"><small>Snap poll: who won the debate?</small><div class="pv"><div style="width:${share[0]}%;background:${W ? PARTY[W].color : '#6b7587'}">${W ? `${campLast(wn)} ${share[0]}%` : `${campLast(my)} ${share[0]}%`}</div><div style="width:${share[2]}%;background:#3a4250"></div><div style="width:${share[1]}%;background:${W ? PARTY[other(W)].color : '#6b7587'}">${W ? `${share[1]}% ${campLast(ln)}` : `${share[1]}% ${campLast(their)}`}</div></div></div>
-        <p>${rec.text}</p></div>
+        <div class="camp-snap"><small>Snap poll: who won the debate?</small><div class="pv"><div style="width:${share[0]}%;background:${W ? PARTY[W].color : '#6b7587'}">${W ? `${campLast(wn)} ${share[0]}%` : `${campLast(my)} ${share[0]}%`}</div><div style="width:${share[2]}%;background:${tpc}">${rec.ind ? `${share[2] >= 12 ? campLast(rec.ind) + ' ' : ''}${share[2]}%` : ''}</div><div style="width:${share[1]}%;background:${W ? PARTY[other(W)].color : '#6b7587'}">${W ? `${share[1]}% ${campLast(ln)}` : `${share[1]}% ${campLast(their)}`}</div></div></div>
+        <p>${rec.text}</p>${rec.ind ? `<div class="ind-podium" style="border-color:${tpc}"><small>The third podium</small><b style="color:${tpc}">🗳️ ${rec.ind.name} ${typeof indPill === 'function' ? indPill(rec.ind.label) : ''}</b><p>${rec.ind.text}</p><span class="camp-fx ${rec.ind.swing >= 0 ? 'good' : 'bad'}">${campNum(rec.ind.swing)} national for your ticket (went after ${campLast(noms[rec.ind.target])})</span><span class="camp-fx">${campLast(rec.ind)} ${rec.ind.d >= 0 ? '+' : '−'}${Math.abs(rec.ind.d).toFixed(1)} in the polls</span></div>` : ''}</div>
       ${campTrackerHTML()}
       <div class="choices"><button class="btn primary big adv" id="campnext">Continue ▶</button></div>`);
     $('#modal-card').classList.add('camp-wide'); campBindCommon();
@@ -475,7 +525,7 @@ function campRound2() {
   const draw = () => {
     const noms = campNoms(), my = noms[S.side], their = noms[other(S.side)], ui = C.ui, O = C.opp;
     const oppLine = O && O.strategy && TAG[O.theme] ? ` Across the aisle, ${their.name} is running on ${TAG[O.theme][1]}${O.themeHot ? ' — a top issue with voters, and it\'s biting (−1 for you)' : ', which few voters are asking about'} and has planted the flag in ${CAMP_MAPS[O.strategy].where}${O.strategy === 'base' ? ' (−0.6 for you nationally, +0.4 in the swing states they\'ve abandoned)' : ` (${O.focus.length ? O.focus.join(', ') + ': ' : ''}−1.5 for you there, +0.3 everywhere else)`}.` : '';
-    const intro = `The first debate is ${ui.when} in <b>${ui.city}</b>, moderated by ${ui.mod}. Stage presence: ${campLast(my)} <span class="camp-stars">${campStars(campCharisma(my))}</span>, ${campLast(their)} <span class="camp-stars">${campStars(campCharisma(their))}</span>.${oppLine} Insiders say ${their.name}'s team has spent the week ${CAMP_DEBATE[ui.hint].drill}. Leaks have been wrong before.`;
+    const intro = `The first debate is ${ui.when} in <b>${ui.city}</b>, moderated by ${ui.mod}. Stage presence: ${campLast(my)} <span class="camp-stars">${campStars(campCharisma(my))}</span>, ${campLast(their)} <span class="camp-stars">${campStars(campCharisma(their))}</span>.${oppLine} Insiders say ${their.name}'s team has spent the week ${CAMP_DEBATE[ui.hint].drill}. Leaks have been wrong before.${campStageLine()}`;
     campFrame('The first debate', intro, campDebateDecisionsHTML(ui, false), 'Debate night ▶');
     campBindDebateDecisions(draw);
     $('#campnext').onclick = () => { const rec = campApplyR2(); sfx.gavel(); campScorecard(rec, () => campRound3()); };
@@ -702,14 +752,18 @@ const CAMP_EVENTS = [
         { t: `Line up your own endorsements in ${stName(code)} (1 capital)`, s: `+0.5 in ${code}; −1 capital calling in favors.`, can: () => S.career.capital >= 1, go: fx => { fx.cap(-1); fx.st(code, 0.5); return `Six mayors and two sheriffs, on one stage, the next morning.`; } },
       ] };
   } },
-  { id: 'third', w: x => x.C.thirdParty ? 0 : 0.9, make: x => {
-    const name = fullName(), cause = pick(IND_CAUSES), share = +rnd(4, 9).toFixed(1), hurts = Math.random() < 0.5 ? x.mine : x.theirs;
-    return { h: `${name.toUpperCase()} SURGES TO ${Math.round(share)}% IN NEW POLL`, d: `The independent's "${cause[0]}" campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.`, mood: 'night',
-      body: [`${name}, ${pick(BACKGROUNDS)} from ${pick(STATES)[1]} running on "${cause[0]}", qualified for the ballot in ${ri(38, 50)} states and is now drawing ${Math.round(share)}% nationally, mostly from ${hurts === x.mine ? x.my.name : x.their.name}.`, 'Third-party surges usually fade. Usually.'],
-      stakes: `${hurts === x.mine ? '−0.5 for your ticket' : '+0.5 for your ticket'} already in; ${name} appears in the polls from here on.`,
-      auto: fx => { x.C.thirdParty = { name, share, hurts, cause: cause[0] }; fx.n(hurts === x.mine ? -0.5 : 0.5, 'votes siphoned'); },
+  { id: 'third', w: x => !x.C.thirdParty ? 0.9 : x.C.thirdParty.nom && !x.C.thirdParty.surged ? (x.C.thirdParty.major ? 0.6 : 0.9) : 0, make: x => {
+    const tp0 = x.C.thirdParty, L = tp0 && typeof indLabelInfo === 'function' ? indLabelInfo(tp0.label) : null;
+    const cause = tp0 ? [L ? L.line : 'fixing what both parties broke', (Object.entries(L ? L.issues : {}).sort((a, b) => b[1] - a[1])[0] || ['economy'])[0]] : pick(IND_CAUSES);
+    const name = tp0 ? tp0.name : fullName(), share = tp0 ? +(tp0.share + rnd(2, tp0.major ? 4 : 5)).toFixed(1) : +rnd(4, 9).toFixed(1), hurts = tp0 ? tp0.hurts : Math.random() < 0.5 ? x.mine : x.theirs;
+    const who = hurts === x.mine ? x.my.name : x.their.name, I = S.nominees && S.nominees.I;
+    return { h: `${name.toUpperCase()} SURGES TO ${Math.round(share)}% IN NEW POLL`, d: tp0 ? `The ${tp0.label && tp0.label !== 'Independent' ? tp0.label : 'independent'} campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.` : `The independent's "${cause[0]}" campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.`, mood: 'night',
+      body: tp0 ? [`${name}${I && I.office && I.name === name ? ` (${I.office})` : ''} gained ${(share - tp0.share).toFixed(1)} points in a week on a promise of ${cause[0]} and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, tp0.major ? 'This is no protest vote anymore: the independent leads outright in a handful of state polls.' : 'Third-party surges usually fade. Usually.']
+        : [`${name}, ${pick(BACKGROUNDS)} from ${pick(STATES)[1]} running on "${cause[0]}", qualified for the ballot in ${ri(38, 50)} states and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, 'Third-party surges usually fade. Usually.'],
+      stakes: `${hurts === x.mine ? '−0.5 for your ticket' : '+0.5 for your ticket'} already in; ${tp0 ? `${lastName({ name })} polls ${share.toFixed(1)}% from here on` : `${name} appears in the polls from here on`}.`,
+      auto: fx => { if (tp0) { campTPShare(share); x.C.thirdParty.surged = true; } else x.C.thirdParty = { name, share, hurts, cause: cause[0] }; fx.n(hurts === x.mine ? -0.5 : 0.5, 'votes siphoned'); },
       choices: [
-        { t: `Attack ${lastName({ name })} as a spoiler`, s: `Their share −2; ${hurts === x.mine ? '+0.3 national as voters come home' : '−0.2 national: you drove their voters back to the other side'}.`, go: fx => { x.C.thirdParty.share = Math.max(1, x.C.thirdParty.share - 2); fx.n(hurts === x.mine ? 0.3 : -0.2); return `"A vote for ${lastName({ name })} is a vote for ${hurts === x.mine ? x.theirL : x.myL}," the ads said. Some voters listened.`; } },
+        { t: `Attack ${lastName({ name })} as a spoiler`, s: `Their share −2; ${hurts === x.mine ? '+0.3 national as voters come home' : '−0.2 national: you drove their voters back to the other side'}.`, go: fx => { campTPShare(Math.max(1, x.C.thirdParty.share - 2)); fx.n(hurts === x.mine ? 0.3 : -0.2); return `"A vote for ${lastName({ name })} is a vote for ${hurts === x.mine ? x.theirL : x.myL}," the ads said. Some voters listened.`; } },
         { t: `Court their voters: adopt "${cause[0]}"`, s: 'A coin flip: +0.6 if it works, −0.3 if your base grumbles.', go: fx => { if (Math.random() < 0.5) { fx.n(0.6); fx.sal(cause[1], 1); return `${x.my.name} gave a whole speech on ${cause[0].toLowerCase() === cause[0] ? cause[0] : `"${cause[0]}"`}. ${lastName({ name })}'s voters noticed.`; } fx.n(-0.3); return 'Your base wondered why the nominee was suddenly talking like the independent.'; } },
         { t: 'Ignore them', s: 'No effect.', go: () => `The campaign never said ${lastName({ name })}'s name. ${lastName({ name })} said yours constantly.` },
       ] };
@@ -951,7 +1005,9 @@ function campRecapHTML(C) {
     C.theme && TAG[C.theme] ? `<b>Message:</b> ${TAG[C.theme][0]} ${TAG[C.theme][1]}${C.themeHot ? ' — a top issue with voters (+1)' : ''}` : '',
     C.strategy ? `<b>Map:</b> ${CAMP_MAPS[C.strategy].name}${C.focus && C.focus.length ? ` (${C.focus.join(', ')})` : ''}` : '',
     C.opp && C.opp.strategy && TAG[C.opp.theme] ? `<b>Their campaign:</b> ran on ${TAG[C.opp.theme][1]}${C.opp.themeHot ? ' (a top issue, −1)' : ''} with ${CAMP_MAPS[C.opp.strategy].prose}${C.opp.focus.length ? ` (${C.opp.focus.join(', ')})` : ''}` : '',
+    C.thirdParty ? `<b>On the ballot too:</b> ${C.thirdParty.name} (${C.thirdParty.label || 'Independent'}), ${C.thirdParty.share.toFixed(1)}% in the last poll${C.thirdParty.major ? ', a real contender' : ''}` : '',
     ...deb.map(dline),
+    ...deb.filter(d => d.ind).map(d => `<b>The third podium:</b> ${d.ind.name} went after ${campLast(campNoms()[d.ind.target])} (${campNum(d.ind.swing)} for you; ${d.ind.d >= 0 ? '+' : '−'}${Math.abs(d.ind.d).toFixed(1)} for ${campLast(d.ind)})`),
     vp ? `<b>Running mates' debate:</b> ${vp.winner === mine ? 'won' : vp.winner ? 'lost' : 'a wash'}${vp.gaffeMine ? ', your running mate gaffed' : ''}${vp.gaffeTheirs ? ', theirs gaffed' : ''} (${campNum(vp.result)})` : '',
     C.momentum ? '<b>Momentum:</b> swept the debates (+0.5)' : '',
     ...C.events.map(e => `<b>October surprise:</b> <span class="camp-hl">${e.title}</span> — <i>${e.choice}</i>${e.effect ? ` (${e.effect})` : ''}`),
@@ -972,7 +1028,7 @@ function campEveScreen() {
   const draw = () => {
     showModal(`<div class="kicker">The Fall Campaign · ${CAMP_ROUNDS[4]} · ${campYear()}</div><h2>Election Eve</h2>${campTicketsHTML(noms)}
       ${frontPage({ headline: hl, sub: `${P.evMine} electoral votes projected for ${campLast(my)}, ${P.evTheirs} for ${campLast(their)}; ${toss.length} state${toss.length === 1 ? '' : 's'} inside the margin of error.`, mood: lead >= 0 ? 'dawn' : 'night', date: `November ${campYear()} · Election Eve`,
-        body: [`WASHINGTON — The final national poll of polls has ${Math.abs(lead) < 1 ? 'a dead heat' : `${campLast(leader)} ahead by ${Math.abs(lead).toFixed(1)}`}: ${campLast(my)} ${last.me.toFixed(1)}%, ${campLast(their)} ${last.them.toFixed(1)}%${last.tp ? `, ${C.thirdParty.name} ${last.tp.toFixed(1)}%` : ''}, with ${last.und.toFixed(0)}% still undecided.`,
+        body: [`WASHINGTON — The final national poll of polls has ${Math.abs(lead) < 1 ? 'a dead heat' : `${campLast(leader)} ahead by ${Math.abs(lead).toFixed(1)}`}: ${campLast(my)} ${last.me.toFixed(1)}%, ${campLast(their)} ${last.them.toFixed(1)}%${last.tp && C.thirdParty ? `, ${C.thirdParty.name} (${campTPTag(C.thirdParty)}) ${last.tp.toFixed(1)}%` : ''}, with ${last.und.toFixed(0)}% still undecided.`,
           toss.length ? `The toss-ups: ${toss.map(x => `${stName(x.c)} (${x.ev})`).join(', ')}. ${campPath(P).replace(/<[^>]+>/g, '')}` : `Not a single state is inside the margin of error. ${campPath(P).replace(/<[^>]+>/g, '')}`,
           `"${quote.replace(/\.$/, ',')}" said a senior ${PARTY[mine].name} strategist who asked not to be named. ${C.surrogates.length ? `${C.surrogates.length} ${PARTY[mine].name} senator${C.surrogates.length === 1 ? '' : 's'} barnstormed battlegrounds in the final weekend.` : ''}`,
           C.opp && C.opp.surrogates ? `${their.name}'s campaign closed with ${C.opp.surrogates.length ? `${C.opp.surrogates.length} senators barnstorming ${C.opp.surrogates.map(s => stName(s.code)).join(', ')}` : 'no surrogates on the road'}, ${C.opp.adBuy ? 'a late ad blitz' : 'its airtime already spent'} and ${C.opp.gotv ? 'a paid turnout operation' : 'a shoestring turnout operation'}.` : ''].filter(Boolean) })}
@@ -1015,7 +1071,7 @@ function presBattleHTML() {
   const E = S.election, C = E.camp || null, P = campProj(), mine = S.side, noms = P.noms;
   const last = C && C.polls && C.polls.length ? C.polls[C.polls.length - 1] : null;
   return `<div class="presbox"><b>🇺🇸 The race for the White House</b>${campTicketsHTML(noms)}
-    ${last ? `<div class="camp-pop camp-pop-sm"><span style="color:var(--dim)">Final poll of polls:</span><span style="color:${PARTY[mine].color}"><b>${last.me.toFixed(1)}</b>${campLast(noms[mine])}</span><span style="color:${PARTY[other(mine)].color}"><b>${last.them.toFixed(1)}</b>${campLast(noms[other(mine)])}</span>${last.tp ? `<span style="color:${PARTY.I.color}"><b>${last.tp.toFixed(1)}</b>${C.thirdParty ? C.thirdParty.name : 'Independent'}</span>` : ''}<span style="color:var(--dim)"><b>${last.und.toFixed(0)}</b>undecided</span></div>` : ''}
+    ${last ? `<div class="camp-pop camp-pop-sm"><span style="color:var(--dim)">Final poll of polls:</span><span style="color:${PARTY[mine].color}"><b>${last.me.toFixed(1)}</b>${campLast(noms[mine])}</span><span style="color:${PARTY[other(mine)].color}"><b>${last.them.toFixed(1)}</b>${campLast(noms[other(mine)])}</span>${last.tp ? `<span style="color:${campTPColor(C.thirdParty)}"><b>${last.tp.toFixed(1)}</b>${C.thirdParty ? `${campLast(C.thirdParty)} (${campTPTag(C.thirdParty)})` : 'Independent'}</span>` : ''}<span style="color:var(--dim)"><b>${last.und.toFixed(0)}</b>undecided</span></div>` : ''}
     <p>Projected Electoral College for your ticket: <b style="color:${P.evMine >= 270 ? 'var(--yes)' : 'var(--no)'}">${P.evMine}</b> of 270 (${P.evTheirs} for ${campLast(noms[other(mine)])}). ${campPath(P)}</p>
     <div class="campmap">${campMapHTML(P)}</div>
     <div class="camp-chips"><b>Battlegrounds</b> ${P.battle.map(x => campChip(x, C && (C.focus || []).includes(x.c) ? 'focus' : '')).join('') || '<small style="color:var(--dim)">none: this race isn\'t close</small>'}</div>
@@ -1025,7 +1081,7 @@ function presBattleHTML() {
 function bindPresBattle(draw) {
   const card = $('#modal-card'), E = S.election; if (!E || !E.pres) return;
   // the money buttons are bound by the trail itself; this adds the nominees' profiles
-  card.querySelectorAll('.presbox [data-cprof]').forEach(a => a.onclick = e => { e.preventDefault(); const p = a.dataset.cprof, person = campPersonOf(campNoms()[p]); if (person) profileModal(person, `${PARTY[p].name} nominee`, draw); });
+  card.querySelectorAll('.presbox [data-cprof]').forEach(a => a.onclick = e => { e.preventDefault(); const p = a.dataset.cprof, person = campPersonOf(p === 'I' ? (S.nominees || {}).I : campNoms()[p]); if (person) profileModal(person, p === 'I' ? 'Independent candidate for President' : `${PARTY[p].name} nominee`, draw); });
 }
 
 ACH.push(['debater', '🎤', 'Debate Champion', 'Your nominee wins both presidential debates in a fall campaign.'], ['comeback', '🏇', 'Comeback Trail', 'Trail on Labor Day and lead on Election Eve.']);
