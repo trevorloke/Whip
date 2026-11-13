@@ -153,8 +153,10 @@ function judgePromises() {
     if (P[2] === 'budgets' && !p.broken && S.termBudgets.passed >= 2) p.done = true;
     if (P[2] === 'clean' && !p.broken) p.done = true;
     if (p.done && !p.broken) { kept++; c.capital += 3; S.mood += 1; addLegacy(15); lines.push(`✅ <b>${P[1]}</b>: kept. +3 capital, national mood +1.`); }
+    else if (IND()) { S.mood -= 1; for (const m of S.members) if (side(m) === 'you') m.rel -= 0.5; lines.push(`❌ <b>${P[1]}</b>: broken. Independent mood −1: nobody expected a caucus to write the laws, but voters remember.`); } // a caucus can't pass laws alone: judged leniently
     else { c.confidence--; S.mood -= 2; for (const m of S.members) if (side(m) === 'you') m.rel -= 0.5; lines.push(`❌ <b>${P[1]}</b>: broken. −1 confidence, national mood −2.`); }
   }
+  if (IND() && !kept && S.promises.length >= 2) { c.confidence--; lines.push('Not one promise kept: −1 confidence.'); }
   if (kept === S.promises.length) unlock('promise');
   S.promises = [];
   return `<div class="primnews"><b>Your promises from last time</b>${lines.map(t => `<p>${t}</p>`).join('')}</div>`;

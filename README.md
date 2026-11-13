@@ -266,8 +266,25 @@ neither party can organize without you.
   with the usual tools; your own caucus is twistable, and the rival can't touch
   it. At the end, concessions are paid or quietly forgotten, **trust** with
   each party and your **Lean** move, and a bill your votes decided earns a
-  bonus. If most of your caucus breaks ranks on a deal and that costs you the
-  vote, the blame is yours.
+  bonus. If most of your caucus breaks ranks on a deal or a free vote and that
+  costs you the vote, the blame is yours.
+- **The count and your price.** The Bidding opens with the count without your
+  caucus, against the votes the bill really needs (60 for cloture, 67 for an
+  amendment, a simple majority otherwise). On about two bills in three the
+  parties land within your caucus's votes of that line: 🗝 **your votes decide
+  it**, both offers go up, and whichever side you spurn fights for every vote.
+  The rest are clearly carried or clearly dead, and the offers are thin: going
+  with the count is a short whip, going against it a long one. Each card shows
+  how many votes short you would start. Voting your banner is worth a vote at
+  the start; a deal against it costs one.
+- **Confidence as a kingmaker.** Losing a bill your votes could never have
+  decided costs no confidence; losing one they did decide can. Every second
+  bill you decide your banner's way restores a point of confidence, and three
+  votes in a row against your banner cost one. Every second bill you decide
+  brings a would-be candidate to your door (a free, stronger recruit for the
+  next slate). Campaign promises are judged gently: a caucus can't pass laws
+  alone, so a broken one costs independent mood, and only a term with none
+  kept costs confidence.
 - **Budgets and your own bills.** The floor party writes the budget; selling
   your votes or killing it is the bid. Your own reform agenda (stock-trading
   ban, open primaries, the Fix It Yourself Act…) reaches the floor through the
@@ -282,8 +299,9 @@ neither party can organize without you.
   ranked ballots. In presidential years you run the Ballot Alliance primary,
   pick a running mate and fight a **Third Force** fall campaign for the 15%
   debate line, with a possible cabinet offer to withdraw and an **Elector
-  Gambit** if nobody reaches 270. The verdict is about caucus size and the
-  balance of power. Lose every seat (unless the President is yours) and the
+  Gambit** if nobody reaches 270. With your caucus in the room, voters turn
+  harder on whichever party gets within reach of running the Senate alone. The
+  verdict is about caucus size and the balance of power. Lose every seat (unless the President is yours) and the
   career is over.
 
 ## Look and feel

@@ -432,8 +432,8 @@ function startBill() {
   else { if (!maj) short += 1; if (cloture && maj) short += 1; } // and the majority's headache
   if (nomination) short = killing() ? short + Math.min(2, S.nominee.tries || 0) : Math.max(1, short - (S.nominee.tries || 0));
   B.short = Math.max(1, short);
-  if (IND() && typeof cauPivotCount === 'function') B.pivot = cauPivotCount(B); // the natural count, before anyone whips
-  calibrate(B.short);
+  if (IND() && typeof cauFrame === 'function') cauFrame(B); // caucus.js: the count without your caucus, against the votes the bill really needs
+  else calibrate(B.short);
   if (has('pollster')) for (const m of S.members) m.b.fuzzy = rnd(-14, 14);
   if (S.prep.intel) shuffle(S.members.slice()).slice(0, S.prep.intel).forEach(m => { m.b.intel = true; m.knownTraits = true; });
   const shut = S.shutdown > 0, approps = S.approps > 0;
@@ -1111,8 +1111,9 @@ function settle(won, detail, headline, isLaw, partial) {
   } else {
     c.losses++; c.streak = 0;
     if (!k && ['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
-    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift(`In the minority, the caucus expected to lose this one: no confidence lost · +1 capital`); }
-    else { c.confidence--; c.capital += 1; lines.unshift('−1 party confidence · +1 capital (consolation)'); }
+    else if (IND() && typeof cauNoBlame === 'function' && cauNoBlame()) { c.capital += 1; lines.unshift(cauNoBlame()); } // a bill your caucus could never have decided
+    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift(`${IND() ? 'Even kingmakers lose some: the caucus shrugs this one off' : 'In the minority, the caucus expected to lose this one'}: no confidence lost · +1 capital`); }
+    else { c.confidence--; c.capital += 1; lines.unshift(IND() && B.pivot && B.pivot.decisive && !B.budget ? '🗝 Your votes were the margin, and it still went the wrong way: −1 confidence · +1 capital (consolation)' : '−1 party confidence · +1 capital (consolation)'); }
     // an enemy law helps the other side's mood more when it's popular
     S.mood = clamp(S.mood - 1.5 - (k ? Math.max(0, (B.opinion - 50) / 15) : 0), -15, 15);
     sfx.gavel();
@@ -1303,7 +1304,7 @@ function raceBase(m, retiring, P = m.party) {
   const st = ST[m.state];
   const adv = (P === 'R' ? st.lean : P === 'D' ? -st.lean : 8) * 0.55;
   const pm = (IND() ? 0 : (P === S.side ? S.mood : P === 'I' ? 0 : -S.mood)) * 0.5; // an independent career's mood lifts only independents (cauStr)
-  const thermostat = P === 'I' ? 0 : -0.9 * (seats(P) - 50); // big majorities attract backlash
+  const thermostat = P === 'I' ? 0 : IND() ? -2 * (seats(P) - 49) : -0.9 * (seats(P) - 50); // big majorities attract backlash (with an independent caucus: any party within reach of running the Senate alone)
   return adv + pm + thermostat + (retiring ? 0 : 4 + m.rec * 0.7);
 }
 // the two major parties in a race: the holder's party (or, for an independent seat, the state's lean) vs the other

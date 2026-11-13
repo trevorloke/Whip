@@ -254,24 +254,60 @@ function cauAim(fx, owner) {
 }
 function cauApBonus() { return S.cau && S.cau.partner && S.cau.partner === floorParty() ? S.cau.gavels : 0; }
 function cauSetRival() { if (!S.cau) return; const W = S.cau.whips[rivalOf()]; if (!W) return; S.rival = W.name; S.rivalStyle = W.style; }
+// the votes a bill really needs to pass: a supermajority, cloture, or a simple majority (50 when the owner's Vice President breaks the tie)
+function cauPassNeed(B) { return B.super || B.cloture || (S.president.party === B.owner ? 50 : 51); }
+// the count without your caucus, against that threshold. kind: 'close' (your votes decide it), 'carried' (it passes without you),
+// 'dead' (it fails even with you); decisive is true only when your caucus can swing the result either way
 function cauPivotCount(B) {
-  const need = B.super || B.cloture || (vpBacks() ? 50 : 51);
+  const need = cauPassNeed(B);
   const ms = S.members.filter(m => m.party === 'D' || m.party === 'R');
   const yes = ms.filter(m => support(m) > 0).length, ci = seats('I');
-  return { yes, no: ms.length - yes, need, decisive: yes < need && yes + ci >= need };
+  const decisive = yes < need && yes + ci >= need;
+  return { yes, no: ms.length - yes, need, decisive, kind: decisive ? 'close' : yes >= need ? 'carried' : 'dead' };
 }
+// shift every senator's mood so that exactly `yes` of the parties' senators start on the yea side (calibrate() for the count without you)
+function cauSetCount(yes) {
+  for (const m of S.members) m.b.start = null;
+  const ss = S.members.filter(m => m.party === 'D' || m.party === 'R').map(support).sort((a, b) => b - a);
+  const t = clamp(yes, 1, ss.length - 1), off = -((ss[t - 1] + ss[t]) / 2);
+  for (const m of S.members) m.b.mood += off;
+  for (const m of S.members) if (T(m, 'leader')) m.b.start = leaderStance(m);
+}
+// The Bidding's opening count (startBill, I mode). The kingmaker fantasy: most bills the parties fight over land inside your caucus's
+// swing range of the threshold they really need, so your votes decide them; the rest are clearly carried or clearly dead either way.
+// Budgets (their own bid) and your own bills keep the ordinary calibration.
+const CAU_CLOSE = 0.65;
+function cauFrame(B) {
+  if (B.budget || B.owner === 'I' || !S.cau) { B.pivot = cauPivotCount(B); calibrate(B.short); return; }
+  const need = cauPassNeed(B), ci = seats('I'), u = Math.random();
+  const yes = ci > 0 && u < CAU_CLOSE ? need - ri(1, ci) : u < (1 + CAU_CLOSE) / 2 ? need + ri(2, 5) : need - ci - ri(2, 5);
+  cauSetCount(yes);
+  B.pivot = cauPivotCount(B);
+}
+// how far short you start once you declare. On a close bill the side you spurned fights for every vote (the ordinary fight),
+// one vote less when you vote your banner and one more when you vote against it. On a clear bill, going with the count is a
+// short whip; going against it is a long one.
 function cauShortFor(B) {
   let s = B.short0 != null ? B.short0 : B.short;
   if (killing()) { if (!B.super && !B.cloture) s -= 2; } else s += 1;
   if (B.nomination && S.nominee) s = killing() ? s + Math.min(2, S.nominee.tries || 0) : Math.max(1, s - (S.nominee.tries || 0));
   if (!killing() && B.patron && B.patron === floorParty()) s -= 1;
   if (B.patron && B.patron !== floorParty() && B.patron !== S.president.party) s += 1;
+  if (B.labelAim) s += B.aim === B.labelAim ? -1 : 1;   // your caucus fights harder for its banner than for a deal against it
+  const kind = B.pivot && B.pivot.kind;
+  if (kind === 'carried' || kind === 'dead') s = (kind === 'carried') === !killing() ? clamp(s - 2, 1, 2) : s + 1;
   return Math.max(1, s);
+}
+// the same, for an aim and patron you haven't picked yet (the Bidding's preview)
+function cauShortPreview(B, aim, patron) {
+  const a0 = B.aim, p0 = B.patron; B.aim = aim; B.patron = patron;
+  try { return cauShortFor(B); } finally { B.aim = a0; B.patron = p0; }
 }
 function cauOfferBudget(p, B) {
   const C = S.cau, toward = p === 'D' ? -C.lean : C.lean;
   if (toward <= -8) return 0;
-  const pts = 2 + (B.landmark ? 1.5 : 0) + (B.pivot && B.pivot.decisive ? 1 : 0) + 0.3 * C.trust[p] + (C.partner ? 0 : 1) - (C.partner === p ? 0.5 : 0) - (toward >= 6 ? 2 : 0);
+  const pv = B.pivot, pivotal = !pv ? 0 : pv.decisive ? 1 : pv.kind === 'carried' || pv.kind === 'dead' ? -1 : 0;   // they pay for votes that decide it
+  const pts = 2 + (B.landmark ? 1.5 : 0) + pivotal + 0.3 * C.trust[p] + (C.partner ? 0 : 1) - (C.partner === p ? 0.5 : 0) - (toward >= 6 ? 2 : 0);
   return clamp(Math.round(pts), 0, 5);
 }
 // the caucus member a deferred concession names (picked once per bill and party)
@@ -322,7 +358,8 @@ function cauOfferCard(p, B) {
   return `<div class="cau-offer ${p.toLowerCase()}${gone ? ' gone' : ''}"><div class="cau-oh"><b style="color:${PARTY[p].color}">Sen. ${W.name}</b> <small>${PARTY[p].name} whip · the ${RIVAL_STYLES[W.style][0]}</small></div>
     <div class="cau-role">${pass ? `pays you to <b class="cau-pass">PASS</b> it` : `pays you to <b class="cau-kill">KILL</b> it`}</div>
     ${gone ? '<p class="cau-dim"><b>Withdrawn.</b> You asked for more and they walked away from the table.</p>' : keys.length ? `<ul>${keys.map(k => `<li>${CAU_OFFERS[k][1](p, B)}${CAU_OFFERS[k][3] === 'settle' ? ' <small>(paid if you win)</small>' : ''}</li>`).join('')}</ul>` : '<p class="cau-dim">Nothing on the table. They expect your votes for free.</p>'}
-    <small class="cau-dim">${notes.join(' · ')} · ${cauOfferPts(keys)} point${cauOfferPts(keys) === 1 ? '' : 's'}</small></div>`;
+    <small class="cau-dim">${notes.join(' · ')} · ${cauOfferPts(keys)} point${cauOfferPts(keys) === 1 ? '' : 's'}</small>
+    <small class="cau-dim cau-fight">Take it and you start about ${cauShortPreview(B, pass ? 'pass' : 'kill', p)} vote${cauShortPreview(B, pass ? 'pass' : 'kill', p) === 1 ? '' : 's'} short</small></div>`;
 }
 function cauAsk(next) {
   const B = S.bill, C = S.cau, c = S.career;
@@ -333,16 +370,21 @@ function cauAsk(next) {
   B.cauWithdrawn = B.cauWithdrawn || {};
   const o = B.owner, pv = B.pivot || cauPivotCount(B), ci = seats('I'), la = B.labelAim;
   const verdict = pv.decisive ? '<b class="cau-key">🗝 YOUR VOTES DECIDE IT</b>' : pv.yes >= pv.need ? 'They can pass it without you' : 'It\'s dead even with you';
+  const tide = pv.yes >= pv.need ? 'PASS' : 'KILL';
+  const price = pv.decisive
+    ? `<p class="cau-price"><b>Your price is high.</b> Without you the parties are ${pv.need - pv.yes} short of ${pv.need}, and your caucus has ${ci}: the way you vote decides it, so both whips are bidding. Whichever side you spurn will fight for every vote.</p>`
+    : `<p class="cau-price cau-dim"><b>Your price is low.</b> ${pv.yes > pv.need ? `They have ${pv.yes - pv.need} vote${pv.yes - pv.need === 1 ? '' : 's'} to spare without you` : pv.yes === pv.need ? 'They have exactly the votes they need without you' : `They are ${pv.need - pv.yes - ci} vote${pv.need - pv.yes - ci === 1 ? '' : 's'} short even with your ${ci}`}, so your votes won't change it and the offers are thin. Going with the count (${tide}) is a short whip; going against it means turning the parties' own senators, and nobody blames the caucus if that fails.</p>`;
   const body = `<p class="blurb">${B.blurb}</p><div class="fx">${fxChips(B.fx)}</div>
     <p>A <b style="color:${PARTY[o].color}">${PARTY[o].name}</b> ${B.nomination ? 'nomination' : B.aumf ? 'war resolution' : 'bill'}${B.by === 'them' ? `, scheduled by the ${PARTY[floorParty()].short}` : ''} · to pass it needs ${cauNeedPass(B)}.</p>
     <div class="cau-pivot"><span>The count before anyone whips: <b>${pv.yes}</b> for · <b>${pv.no}</b> against · <b>${pv.need}</b> needed. Your caucus: <b>${ci}</b> vote${ci === 1 ? '' : 's'}.</span><span>${verdict}</span></div>
+    ${price}
     <p>Your ${indPill(C.label)} banner says <b class="${la === 'kill' ? 'cau-kill' : 'cau-pass'}">${la === 'kill' ? 'KILL' : 'PASS'}</b>${C.partner ? ` · your organizing partner: the ${PARTY[C.partner].short}` : ' · you caucus with no one: both sides bid +1'}.</p>
     <div class="cau-bid">${cauOfferCard('D', B)}${cauOfferCard('R', B)}</div>`;
   const askOK = p => !B.cauAsked && !B.cauWithdrawn[p];
   const take = p => B.offers[p].length ? `Take the ${PARTY[p].name} deal` : `Side with the ${PARTY[p].short} for nothing`;
   const choices = ['D', 'R'].map(p => `<button class="btn ${p === 'D' ? 'dem' : 'rep'}" data-choice="bid:${p}">${take(p)}<small>${p === o ? 'PASS' : 'KILL'} it · the ${PARTY[other(p)].short} whip works against you</small></button>`).join('')
     + ['D', 'R'].map(p => `<button class="btn" data-choice="bid:ask:${p}" ${askOK(p) ? '' : 'disabled'}>Name your price to the ${PARTY[p].short}<small>Once a bill · ${Math.round(cauAskOdds(p, B) * 100)}% they sweeten it; otherwise they walk away</small></button>`).join('')
-    + `<button class="btn" data-choice="bid:free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits<small>No deal, no ally whip · your caucus likes it (+0.5 each) · Lean eases · independent mood +0.2</small></button>`;
+    + `<button class="btn" data-choice="bid:free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits<small>No deal, no ally whip · your caucus likes it (+0.5 each) · Lean eases · independent mood +0.2 · you start about ${cauShortPreview(B, la, null)} short</small></button>`;
   cauScreen(`The Bidding · ${season(B.n)} ${billYear(B.n)}`, `${B.name}${B.landmark ? '<span class="cau-lm">LANDMARK</span>' : ''}`, body, choices,
     `<button class="btn primary big adv" id="cau-free">Free vote: ${la === 'kill' ? 'KILL' : 'PASS'} on the merits</button>`);
   const card = $('#modal-card');
@@ -352,6 +394,10 @@ function cauAsk(next) {
     if (B.free) log(`A free vote: your caucus will ${aimT} the ${B.name} on the merits of the ${C.label} banner. You need ${needText()}.`, 'sys');
     else log(`You took the ${PARTY[P].short} deal${B.deal.length ? ` (${cauDealText(P, B.deal, B)})` : ', for nothing'}. Your caucus will ${aimT} it. You need ${needText()}.`, 'sys');
     if (B.cloture) log(killing() ? `It's ${PARTY[o].name} partisan legislation, so it needs 60 votes for cloture: hold ${101 - B.cloture} nays and the filibuster kills it.` : `It's partisan legislation: the ${PARTY[other(o)].short} will filibuster, so it needs 60 for cloture.`, 'sys');
+    { const now = S.members.filter(m => (m.party === 'D' || m.party === 'R') && support(m) > 0).length, d = now - pv.yes;
+      const vs = `You start ${B.short} vote${B.short === 1 ? '' : 's'} short.`;
+      if (d * aimSign() < 0) log(`The moment you declare, Sen. ${S.rival} goes to work: the parties' count moves from ${pv.yes} to ${now} for it. ${vs}`, 'sys');
+      else if (d) log(`The parties' count settles at ${now} for it. ${vs}`, 'sys'); }
     if (P) log(`🤝 Sen. ${C.whips[P].name}, the ${PARTY[P].name} whip, will work ${PARTY[P].short} senators your way every night. Sen. ${S.rival} works against you.`, 'good');
     else log(`Sen. ${S.rival}, the ${PARTY[rivalOf()].name} whip, works against you. Nobody works for you.`, 'sys');
     hideModal(); next();
@@ -431,13 +477,21 @@ function cauSettle(won, enacted, headline) {
   }
   C.lean = clamp(+(C.lean * 0.9).toFixed(1), -10, 10);
   for (const q of ['D', 'R']) cauTrust(q, 0);
-  if (B.labelAim && B.aim !== B.labelAim) { S.mood -= 0.3; lines.push(`Your base grumbles: that vote cut against the ${C.label} banner`); }
+  if (B.labelAim && B.aim !== B.labelAim) {
+    S.mood -= 0.3; C.stats.offRun = (C.stats.offRun || 0) + 1;
+    if (C.stats.offRun >= 3) { C.stats.offRun = 0; c.confidence--; lines.push(`Three votes in a row against the ${C.label} banner: your caucus wonders what it stands for (−1 confidence)`); }
+    else lines.push(`Your base grumbles: that vote cut against the ${C.label} banner`);
+  } else if (B.labelAim && !B.budget) C.stats.offRun = 0;   // budgets are their own bid: they neither count nor break the run
   if (B.pivot && B.pivot.decisive && won) {
     c.capital += 1; addLegacy(4); C.pivots++;
-    lines.push(`🗝 Your ${seats('I')} votes decided it: +1 capital`);
+    const onBanner = !B.labelAim || B.aim === B.labelAim;   // the swing vote, cast for your banner's cause
+    if (onBanner) C.stats.banner = (C.stats.banner || 0) + 1;
+    if (onBanner && C.stats.banner % 2 === 0 && c.confidence < 5) { c.confidence++; lines.push(`🗝 Your ${seats('I')} votes decided it for the ${C.label} banner: +1 capital, +1 confidence (${C.stats.banner} bills decided your banner's way)`); }
+    else lines.push(`🗝 Your ${seats('I')} votes decided it${onBanner ? ` for the ${C.label} banner` : ''}: +1 capital`);
+    if (C.pivots % 2 === 0 && C.recruits < 3) { C.recruits++; lines.push('📇 Deciding bills is the best recruiting pitch there is: a would-be independent calls your office (+1 banked recruit for the next slate)'); }
     if (C.pivots >= 10) unlock('cau_kingmaker');
   }
-  if (!won && p && B.cauVotes && B.cauVotes.length >= 2) {   // cohesion: only a split that broke a deal and cost you the vote is held against you
+  if (!won && (p || B.free) && B.cauVotes && B.cauVotes.length >= 2) {   // cohesion: only a split that broke a deal (or a free vote) and cost you the vote is held against you
     const against = B.cauVotes.filter(v => v === (B.aim === 'pass' ? 'no' : 'yes')).length;
     if (against * 2 > B.cauVotes.length) {   // the split takes away the minority's no-blame pass; it never stacks on a loss that already cost confidence
       if (B.cauConf0 != null && c.confidence < B.cauConf0) lines.push(`Most of your caucus broke ranks (${against} of ${B.cauVotes.length}), and everyone noticed`);
@@ -453,6 +507,12 @@ function cauSettle(won, enacted, headline) {
   C.log.push({ n: B.n, name: B.name, patron: p || null, aim: B.aim, won: !!won, offers: { D: cauOfferPts(B.offers && B.offers.D), R: cauOfferPts(B.offers && B.offers.R) } });
   if (C.log.length > 12) C.log.shift();
   return lines;
+}
+// a lost bill your caucus could never have decided (clearly carried or clearly dead before the Bidding) costs no confidence
+function cauNoBlame() {
+  const B = S.bill; if (!IND() || !B || !B.pivot || B.budget || B.owner === 'I') return '';
+  const k = B.pivot.kind; if (k !== 'carried' && k !== 'dead') return '';
+  return `Your ${seats('I')} votes were never the margin on this one: nobody blames the caucus · +1 capital`;
 }
 function cauHeadline(won, headline, y, n) {
   const B = S.bill, name = B.name.toUpperCase(), k = killing(), enacted = k ? !won : won, P = B.patron;
@@ -823,7 +883,8 @@ function cauAfterPrimaries(n, endorsed, year) {
   if (n && n.I) {
     n.I.yours = true; S.cau.ticketY = year;
     if (endorsed && n.I.name === endorsed) { S.career.capital += 4; addLegacy(8); out.push(`🗽 Your pick, ${n.I.name}, carries the Alliance line (+4 capital).`); }
-    if (n.I.major) out.push(`🗽 A heavyweight takes your line: ${n.I.name} runs as the caucus's ticket.`);
+    if (n.I.incumbent) out.push(`🗽 ${n.I.name} runs for a second term outside both parties; the Alliance stands aside.`);
+    else if (n.I.major) out.push(`🗽 A heavyweight takes your line: ${n.I.name} runs as the caucus's ticket.`);
     else if (!(endorsed && n.I.name === endorsed)) out.push(`🗽 ${n.I.name} runs as the caucus's ticket.`);
   } else out.push('🗽 The Alliance fields no one.');
   return out;
