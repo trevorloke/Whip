@@ -186,14 +186,41 @@ let S = null;
 const HOOKS = { office: [], interlude: [], worldNews: [], results: [] };
 let ui = { sel: null, pitchOpen: false, lastQuote: '', lastDelta: null, view: 'chamber' };
 
-const other = p => p === 'D' ? 'R' : 'D';
+const other = p => p === 'D' ? 'R' : p === 'R' ? 'D' : IND() && p === 'I' ? floorParty() : 'D';
 function side(m) { return m.party === S.side ? 'you' : m.party === 'I' ? 'ind' : 'opp'; }
 function tagOf(m) { return `${m.party}-${m.state}`; }
 function sen(m) { return `Sen. ${m.name} (${tagOf(m)})`; }
 function lastName(m) { return m.name.split(' ').slice(1).join(' '); }
 function seats(p) { return S.members.filter(m => m.party === p).length; }
-function isMajority() { return seats(S.side) > seats(other(S.side)); }
+function isMajority() { if (IND()) return false; return seats(S.side) > seats(other(S.side)); }
 function vpYours() { return S.president.party === S.side; }
+/* ---------------- careers: D, R, or the independent caucus ('I') ----------------
+   Every helper returns exactly the old D/R value when S.side is 'D' or 'R'. */
+function IND() { return !!S && S.side === 'I'; }
+// the major party two-party arithmetic is written from: yours, or (independent career) the Democrats (D-positive)
+function frameP() { return IND() ? 'D' : S.side; }
+// sign for national-environment terms written "for S.side" (waves, approval drag): D/R the old ±1; I: D-positive, 0 for 'I'
+function envSign(p) { return IND() ? (p === 'D' ? 1 : p === 'R' ? -1 : 0) : (p === S.side ? 1 : -1); }
+// sign for the player's own influence (cash, race work, campaigns): D/R the old ±1; I: only the caucus ('I') counts
+function youSign(p) { return IND() ? (p === 'I' ? 1 : 0) : (p === S.side ? 1 : -1); }
+// S.mood where it feeds two-party arithmetic. In an independent career S.mood is the independents' mood, so 0
+function partyMood() { return IND() ? 0 : S.mood; }
+// who would organize the Senate if the caucus partnered with `partner` ('D' | 'R' | null): the bigger bloc, ties to the VP's party
+function floorPartyWith(partner) {
+  const n = p => seats(p) + (partner === p ? seats('I') : 0), d = n('D'), r = n('R');
+  if (d !== r) return d > r ? 'D' : 'R';
+  const P = S.president && S.president.party; return P === 'D' || P === 'R' ? P : partner || 'D';
+}
+// who runs the floor (schedules bills, writes the budget). D/R: the old "isMajority() ? S.side : other(S.side)"
+function floorParty() { return IND() ? floorPartyWith(S.cau && S.cau.partner) : (isMajority() ? S.side : other(S.side)); }
+// the caucus's partner choice decides who organizes
+function caucusDecides() { return IND() && floorPartyWith('D') !== floorPartyWith('R'); }
+// neither party can organize alone (51 seats, or 50 plus its own Vice President)
+function kingmakerNow() { const ok = p => seats(p) >= 51 || (seats(p) === 50 && S.president.party === p); return IND() && !ok('D') && !ok('R'); }
+// the Vice President's tiebreak goes your caucus's way. D/R: vpYours() (the old needText / spare / count term)
+function vpWithYou() { return IND() ? (killing() ? !vpBacks() : vpBacks()) : vpYours(); }
+// whose whip works against your aim on this bill: killing → the owner's whip; passing → the other major party's
+function rivalOf() { const o = sponsor(); return o === 'I' ? floorParty() : killing() ? o : other(o); }
 
 /* ---------------- calendar & elections ---------------- */
 function billYear(n) { return 2027 + Math.floor((n - 1) / 3); }
@@ -330,18 +357,18 @@ function isLockedYes(m) { return m.b.pledged || m.b.blackmailed; }
 function aimSign() { return S && S.bill && S.bill.aim === 'kill' ? -1 : 1; }
 function killing() { return aimSign() < 0; }
 // whose bill it is: the party that wants it to become law
-function sponsor() { const B = S.bill; if (B && B.aumf && S.president.party !== 'I') return S.president.party; return killing() ? other(S.side) : S.side; } // a war vote belongs to the President who asked for it
+function sponsor() { const B = S.bill; if (IND()) return (B && B.owner) || floorParty(); if (B && B.aumf && S.president.party !== 'I') return S.president.party; return killing() ? other(S.side) : S.side; } // a war vote belongs to the President who asked for it
 // the party whose agenda a bill belongs to (null for bipartisan deals, budgets, war votes, nominations)
 function billParty(name) { for (const p of ['D', 'R']) if (AGENDA[p].some(b => b[0] === name) || LANDMARKS[p].some(l => l[0] === name)) return p; return null; }
 // the Vice President breaks ties for the bill when the White House is the bill's own party
-function vpBacks() { return killing() ? !vpYours() : vpYours(); }
+function vpBacks() { if (IND()) { const p = S.president.party; return p === 'I' ? !killing() : p === sponsor(); } return killing() ? !vpYours() : vpYours(); }
 // yeas the bill needs to pass (if all 100 vote): supermajorities, cloture, or a simple majority
 function needNum() { const B = S.bill; return B.super || B.cloture || (vpBacks() ? 50 : 51); }
 function needText() {
   const B = S.bill, k = B.super || B.cloture;
-  if (killing()) return k ? `${101 - k} nays` : vpYours() ? '50 nays + VP' : '51 nays';
+  if (killing()) return k ? `${101 - k} nays` : vpWithYou() ? '50 nays + VP' : '51 nays';
   if (k) return `${k} votes`;
-  return vpYours() ? '50 + VP' : '51 votes';
+  return vpWithYou() ? '50 + VP' : '51 votes';
 }
 function passes(y, n) { const B = S.bill, k = B.super || B.cloture; return k ? y >= k : y > n || (y === n && vpBacks()); }
 // every bill starts a few votes short: shift everyone so the bill sits `short` votes from your caucus's goal
@@ -934,7 +961,7 @@ function finishVote(results, y, n) {
   const vpNote = tie ? `The Vice President breaks the tie ${vpBacks() ? 'for it' : 'against it'}! ` : '';
   if (tie && pass !== k) B.tiebreak = true; // the tie broke your way
   B.yeas = y; B.nays = n;
-  const spare = k ? (thr ? thr - 1 - y : Math.floor((n - y - (vpBacks() ? 1 : 0)) / 2)) : thr ? y - thr : vpYours() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
+  const spare = k ? (thr ? thr - 1 - y : Math.floor((n - y - (vpBacks() ? 1 : 0)) / 2)) : thr ? y - thr : vpWithYou() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
   if (!B.override) B.spare = spare;
   // votes go on the record back home, and party-line defections feed primary challenges
   const P = B.budget ? (B.by === 'them' ? (k ? other(S.side) : null) : S.side) : billParty(B.name), mine = k ? 'no' : 'yes';
@@ -1163,9 +1190,9 @@ function buildCourt() {
 function courtCount(p) { return S.court.filter(j => j.party === p).length; }
 function courtLabel() { return `${courtCount('R')}R–${courtCount('D')}D${courtCount('I') ? `–${courtCount('I')}I` : ''}${S.court.length < 9 ? `, ${9 - S.court.length} vacant` : ''}`; }
 // a bipartisan deal: the AGENDA.both bills, and the majority's budget once you've sold them your votes
-function isBipartisan() { const B = S.bill; return AGENDA.both.some(b => b[0] === B.name) || (B.budget && B.by === 'them' && B.aim === 'pass'); }
+function isBipartisan() { const B = S.bill; return AGENDA.both.some(b => b[0] === B.name) || (B.budget && B.by === 'them' && B.aim === 'pass') || (IND() && B.owner === 'I'); }
 function dotPrior(p, fx) { let s = 0; for (const t of TAGS) s += (PARTY[p].prior[t] || 0) * (fx[t] || 0); return s; }
-function houseMaj() { return S.house[S.side] >= 218 ? S.side : other(S.side); }
+function houseMaj() { if (IND()) return S.house.D >= 218 ? 'D' : 'R'; return S.house[S.side] >= 218 ? S.side : other(S.side); }
 function houseExpected() { return houseBlocs().reduce((a, b) => a + b.yes, 0); }
 function houseOdds() {
   const B = S.bill;
@@ -1777,7 +1804,7 @@ function render() {
   ui.lastDelta = null;
 
   const k = counts(), kill = killing();
-  $('#count').innerHTML = `<span class="c fl-need ${B.aim}">${kill ? 'Nays needed' : 'Yeas needed'}<b>${kill ? (B.super || B.cloture ? 101 - needNum() : vpYours() ? 50 : 51) : needNum()}</b></span><span class="c" style="color:var(--yes)">Yea${kill ? '' : ' / locked'}<b>${k.yes}</b></span><span class="c" style="color:var(--mid)">On the fence<b>${k.mid}</b></span><span class="c" style="color:var(--no)">Nay${kill ? ' / locked' : ''}<b>${k.no}</b></span><span class="c">Unknown<b>${k.unk}</b></span>`
+  $('#count').innerHTML = `<span class="c fl-need ${B.aim}">${kill ? 'Nays needed' : 'Yeas needed'}<b>${kill ? (B.super || B.cloture ? 101 - needNum() : vpWithYou() ? 50 : 51) : needNum()}</b></span><span class="c" style="color:var(--yes)">Yea${kill ? '' : ' / locked'}<b>${k.yes}</b></span><span class="c" style="color:var(--mid)">On the fence<b>${k.mid}</b></span><span class="c" style="color:var(--no)">Nay${kill ? ' / locked' : ''}<b>${k.no}</b></span><span class="c">Unknown<b>${k.unk}</b></span>`
     + `<div class="legend"><span><i style="background:${PARTY.D.color}"></i>Democrat</span><span><i style="background:${PARTY.I.color}"></i>Independent</span><span><i style="background:${PARTY.R.color}"></i>Republican</span><span>★ locked · ✚ absent · ⚪ up for re-election · 🟡 owed a favor · 🔴 grudge</span></div>`;
 
   let fa = '';
