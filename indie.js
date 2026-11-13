@@ -100,8 +100,11 @@ function indEntry(p, office, label, kind, ref) {
 // who runs: nobody (about a third of cycles), one party's contest, or a field from several labels, left and right
 function indField() {
   const r = Math.random();
-  if (r < 0.35) return { kind: 'none', field: [] };
-  const labels = shuffle(Object.keys(IND_LABELS)), one = r < 0.6, picks = one ? Array(ri(2, 3)).fill(labels[0]) : labels.slice(0, pick([2, 2, 3, 3, 3, 4, 4, 5]));
+  if (r < 0.35 && !IND()) return { kind: 'none', field: [] };   // an independent caucus guarantees the Alliance a ballot line
+  const labels = shuffle(Object.keys(IND_LABELS));
+  // your caucus's banner leads the Alliance's field (a reorder, not a draw)
+  if (IND() && S.cau && labels.indexOf(S.cau.label) > 0) labels.unshift(labels.splice(labels.indexOf(S.cau.label), 1)[0]);
+  const one = r < 0.6, picks = one ? Array(ri(2, 3)).fill(labels[0]) : labels.slice(0, pick([2, 2, 3, 3, 3, 4, 4, 5]));
   const field = [], used = new Set();
   // the rare sitting independent senator, and the former senator who quit a party, take the first slots
   const sens = shuffle(S.members.filter(m => m.party === 'I'));
@@ -109,7 +112,7 @@ function indField() {
   picks.forEach((label, i) => {
     const L = indLabelInfo(label);
     const sen = sens.find(m => !used.has(m.name) && indLabel(m) === label);
-    if (sen && Math.random() < 0.25) { used.add(sen.name); hist(sen, `Ran for the ${currentYear()} ${label} presidential line`); field.push(indEntry(sen, `Senator from ${ST[sen.state].name}`, label, 'sen', { type: 'sen', id: sen.id })); return; }
+    if (sen && Math.random() < (IND() ? 0.5 : 0.25)) { used.add(sen.name); hist(sen, `Ran for the ${currentYear()} ${label} presidential line`); field.push(indEntry(sen, `Senator from ${ST[sen.state].name}`, label, 'sen', { type: 'sen', id: sen.id })); return; }
     const fm = formers.find(f => !used.has(f.name) && (f.party === 'D' ? L.lean <= 0.1 : L.lean >= 0));
     if (fm && Math.random() < 0.15) { used.add(fm.name); fm.exParty = fm.party; hist(fm, `Left the ${PARTY[fm.party].name} Party to seek the ${label} presidential line`); fm.party = 'I'; fm.label = label; field.push(indEntry(fm, `Former Senator from ${ST[fm.state] ? ST[fm.state].name : fm.state} (ex-${fm.exParty})`, label, 'gov', { type: 'former' })); return; }
     const kind = pick(L.lean > 0.3 ? ['act', 'act', 'celeb', 'biz', 'general', 'gov'] : L.lean < -0.3 ? ['act', 'act', 'act', 'celeb', 'gov'] : ['act', 'celeb', 'biz', 'biz', 'general', 'gov']);
@@ -147,7 +150,7 @@ function indCatchUp(R, label) {
 }
 function indIntroHTML(R) {
   const labels = [...new Set(R.field.map(f => f.label))];
-  return `<div class="ind-pills">${labels.map(l => indPill(l, true)).join('')}</div><p><b>The Independent Ballot Alliance</b> pools ${labels.length > 1 ? `${labels.length} third parties' petition drives` : `the ${indLabelInfo(labels[0]).group.replace(/s$/, 's\'').replace(/([^'])$/, '$1\'s')} ballot lines`} into one line on all fifty ballots, and only one candidate gets it${labels.length > 1 ? `: ${labels.map(l => `${l} (${indLabelInfo(l).line})`).join('; ')}` : `, running on ${indLabelInfo(labels[0]).line}`}. Thirteen states vote in party primaries, caucuses and petition conventions (${primN(R.pledged)} pledged delegates); ${primN(R.atLarge)} at-large delegates ${labels.length > 1 ? 'are seated in equal blocks by the member parties' : 'follow the national poll'} at the convention, and ${primN(R.need)} nominate. <i>You can watch this race, but no whip runs it.</i></p>`;
+  return `<div class="ind-pills">${labels.map(l => indPill(l, true)).join('')}</div><p><b>The Independent Ballot Alliance</b> pools ${labels.length > 1 ? `${labels.length} third parties' petition drives` : `the ${indLabelInfo(labels[0]).group.replace(/s$/, 's\'').replace(/([^'])$/, '$1\'s')} ballot lines`} into one line on all fifty ballots, and only one candidate gets it${labels.length > 1 ? `: ${labels.map(l => `${l} (${indLabelInfo(l).line})`).join('; ')}` : `, running on ${indLabelInfo(labels[0]).line}`}. Thirteen states vote in party primaries, caucuses and petition conventions (${primN(R.pledged)} pledged delegates); ${primN(R.atLarge)} at-large delegates ${labels.length > 1 ? 'are seated in equal blocks by the member parties' : 'follow the national poll'} at the convention, and ${primN(R.need)} nominate.${IND() ? ' <i>Your caucus runs this one: endorse a candidate and your network lifts them everywhere (+8%).</i>' : ' <i>You can watch this race, but no whip runs it.</i>'}</p>`;
 }
 function indNoFieldHTML(R, year) {
   return `<div class="race ind-none"><span style="font-size:30px">🗳️</span><span><b>No third-party candidate qualifies for the ${year} ballot.</b><br>The Independent Ballot Alliance will not field a presidential candidate: ${R.why}. Expect a straight two-way race in the fall${S.members.some(m => m.party === 'I') ? ', whatever the Senate\'s independents think of it' : ''}.</span></div>`;
@@ -212,7 +215,7 @@ function indNominee(f, conv) {
     city: conv ? conv.city : null, ballots: conv ? conv.ballots.length : 1, del: conv ? conv.ballots[conv.ballots.length - 1].rows[0].del : 0, runnerUp: conv && conv.second ? { name: conv.second.name, label: conv.second.label } : null };
 }
 // about one presidential cycle in fifteen, a heavyweight runs outside both parties
-function indMajorOdds(bolter) { return 0.055 + (bolter ? 0.035 : 0) + (S.president.approval < 40 ? 0.02 : 0); }
+function indMajorOdds(bolter) { return IND() ? (0.055 + (bolter ? 0.035 : 0) + (S.president.approval < 40 ? 0.02 : 0)) * 1.5 : 0.055 + (bolter ? 0.035 : 0) + (S.president.approval < 40 ? 0.02 : 0); }
 // a primary loser who can bolt: a close second in a race that was settled, from outside the Senate, the statehouses and the cabinet
 function indBolter(state, n) {
   for (const p of shuffle(['D', 'R'])) {
@@ -270,6 +273,8 @@ function indFinish(R, state, n, year) {
   }
   const major = indMajor(state, n, minor);
   n.I = major || minor || null;   // null = the Alliance ran and nobody qualified (night.js presThird tests 'I' in S.nominees)
+  // an independent caucus's ticket: its senators' networks and the independent mood lift whoever carries the line
+  if (IND() && n.I) { n.I.strength = +(n.I.strength + 1 + seats('I') * 0.5 + Math.max(0, S.mood) * 0.2).toFixed(1); n.I.yours = true; }
   if (n.I) n.I.p.label = n.I.label;
   return { line, major, minor, conv: R && R.conv };
 }

@@ -177,9 +177,11 @@ function rsRun(P) {
 /* ---------------- the season ---------------- */
 function rsBuild(E) {
   const used = new Set(S.members.map(m => m.name)), prims = [], mine = S.side;
-  E.races.forEach((rc, i) => [mine, other(mine)].forEach(p => prims.push(rsPrimary(rc, i, p, used))));
+  // an independent caucus has no primaries of its own: both parties' contests, watched from outside
+  const parties = IND() ? ['D', 'R'] : [mine, other(mine)];
+  E.races.forEach((rc, i) => parties.forEach(p => prims.push(rsPrimary(rc, i, p, used))));
   const nights = RS_CAL.map(([label, codes]) => ({ label, prims: prims.filter(P => codes.includes(P.code)), done: false })).filter(n => n.prims.length);
-  return { E, prims, nights, night: 0, view: mine, sel: null, finished: false, lines: [] };
+  return { E, prims, nights, night: 0, view: IND() ? floorParty() : mine, sel: null, finished: false, lines: [] };
 }
 const rsOwnPlans = L => L.prims.filter(P => P.plan && !P.plan.meddle);
 const rsMeddles = L => L.prims.filter(P => P.plan && P.plan.meddle);
@@ -198,7 +200,7 @@ function rsNews(N) {
     if (r.incLost) out.push([10, `<p ${tag}>🗡️ <b>Sen. ${inc.name} is out.</b> ${w.name} (${w.faction}) takes the ${st} ${pn} primary: ${rsIncLine(r)}${(inc.p.defy || 0) > 0 ? `; ${inc.p.defy} vote${inc.p.defy > 1 ? 's' : ''} against the party line came home to roost` : r.endorsed === w.name ? ', with your fingerprints all over it' : `, ${pick(['ending a career in a single night', 'the first incumbent in the state to lose a primary in a generation', 'and the caucus is already counting the cost'])}`}.</p>`]);
     else if (inc && P.field.length > 1 && r.rows.find(x => x.inc).pct < 60) out.push([6, `<p ${tag}>😰 Sen. ${inc.name} survives the ${st} ${pn} primary${r.runoff ? ` in a runoff, ${rsP(r.runoff.rows[0].pct)},` : `, ${rsP(r.rows.find(x => x.inc).pct)},`} against ${r.rows.find(x => !x.inc).name}: closer than anyone in the caucus wants to admit.</p>`]);
     if (r.endorsed && !r.meddle) out.push([9, `<p ${tag}>${r.endorsed === w.name ? `✅ <b>Your pick wins:</b> ${w.name} takes the ${st} ${pn} primary with ${rsP(f[0].pct)}${r.runoff ? ' in the runoff' : ''}${P.plan.attack && !r.backfire ? `, and the attack on ${P.plan.attack} did its job` : ''}.` : `❌ <b>Your pick loses:</b> ${r.endorsed} falls to ${w.name} in ${st}, ${rsP(f[0].pct)} to ${rsP((f.find(x => x.name === r.endorsed) || r.rows.find(x => x.name === r.endorsed)).pct)}${f.some(x => x.name === r.endorsed) ? '' : ' in the first round'}.`}</p>`]);
-    if (r.meddle) out.push([8, `<p ${tag}>🕶️ ${r.endorsed === w.name ? `Your quiet money worked: ${w.name} is the ${pn} nominee in ${st}.` : `Your quiet money for ${r.endorsed} in ${st} bought nothing; ${w.name} won.`}${r.leak ? ' <b>And it leaked:</b> the winner thanked "our friends across the aisle" in a fundraising email.' : ''}</p>`]);
+    if (r.meddle) out.push([8, `<p ${tag}>🕶️ ${r.endorsed === w.name ? `Your quiet money worked: ${w.name} is the ${pn} nominee in ${st}.` : `Your quiet money for ${r.endorsed} in ${st} bought nothing; ${w.name} won.`}${r.leak ? (IND() ? ' <b>And it leaked:</b> the winner thanked "our friends in the independent caucus" in a fundraising email, and the party base is livid.' : ' <b>And it leaked:</b> the winner thanked "our friends across the aisle" in a fundraising email.') : ''}</p>`]);
     if (r.runoff) out.push([5, `<p ${tag}>🔁 No one cleared 50% in ${st}: ${r.rows[0].name} (${rsP(r.rows[0].pct)}) and ${r.rows[1].name} (${rsP(r.rows[1].pct)}) went to a runoff, and ${w.name} won it ${rsP(r.runoff.rows[0].pct)} to ${rsP(r.runoff.rows[1].pct)}.</p>`]);
     if (r.upset && !r.incLost) out.push([7, `<p ${tag}>⚡ <b>Upset in ${st}:</b> ${w.name} (${w.office}) beat ${r.fav}, who led the final poll ${r.rows.find(x => x.name === r.fav).poll.toFixed(0)}% to ${r.rows.find(x => x.name === w.name).poll.toFixed(0)}%, for the ${pn} nomination.</p>`]);
     if (r.photo) out.push([4, `<p ${tag}>📸 ${st} ${pn}s: ${rsN(f[0].votes - s2.votes)} votes separate ${w.name} and ${s2.name}${r.margin < 0.5 ? '. A recount changed nothing' : ''}.</p>`]);
@@ -251,9 +253,9 @@ function rsApply(L) {
         if (rc.bruised) news.push(`${ST[m.state].name}: Sen. ${m.name} survives a challenge from ${top.name}, ${rsP((H.rec.runoff || H.rec).rows[0].pct)}${H.rec.runoff ? ' in a runoff' : ''}.`);
       }
     }
-    rc.rsQual = +((rsQuality(rc, pr[mine]) - rsQuality(rc, pr[other(mine)])) * 0.6).toFixed(2);
+    rc.rsQual = IND() ? 0 : +((rsQuality(rc, pr[mine]) - rsQuality(rc, pr[other(mine)])) * 0.6).toFixed(2);
     // the third candidates: indie.js decides when it is loaded
-    if (m.party === 'I') rc.ind = { name: m.name, incumbent: true, str: rnd(30, 42) };
+    if (m.party === 'I') rc.ind = { name: m.name, incumbent: true, str: rnd(30, 42), ...(IND() ? { label: indLabel(m) } : {}) };
     else if (typeof indSenateEntrants === 'function') rc.ind = indSenateEntrants(rc) || null;
     else { const ch = (Math.abs(ST[m.state].lean) <= 12 ? 0.14 : 0.06) + (rc.primaried ? 0.15 : 0); rc.ind = Math.random() < ch ? { name: fullName(), cause: pick(IND_CAUSES), str: rnd(10, 26) + (rc.primaried ? 6 : 0) } : null; }
     for (const p of ['D', 'R']) { const w = pr[p].winner; if (!w.inc) hist(w.p, `Won the ${yr} ${PARTY[p].name} primary for the U.S. Senate in ${ST[m.state].name}${pr[p].field.length > 1 ? ` with ${rsP((pr[p].rec.runoff || pr[p].rec).rows[0].pct)}${pr[p].rec.runoff ? ' in a runoff' : ''}` : ', unopposed'}`, yr); }
@@ -369,7 +371,7 @@ function rsBoard(L) {
   const rank = P => (P.field.some(c => c.inc) ? (P.rc.primary ? 0 : 3) : P.rc.m.party === P.party ? 1 : 2) * 100 + Math.abs(holderAdv(P.rc.m));
   const list = contested(L.view).sort((a, b) => rank(a) - rank(b)), chal = L.prims.filter(P => P.rc.primary && P.field.some(c => c.inc) && P.field.length > 1);
   const cards = list.map(P => {
-    const poll = rsPoll(P), canOwn = P.party === mine && !P.plan && own < 3, canMed = P.party === theirs && !P.plan && med < 1;
+    const poll = rsPoll(P), canOwn = !IND() && P.party === mine && !P.plan && own < 3, canMed = (IND() ? true : P.party === theirs) && !P.plan && med < (IND() ? 2 : 1);
     const cands = P.field.slice().sort((a, b) => poll[b.name] - poll[a.name]).map(c => {
       const ci = P.field.indexOf(c);
       const btn = canOwn ? `<button class="btn" data-choice="end:${L.prims.indexOf(P)}:${ci}">Endorse</button>` : canMed ? `<button class="btn" data-choice="end:${L.prims.indexOf(P)}:${ci}" ${cap < 2 ? 'disabled' : ''}>Back quietly<small>2 cap</small></button>` : '';
@@ -379,10 +381,10 @@ function rsBoard(L) {
   }).join('');
   const unopp = L.prims.filter(P => P.party === L.view && P.field.length === 1);
   showModal(`<div class="kicker">${E.year} · Senate primaries · Endorsements</div><h2>Primary Season</h2>
-    <p>${E.races.length} Senate seats are up in ${E.year}, and every one of them needs a Democratic and a Republican nominee. ${contested(mine).length} ${PARTY[mine].name} and ${contested(theirs).length} ${PARTY[theirs].name} primaries are contested; ${chal.length ? `<b>${chal.length} senator${chal.length > 1 ? 's face' : ' faces'} a real challenge</b> (${chal.map(P => `${lastName(P.rc.m)}, ${P.party}-${P.code}`).join('; ')})` : 'no senator faces a serious challenge'}. Voting runs from March to September.</p>
-    <p class="prim-note"><b>Endorse up to three</b> candidates in your party's primaries: each endorsement hands you their campaign plan (three days on the trail and their ad money). Winners owe you (+2 relationship); every endorsed loser costs 1 capital, and an incumbent you endorse against will hold a grudge if they survive. You may also <b>quietly back one</b> candidate in the ${PARTY[theirs].name} primaries for 2 capital: a weak nominee is easier to beat in November, but one time in four your fingerprints show.</p>
-    <div class="rankbar rs-status">Endorsements <b>${own}/3</b> · Quiet money <b>${med}/1</b> · Capital <b style="color:var(--gold2)">${cap}</b></div>
-    <div class="ptabs">${[mine, theirs].map(p => `<button class="btn ${L.view === p ? 'on' : ''}" data-rsview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].name} primaries (${contested(p).length})${p === mine ? ' · your party' : ''}</button>`).join('')}</div>
+    <p>${E.races.length} Senate seats are up in ${E.year}, and every one of them needs a Democratic and a Republican nominee. ${IND() ? `${contested('D').length} ${PARTY.D.name} and ${contested('R').length} ${PARTY.R.name}` : `${contested(mine).length} ${PARTY[mine].name} and ${contested(theirs).length} ${PARTY[theirs].name}`} primaries are contested; ${chal.length ? `<b>${chal.length} senator${chal.length > 1 ? 's face' : ' faces'} a real challenge</b> (${chal.map(P => `${lastName(P.rc.m)}, ${P.party}-${P.code}`).join('; ')})` : 'no senator faces a serious challenge'}. Voting runs from March to September.</p>
+    ${IND() ? '<p class="prim-note"><b>Your caucus has no primaries.</b> Quiet money (up to two, 2 capital each) can hand a party a flank nominee and open the center lane for an independent. One time in four your fingerprints show.</p>' : `<p class="prim-note"><b>Endorse up to three</b> candidates in your party's primaries: each endorsement hands you their campaign plan (three days on the trail and their ad money). Winners owe you (+2 relationship); every endorsed loser costs 1 capital, and an incumbent you endorse against will hold a grudge if they survive. You may also <b>quietly back one</b> candidate in the ${PARTY[theirs].name} primaries for 2 capital: a weak nominee is easier to beat in November, but one time in four your fingerprints show.</p>`}
+    <div class="rankbar rs-status">${IND() ? `Quiet money <b>${med}/2</b>` : `Endorsements <b>${own}/3</b> · Quiet money <b>${med}/1</b>`} · Capital <b style="color:var(--gold2)">${cap}</b></div>
+    <div class="ptabs">${(IND() ? ['D', 'R'] : [mine, theirs]).map(p => `<button class="btn ${L.view === p ? 'on' : ''}" data-rsview="${p}" style="border-color:${PARTY[p].color}">${PARTY[p].name} primaries (${contested(p).length})${p === mine ? ' · your party' : ''}</button>`).join('')}</div>
     <div class="rs-cards">${cards || '<p style="color:var(--dim)">No contested primaries on this side.</p>'}</div>
     ${unopp.length ? `<p class="nsub"><b>Unopposed:</b> ${unopp.map(P => `${P.field[0].name} (${P.code})`).join(', ')}.</p>` : ''}
     <div class="choices"><button class="btn primary big adv" id="rsgo">Hold the ${L.nights[0] ? L.nights[0].label : ''} primaries ▶</button><button class="btn ghost adv" id="rsskip">Skip to the results</button></div>`);
@@ -397,7 +399,7 @@ function rsBoard(L) {
 function rsEndorse(L, pi, ci) {
   const P = L.prims[pi], c = P && P.field[ci]; if (!c || P.plan) return;
   const meddle = P.party !== S.side;
-  if (meddle ? rsMeddles(L).length >= 1 || S.career.capital < 2 : rsOwnPlans(L).length >= 3) return;
+  if (meddle ? rsMeddles(L).length >= (IND() ? 2 : 1) || S.career.capital < 2 : rsOwnPlans(L).length >= 3) return;
   if (meddle) S.career.capital -= 2;
   P.plan = { cand: c.name, days: 3, rally: 0, ads: 0, budget: c.cash, favor: 0, favorBy: null, attack: null, meddle };
   if (!meddle) {
@@ -469,12 +471,12 @@ function rsSummary(L) {
     `${L.prims.filter(P => P.field.length > 1).length} contested Senate primaries from March to September. ${chal.length ? `${chal.length} senator${chal.length > 1 ? 's' : ''} faced a real challenge and ${lost.length} lost.` : 'No senator faced a serious challenge.'} ${runs.length ? `${runs.length} race${runs.length > 1 ? 's' : ''} went to a runoff.` : ''}`,
     ...lost.map(P => `${stName(P.code)}: ${P.winner.name} (${P.winner.faction}) beat Sen. ${P.field.find(c => c.inc).name}: ${rsIncLine(P.rec)}.`),
     ups.length ? `Upsets: ${ups.slice(0, 4).map(P => `${P.winner.name} (${P.party}-${P.code})`).join(', ')}.` : '',
-    plans.length ? `The whip's endorsements went ${wins} for ${plans.length}.` : 'The whip stayed out of the primaries.',
+    plans.length ? `The whip's endorsements went ${wins} for ${plans.length}.` : IND() ? 'The independents had no primaries of their own; their candidates go straight to the November ballot.' : 'The whip stayed out of the primaries.',
   ].filter(Boolean);
   const draw = () => {
     showModal(`${frontPage({ headline: head, sub: `${E.year} Senate primaries: ${L.prims.length} primaries in ${E.races.length} races, both parties.`, body, mood: lost.length ? 'storm' : 'dawn', date: `September ${E.year} · Primary season` })}
       <div class="kicker">${E.year} · Senate primaries · The season in review</div>
-      ${L.lines.length ? `<div class="primnews"><b>Your endorsements</b>${L.lines.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
+      ${L.lines.length ? `<div class="primnews"><b>${IND() ? 'Your quiet money' : 'Your endorsements'}</b>${L.lines.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
       <div class="campmap">${rsMapHTML(L)}</div>
       ${rsResultsHTML(L, L.prims, `🗳️ All ${L.prims.length} primaries`)}
       <div class="choices"><button class="btn primary big adv" id="rsdone">On to the general election ▶</button></div>`);
@@ -500,7 +502,7 @@ function raceCampaignAdj(rc) {
 }
 // a race soaks up only so much: past a few points each extra point of work counts for less (+6 of work is worth about +4)
 function rsEff(a) { return a > 0 ? 4.5 * Math.tanh(a / 4.5) : a; }
-function raceDetailBtn(rc, i) { return S.election && rc && rc.m ? ` <button class="btn rs-rbtn" data-rroom="${i}" title="Open the race room">🔍 Race</button>` : ''; }
+function raceDetailBtn(rc, i) { if (IND()) return ''; return S.election && rc && rc.m ? ` <button class="btn rs-rbtn" data-rroom="${i}" title="Open the race room">🔍 Race</button>` : ''; }
 function bindRaceDetails(card, draw) {
   card.querySelectorAll('[data-rroom]').forEach(b => b.onclick = e => {
     e.stopPropagation(); const rc = S.election && S.election.races[+b.dataset.rroom]; if (!rc) return;
