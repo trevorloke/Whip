@@ -9,7 +9,14 @@
 
 const GOV_PRES_YEAR = ['DE', 'IN', 'MO', 'MT', 'NC', 'ND', 'UT', 'WA', 'WV'];
 const GOV_EVERY_TWO = ['NH', 'VT'];
-function govUp(code, year) { return GOV_EVERY_TWO.includes(code) || (year % 4 === 0 ? GOV_PRES_YEAR.includes(code) : !GOV_PRES_YEAR.includes(code)); }
+// the off-year states (year % 4): Virginia and New Jersey the year after a presidential election, Kentucky, Louisiana and Mississippi the year before
+const GOV_ODD = { VA: 1, NJ: 1, KY: 3, LA: 3, MS: 3 };
+const GOV_ONE_TERM = ['VA']; // Virginia's governors cannot serve back-to-back terms
+function govUp(code, year) {
+  if (code in GOV_ODD) return year % 4 === GOV_ODD[code];
+  if (year % 2) return false;
+  return GOV_EVERY_TWO.includes(code) || (year % 4 === 0 ? GOV_PRES_YEAR.includes(code) : !GOV_PRES_YEAR.includes(code));
+}
 const CABINET_POSTS = [
   ['state', 'Secretary of State', '🌐'], ['treasury', 'Secretary of the Treasury', '💵'], ['defense', 'Secretary of Defense', '🛡️'],
   ['ag', 'Attorney General', '⚖️'], ['dhs', 'Secretary of Homeland Security', '🛂'], ['hhs', 'Secretary of Health and Human Services', '🏥'],
@@ -29,8 +36,8 @@ function buildWorld() {
   for (const [code, , lean] of STATES) {
     const party = Math.random() < 1 / (1 + Math.exp(-lean / 6)) ? 'R' : 'D';
     const g = newPerson(party, code, { age: ri(44, 70) });
-    g.faction = pick(FACTIONS[party])[0]; g.terms = ri(1, 2);
-    const since = 2026 - (g.terms - 1) * 4 - (GOV_PRES_YEAR.includes(code) ? 2 : 0);
+    g.faction = pick(FACTIONS[party])[0]; g.terms = GOV_ONE_TERM.includes(code) ? 1 : ri(1, 2);
+    const last = code in GOV_ODD ? (GOV_ODD[code] === 1 ? 2025 : 2023) : 2026 - (GOV_PRES_YEAR.includes(code) ? 2 : 0), since = last - (g.terms - 1) * 4;
     governorBackstory(g, since);
     S.governors[code] = g;
   }
@@ -53,6 +60,7 @@ function buildWorld() {
   for (const [post, title] of CABINET_POSTS) { const c = cabinetPick(P.party, false); hist(c, `Confirmed as ${title}, ${ri(51, 68)}–${ri(30, 48)}`, 2025); S.cabinet[post] = c; }
   S.pulse = []; S.salience = { economy: 3, welfare: 2, security: 2, taxes: 1, environment: 1, urban: 1, rural: 1, tech: 1 };
   S.war = null; S.eos = []; S.docket = null; S.nominees = null;
+  if (typeof localEnsure === 'function') localEnsure(); // mayors and state legislatures (local.js)
 }
 
 /* ---------------- people helpers ---------------- */
@@ -257,6 +265,7 @@ function openPulse(back) {
     P.approval >= 52 ? `${presTitle().toUpperCase()} RIDING HIGH AT ${P.approval}%` : P.approval <= 42 ? `${presTitle().toUpperCase()} SINKS TO ${P.approval}% — LOWEST YET` : `${presTitle().toUpperCase()} STUCK AT ${P.approval}%`,
     S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : (gbm => gbm ? `GENERIC BALLOT: ${PARTY[S.side].short.toUpperCase()} ${gbm > 0 ? 'LEAD' : 'TRAIL'} BY ${Math.abs(gbm)} POINT${Math.abs(gbm) === 1 ? '' : 'S'}` : 'GENERIC BALLOT: DEAD EVEN')(+gb.toFixed(0) - +(100 - gb).toFixed(0)),
     `TOP ISSUE: ${TAG[sal[0][0]][1].toUpperCase()} — ${rt}% SAY COUNTRY ON RIGHT TRACK`,
+    typeof localPulseChyron === 'function' ? localPulseChyron() : '',
     S.shutdown ? 'SHUTDOWN DRAGS ON — FEDERAL WORKERS MISS PAYCHECKS' : S.mood >= 3 ? `${PARTY[S.side].short.toUpperCase()} MOMENTUM BUILDS AHEAD OF ${electionYear(nextElectionK())}` : S.mood <= -3 ? `${PARTY[S.side].short.toUpperCase()} IN TROUBLE: VOTERS SOUR` : 'VOTERS SPLIT AS WASHINGTON GRIDLOCK GRINDS ON',
   ].filter(Boolean);
   const voices = shuffle(STATES.map(s => s[0])).slice(0, 3).map(code => {
@@ -455,29 +464,54 @@ function crisisModal(done) {
 function startWar(place, support) { S.war = { place, months: 0, support, party: S.president.party }; S.salience.security = (S.salience.security || 1) + 4; }
 
 /* ---------------- governor elections ---------------- */
-function runGovernors(year) {
+function govOpen(code, g) { return GOV_ONE_TERM.includes(code) || ((g.terms || 1) >= 2 && !GOV_EVERY_TWO.includes(code)); }
+// the field: the incumbent (unless the seat is open) against a challenger; now and then a mayor or a statehouse leader runs (local.js)
+function govField(code, year) {
+  const g = S.governors[code], A = g.party, open = govOpen(code, g), loc = p => typeof localGovCandidate === 'function' ? localGovCandidate(p, code, year) : null;
+  const la = open ? loc(A) : null, lb = loc(other(A)), a = open ? la || govNewCand(A, code, year) : null, b = lb || govNewCand(other(A), code, year);
+  return { code, A, open, cA: open ? a.p : g, offA: open ? a.office : 'Governor', cB: b.p, offB: b.office, starA: !!la, starB: !!lb };
+}
+// a fresh nominee with a statewide-sized résumé
+function govNewCand(party, code, year) {
+  const p = newPerson(party, code, { age: ri(42, 66) }), st = ST[code].name;
+  p.faction = pick(FACTIONS[party] || FACTIONS.D)[0];
+  const [office, line] = pick([[`Lieutenant Governor`, `Elected ${st} Lieutenant Governor`], [`${st} Attorney General`, `Elected ${st} Attorney General`], [`Secretary of State`, `Elected ${st} Secretary of State`], [`state treasurer`, `Elected ${st} State Treasurer`], [`state senator`, `Elected to the ${st} State Senate`], [`Rep. (${districtOf(code)})`, `Elected to the U.S. House`], ['businessman', `Built a regional business empire`], [`former mayor of ${p.hometown}`, `Elected mayor of ${p.hometown}`]]);
+  hist(p, `Worked as ${p.background}`, year - ri(14, 26)); hist(p, line, year - ri(3, 10));
+  return { p, office: office === 'businessman' && p.gender === 'f' ? 'businesswoman' : office };
+}
+// the holder party's margin before the night's noise: lean, the national mood, the wave, the President's drag off-cycle, incumbency, money
+function govMargin(f, year) {
+  const A = f.A, code = f.code, sg = A === S.side ? 1 : -1, P = S.president, inPres = P.party === A ? 1 : P.party === other(A) ? -1 : 0;
+  const adv = (A === 'R' ? ST[code].lean : -ST[code].lean) * 0.35;
+  let pm = sg * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8) - (inPres > 0 && year % 4 ? 2 : 0);
+  if (year % 2) pm += inPres * ((P.approval - 50) * 0.12 - 1.5); // the off-year: a referendum on the President
+  const star = (f.starA ? 1.5 : 0) - (f.starB ? 1.5 : 0); // a big-city mayor or a Speaker brings a following
+  return adv + pm + (f.open ? 0 : 5) + star + sg * cashEff((S.election && S.election.govCash) || 0, 1.2);
+}
+let govLastRun = null; // the latest even-year governors' races, for local.js's results log (not saved)
+function runGovernors(year) { const races = runGovernorsIn(Object.keys(S.governors).filter(c => govUp(c, year)), year); govLastRun = { year, races }; return races; }
+// opts.fields: pre-drawn fields by state; opts.help: your-side points by state
+function runGovernorsIn(codes, year, opts = {}) {
   const races = [];
-  for (const code of Object.keys(S.governors)) {
-    if (!govUp(code, year)) continue;
-    const g = S.governors[code], open = (g.terms || 1) >= 2 && !GOV_EVERY_TWO.includes(code);
-    const A = g.party, adv = (A === 'R' ? ST[code].lean : -ST[code].lean) * 0.35;
-    const pm = (A === S.side ? 1 : -1) * (S.mood * 0.5 + ((S.election && S.election.wave) || 0) * 0.8) - (S.president.party === A && year % 4 ? 2 : 0);
-    const gc = (S.election && S.election.govCash) || 0;
-    const mg = adv + pm + (open ? 0 : 5) + (A === S.side ? 1 : -1) * cashEff(gc, 1.2) + gauss() * 8;
-    const np = mg >= 0 ? A : other(A);
-    const wPct = clamp(49.25 + Math.abs(mg) / 2, 49.5, 75), lPct = 98.5 - wPct, tv = turnout(code);
+  for (const code of codes) {
+    const g = S.governors[code]; if (!g) continue;
+    const f = (opts.fields && opts.fields[code]) || govField(code, year), A = f.A, open = f.open;
+    const mg = govMargin(f, year) + (A === S.side ? 1 : -1) * ((opts.help && opts.help[code]) || 0) + gauss() * 8;
+    const np = mg >= 0 ? A : other(A), wc = np === A ? f.cA : f.cB, lc = np === A ? f.cB : f.cA;
+    const wPct = clamp(49.25 + Math.abs(mg) / 2, 49.5, 75), lPct = 98.5 - wPct, tv = turnout(code), sc = `${wPct.toFixed(0)}–${lPct.toFixed(0)}`;
     let winner;
-    if (np === A && !open) { winner = g; g.terms = (g.terms || 1) + 1; hist(g, `Re-elected Governor, ${wPct.toFixed(0)}–${lPct.toFixed(0)}`, year); }
+    if (np === A && !open) { winner = g; g.terms = (g.terms || 1) + 1; hist(g, `Re-elected Governor, ${sc}`, year); }
     else {
-      if (!open) { hist(g, `Lost re-election as Governor`, year); } else hist(g, 'Left office (term-limited)', year);
+      if (!open) { hist(g, `Lost re-election as Governor`, year); } else hist(g, GOV_ONE_TERM.includes(code) ? 'Left office (Virginia allows one term at a time)' : 'Left office (term-limited)', year);
       S.formers.push(g);
-      winner = newPerson(np, code, { age: ri(42, 66) }); winner.faction = pick(FACTIONS[np])[0]; winner.terms = 1; governorBackstory(winner, year);
-      winner.history[winner.history.length - 1].t = `Elected Governor, ${wPct.toFixed(0)}–${lPct.toFixed(0)}`;
+      winner = wc || govNewCand(np, code, year).p; winner.terms = 1; hist(winner, `Elected Governor of ${ST[code].name}, ${sc}`, year);
+      if (typeof localLeave === 'function') localLeave(winner, `was elected Governor of ${ST[code].name}`);
       S.governors[code] = winner;
     }
-    const loser = np === A || open ? fullName() : g.name;
-    races.push({ code, wName: winner.name, wParty: np, lName: loser, lParty: other(np), wPct, lPct, wVotes: tv * wPct / 100, lVotes: tv * lPct / 100, margin: wPct - lPct, flip: np !== A, open, incumbent: open ? null : g.name, call: callTime(code, wPct - lPct),
-      cands: [{ name: winner.name, party: np, pct: wPct, votes: tv * wPct / 100, inc: winner === g }, { name: loser, party: other(np), pct: lPct, votes: tv * lPct / 100, inc: np !== A && !open }] });
+    if (lc && lc !== g) hist(lc, `Lost the race for Governor of ${ST[code].name}, ${lPct.toFixed(0)}–${wPct.toFixed(0)}`, year);
+    const loser = lc ? lc.name : fullName(), wOff = np === A ? f.offA : f.offB, lOff = np === A ? f.offB : f.offA;
+    races.push({ code, wName: winner.name, wParty: np, lName: loser, lParty: other(np), wOff: wOff || null, lOff: lOff || null, wPct, lPct, wVotes: tv * wPct / 100, lVotes: tv * lPct / 100, margin: wPct - lPct, flip: np !== A, open, incumbent: open ? null : g.name, call: callTime(code, wPct - lPct),
+      cands: [{ name: winner.name, party: np, pct: wPct, votes: tv * wPct / 100, inc: winner === g, office: wOff || null }, { name: loser, party: other(np), pct: lPct, votes: tv * lPct / 100, inc: np !== A && !open, office: lOff || null }] });
   }
   return races;
 }
