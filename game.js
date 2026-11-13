@@ -295,18 +295,18 @@ function baseSupport(m) {
   const B = S.bill;
   let s = 0;
   for (const t of TAGS) s += m.w[t] * (B.fx[t] || 0) * 6;
-  const loyal = T(m, 'loyal') ? 1.7 : 1;
-  const sd = side(m);
-  if (sd === 'you') s += 16 * loyal;
-  if (sd === 'opp') s -= 16 * loyal;
+  const loyal = T(m, 'loyal') ? 1.7 : 1, spon = sponsor();
+  // the bill's own party lines up behind it, the other party against it
+  if (m.party === spon) s += 16 * loyal;
+  else if (m.party === other(spon)) s -= 16 * loyal;
   s += m.rel * 6;
   if (m.grudge) s -= 15;
   s += (B.opinion - 50) * (T(m, 'swing') ? 0.6 : 0.15);
   if (isUp(m)) s += clamp(stateFit(m.state, B.fx) * 2.5, -18, 18);
   // a popular President keeps their own party in line
-  if (m.party === S.president.party) { const ap = (S.president.approval - 50) * 0.2 * (m.faction === S.president.faction ? 2 : 1); s += S.president.party === S.side ? ap : -ap; }
-  if (has('beloved')) s += 4;
-  if (has('constit') && isUp(m)) s += 6;
+  if (m.party === S.president.party) { const ap = (S.president.approval - 50) * 0.2 * (m.faction === S.president.faction ? 2 : 1); s += S.president.party === spon ? ap : -ap; }
+  if (has('beloved')) s += 4 * aimSign();
+  if (has('constit') && isUp(m)) s += 6 * aimSign();
   return s + m.b.mood;
 }
 function rawSupport(m) { return baseSupport(m) + m.b.bonus; }
@@ -318,63 +318,70 @@ function leaderStance(L) { return clamp(rawSupport(L), -40, 40); }
 function leaderPull(m) {
   const L = leaderOf(m);
   if (!L || L.b.absent || L.b.start == null) return 0;
-  return pullK() * (leaderStance(L) - L.b.start) + (isLockedYes(L) ? 2 : 0);
+  return pullK() * (leaderStance(L) - L.b.start) + (isLockedYes(L) ? 2 * aimSign() : 0);
 }
 function support(m) { return clamp(rawSupport(m) + leaderPull(m), -100, 100); }
 function factionOf(L) { return S.members.filter(x => x !== L && x.party === L.party && x.faction === L.faction); }
+// locked in your caucus's position: a committed yea when you're passing it, a committed nay when you're killing it
 function isLockedYes(m) { return m.b.pledged || m.b.blackmailed; }
+
+/* ---------------- the aim: your caucus wants it passed, or killed ---------------- */
+function aimSign() { return S && S.bill && S.bill.aim === 'kill' ? -1 : 1; }
+function killing() { return aimSign() < 0; }
+// whose bill it is: the party that wants it to become law
+function sponsor() { return killing() ? other(S.side) : S.side; }
+// the party whose agenda a bill belongs to (null for bipartisan deals, budgets, war votes, nominations)
+function billParty(name) { for (const p of ['D', 'R']) if (AGENDA[p].some(b => b[0] === name) || LANDMARKS[p].some(l => l[0] === name)) return p; return null; }
+// the Vice President breaks ties for the bill when the White House is the bill's own party
+function vpBacks() { return killing() ? !vpYours() : vpYours(); }
+// yeas the bill needs to pass (if all 100 vote): supermajorities, cloture, or a simple majority
+function needNum() { const B = S.bill; return B.super || B.cloture || (vpBacks() ? 50 : 51); }
 function needText() {
-  const B = S.bill;
-  if (B.super) return `${B.super} votes`;
+  const B = S.bill, k = B.super || B.cloture;
+  if (killing()) return k ? `${101 - k} nays` : vpYours() ? '50 nays + VP' : '51 nays';
+  if (k) return `${k} votes`;
   return vpYours() ? '50 + VP' : '51 votes';
 }
-function needNum() { const B = S.bill; return B.super || (vpYours() ? 50 : 51); }
-
-function startBill() {
-  const c = S.career;
-  S.election = null; // the election is over once the next bill starts; presSetup() must not read last cycle's wave at the next conventions
-  const n = c.bills + 1;
-  let landmark = n % 5 === 0;
-  let tpl, sup = 0, nomination = false, budget = false, aumf = null, wpr = false;
-  if (n % 3 === 0) {
-    budget = true; landmark = false;
-    tpl = [`FY${billYear(n) + 1} Budget`, 'The yearly budget, passed through reconciliation: no filibuster, a simple majority. You set its priorities. If it fails anywhere, the government shuts down.', { economy: 1, security: 1, welfare: 1, taxes: -1 }];
-  } else if (S.pendingAUMF || S.docket) {
-    const d = docketTemplate(n); tpl = d.tpl; landmark = false;
-    if (d.aumf) { aumf = d.aumf; }
-    if (d.wpr) wpr = true;
-  } else if (S.nominee && S.president.party === S.side && S.court.length < 9) {
-    nomination = true; landmark = false;
-    const pr = PARTY[S.side].prior, fx = {};
-    const mod = 1 / (1 + (S.nominee.tries || 0));
-    TAGS.slice().sort((a, b) => Math.abs(pr[b] || 0) - Math.abs(pr[a] || 0)).slice(0, 3).forEach(t => fx[t] = Math.round((pr[t] || 0) * 2 * mod) || Math.sign(pr[t] || 0));
-    tpl = [`Confirmation of Judge ${S.nominee.name}`, `${presTitle()}'s nominee for the Supreme Court. No filibuster: a simple majority confirms. The other side calls the nominee an extremist.`, fx];
-  } else if (landmark && !S.docket) { const l = pick(LANDMARKS[S.side].concat(LANDMARKS.both)); tpl = [l[0], l[1], l[3]]; sup = l[2]; }
-  else {
-    // divided government pushes the agenda toward deals
-    const divided = S.president.party !== S.side || houseMaj() !== S.side;
-    const src = divided && Math.random() < 0.55 ? AGENDA.both : AGENDA[S.side].concat(AGENDA.both);
-    tpl = pick(src.filter(b => !(S.bill && b[0] === S.bill.name)));
-  }
-  const amends = shuffle(AMENDMENTS.slice()).slice(0, has('parl') ? 6 : 4).map(a => ({ name: a[0], fx: a[1], used: false }));
-  S.bill = {
-    n, name: tpl[0], blurb: tpl[1], fx: { ...tpl[2] }, landmark, super: sup, amends: nomination ? [] : amends, applied: [], nomination, budget, aumf, wpr, houseWork: 0, hw: {}, softened: false, presCalls: 0, override: false, handsDay: 0, plan: null,
-    day: 1, days: 5 + (has('scheduler') ? 1 : 0) + (S.prep.days || 0), delayed: false, ap: 0, apMax: 6 + (has('chief') ? 1 : 0) + (has('workhorse') ? 1 : 0),
-    pork: (S.shutdown > 0 ? 0 : 60) + (has('treasurer') ? 30 : 0) + (has('lobbyist') ? 20 : 0) + (S.approps > 0 ? 20 : 0) + (S.prep.pork || 0), scrutiny: 0, opinion: clamp(ri(38, 62) + (has('spin') ? 8 : 0) + (S.president.party === S.side ? Math.round((S.president.approval - 50) / 4) : 0), 0, 100),
-    freeSound: false, goal: null, events: [],
-  };
-  for (const m of S.members) m.b = { bonus: 0, mood: rnd(-12, 12), intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: null, last: 0 };
-  for (const m of S.members) if (T(m, 'leader')) { m.b.intel = true; m.knownTraits = true; }
-  // self-calibrate: every bill starts a few votes short
-  const need = needNum();
-  let short = sup === 67 ? ri(6, 8) : landmark ? ri(4, 6) : clamp(3 + Math.floor(n / 6), 3, 6) + ri(0, 1);
-  if (!isMajority()) short += 1;
-  if (nomination) short = Math.max(1, short - (S.nominee.tries || 0));
-  const target = need - short;
+function passes(y, n) { const B = S.bill, k = B.super || B.cloture; return k ? y >= k : y > n || (y === n && vpBacks()); }
+// every bill starts a few votes short: shift everyone so the bill sits `short` votes from your caucus's goal
+function calibrate(short) {
+  for (const m of S.members) m.b.start = null;
+  const need = needNum(), target = clamp(killing() ? need - 1 + short : need - short, 1, 98);
   const ss = S.members.map(support).sort((a, b) => b - a);
   const off = -((ss[target - 1] + ss[target]) / 2);
   for (const m of S.members) m.b.mood += off;
   for (const m of S.members) if (T(m, 'leader')) m.b.start = leaderStance(m);
+}
+
+function startBill() {
+  const c = S.career;
+  S.election = null; // the election is over once the next bill starts; presSetup() must not read last cycle's wave at the next conventions
+  const n = c.bills + 1, maj = isMajority();
+  // the budget comes every Fall; everything else comes off the floor schedule (floor.js): forced votes first, then whoever controls the floor
+  const it = n % 3 === 0
+    ? { tpl: [`FY${billYear(n) + 1} Budget`, maj ? 'The yearly budget, passed through reconciliation: no filibuster, a simple majority. You set its priorities. If it fails anywhere, the government shuts down.' : `The ${PARTY[other(S.side)].name} majority's yearly budget, passed through reconciliation: no filibuster, a simple majority. They set its priorities. If it fails anywhere, the government shuts down.`, { economy: 1, security: 1, welfare: 1, taxes: -1 }], budget: true, aim: maj ? 'pass' : 'kill', by: maj ? 'you' : 'them' }
+    : docketTemplate(n);
+  const tpl = it.tpl, sup = it.sup || 0, landmark = !!it.lm, nomination = !!it.nomination, budget = !!it.budget;
+  const cloture = !sup && !budget && !nomination && !it.aumf && !it.wpr && !S.nuclear && billParty(tpl[0]) ? 60 : 0;
+  const as = it.aim === 'kill' ? -1 : 1, spon = as > 0 ? S.side : other(S.side);
+  const amends = shuffle(AMENDMENTS.slice()).slice(0, has('parl') ? 6 : 4).map(a => ({ name: a[0], fx: a[1], used: false }));
+  if (it.ride && TAG[it.ride]) amends.unshift({ name: `Your ${TAG[it.ride][1]} rider`, fx: { [it.ride]: 2 }, used: false, mine: true });
+  S.bill = {
+    n, name: tpl[0], blurb: tpl[1], fx: { ...tpl[2] }, landmark, super: sup, cloture, aim: it.aim || 'pass', by: it.by || 'you', note: it.note || '', amends: nomination ? [] : amends, applied: [], nomination, budget, aumf: it.aumf || null, wpr: !!it.wpr, houseWork: 0, hw: {}, softened: false, presCalls: 0, override: false, handsDay: 0, plan: null,
+    day: 1, days: 5 + (has('scheduler') ? 1 : 0) + (S.prep.days || 0) + (S.prep.fast || 0), delayed: false, ap: 0, apMax: 6 + (has('chief') ? 1 : 0) + (has('workhorse') ? 1 : 0),
+    pork: (S.shutdown > 0 ? 0 : 60) + (has('treasurer') ? 30 : 0) + (has('lobbyist') ? 20 : 0) + (S.approps > 0 ? 20 : 0) + (S.prep.pork || 0), scrutiny: 0, opinion: clamp(ri(38, 62) + (has('spin') ? 8 * as : 0) + (S.president.party === spon ? Math.round((S.president.approval - 50) / 4) : 0), 0, 100),
+    freeSound: false, goal: null, events: [],
+  };
+  const B = S.bill;
+  for (const m of S.members) m.b = { bonus: 0, mood: rnd(-12, 12), intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: null, last: 0 };
+  for (const m of S.members) if (T(m, 'leader')) { m.b.intel = true; m.knownTraits = true; }
+  // self-calibrate: every bill starts a few votes short of your caucus's goal (for a kill, it would pass by a few if nothing happens)
+  let short = sup === 67 ? ri(6, 8) : landmark ? ri(4, 6) : clamp(3 + Math.floor(n / 6), 3, 6) + ri(0, 1);
+  if (killing()) { if (sup || cloture) short -= 1; } // the filibuster is the minority's friend
+  else { if (!maj) short += 1; if (cloture && maj) short += 1; } // and the majority's headache
+  if (nomination) short = killing() ? short + Math.min(2, S.nominee.tries || 0) : Math.max(1, short - (S.nominee.tries || 0));
+  B.short = Math.max(1, short);
+  calibrate(B.short);
   if (has('pollster')) for (const m of S.members) m.b.fuzzy = rnd(-14, 14);
   if (S.prep.intel) shuffle(S.members.slice()).slice(0, S.prep.intel).forEach(m => { m.b.intel = true; m.knownTraits = true; });
   const shut = S.shutdown > 0, approps = S.approps > 0;
@@ -382,8 +389,10 @@ function startBill() {
   S.prep = {};
   S.log = [];
   ui.sel = null; ui.pitchOpen = false; ui.lastQuote = '';
-  log(`${season(n)} ${billYear(n)}: the ${S.bill.name} comes to the floor. You need ${needText()}.`, 'sys');
-  if (landmark) log(`A LANDMARK bill. ${sup} votes required. Double rewards.`, 'sys');
+  const them = PARTY[other(S.side)].name;
+  log(`${season(n)} ${billYear(n)}: the ${B.name} comes to the floor${B.by === 'them' && !budget ? `, scheduled by the ${them} majority` : ''}. ${killing() ? `Your caucus wants it dead: you need ${needText()}.` : `You need ${needText()}.`}`, 'sys');
+  if (cloture) log(killing() ? `It's ${them} partisan legislation, so it needs 60 votes for cloture: hold ${101 - cloture} nays and your filibuster kills it.` : `It's partisan legislation: the ${them} will filibuster, so you need 60 for cloture.`, 'sys');
+  if (landmark) log(`A LANDMARK bill. ${sup} votes required. ${killing() ? 'Kill it and the whole town notices.' : 'Double rewards.'}`, 'sys');
   if (shut) log('🚨 The government is shut down. No money for earmarks.', 'bad');
   if (approps) log('The budget passed, so appropriations are flowing: +$20M earmarks.', 'good');
   log(`${S.members.filter(isUp).length} senators are up for re-election in ${electionYear(nextElectionK())} and are watching how this plays back home.`, 'sys');
@@ -391,26 +400,45 @@ function startBill() {
   startDay(true);
 }
 
-// the yearly budget: pick what to fund and what to cut, with a live whip count
+// the yearly budget: in the majority you pick what to fund and what to cut, with a live whip count;
+// in the minority the majority writes it, and you kill it or sell your votes for one of your priorities
 function openBudget() {
-  const B = S.bill, base = { ...B.fx };
-  let fund = [], cut = null;
-  const apply = () => { B.fx = { ...base }; for (const t of fund) B.fx[t] = (B.fx[t] || 0) + 2; if (cut) B.fx[cut] = (B.fx[cut] || 0) - 2; };
+  const B = S.bill, base = { ...B.fx }, maj = isMajority(), c = S.career;
+  const rank = p => TAGS.slice().sort((a, b) => (PARTY[p].prior[b] || 0) - (PARTY[p].prior[a] || 0));
+  let fund = [], cut = null, deal = false;
+  if (!maj) { const r = rank(other(S.side)); fund = r.slice(0, 2); cut = r[r.length - 1]; }
+  const mine = rank(S.side).find(t => !fund.includes(t)) || 'welfare';
+  const apply = () => { B.fx = { ...base }; for (const t of fund) B.fx[t] = (B.fx[t] || 0) + 2; if (cut) B.fx[cut] = (B.fx[cut] || 0) - 2; if (deal) B.fx[mine] = (B.fx[mine] || 0) + 2; };
   const draw = () => {
     apply();
-    const yes = S.members.filter(m => support(m) >= 8).length, mid = S.members.filter(m => Math.abs(support(m)) < 8).length;
-    showModal(`<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget</div><h2>Write the ${B.name}</h2>
+    const yes = S.members.filter(m => support(m) >= 8).length, mid = S.members.filter(m => Math.abs(support(m)) < 8).length, no = S.members.filter(m => support(m) <= -8).length;
+    const them = PARTY[other(S.side)];
+    const grid = `<div class="budget">${TAGS.map(t => `<div class="brow"><span>${TAG[t][0]} ${TAG[t][1]}</span><span><button class="btn ${fund.includes(t) ? 'on' : ''}" data-fund="${t}" ${maj ? '' : 'disabled'}>Fund</button> <button class="btn ${cut === t ? 'on' : ''}" data-cut="${t}" ${maj ? '' : 'disabled'}>Cut</button></span></div>`).join('')}</div>`;
+    showModal(maj ? `<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget</div><h2>Write the ${B.name}</h2>
       <p>Pick <b>two priorities to fund</b> and <b>one thing to cut</b>. Every choice changes who will vote for it. The Budget Committee's rough count updates as you go.</p>
-      <div class="budget">${TAGS.map(t => `<div class="brow"><span>${TAG[t][0]} ${TAG[t][1]}</span><span><button class="btn ${fund.includes(t) ? 'on' : ''}" data-fund="${t}">Fund</button> <button class="btn ${cut === t ? 'on' : ''}" data-cut="${t}">Cut</button></span></div>`).join('')}</div>
-      <div class="fx" style="margin:10px 0">${fxChips(B.fx)}</div>
+      ${grid}<div class="fx" style="margin:10px 0">${fxChips(B.fx)}</div>
       <p>Committee count: <b style="color:var(--yes)">${yes} likely yeas</b> · <b style="color:var(--mid)">${mid} on the fence</b> · you need <b>${needText()}</b><br>
       House odds <b>${Math.round(houseOdds() * 100)}%</b> · ${vetoOdds() ? `veto risk <b>${Math.round(vetoOdds() * 100)}%</b>` : `${presTitle()} will sign`}</p>
-      <div class="choices"><button class="btn primary big" id="bgo" ${fund.length === 2 && cut ? '' : 'disabled'}>Send the budget to the floor</button></div>`);
-    $('#modal-card').querySelectorAll('[data-fund]').forEach(b => b.onclick = () => { const t = b.dataset.fund; if (fund.includes(t)) fund = fund.filter(x => x !== t); else { if (cut === t) cut = null; fund = fund.concat(t).slice(-2); } sfx.click(); draw(); });
-    $('#modal-card').querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { const t = b.dataset.cut; cut = cut === t ? null : t; fund = fund.filter(x => x !== t); sfx.click(); draw(); });
+      <div class="choices"><button class="btn primary big" id="bgo" ${fund.length === 2 && cut ? '' : 'disabled'}>Send the budget to the floor</button></div>`
+      : `<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget · written by the ${them.name} majority</div><h2>Their ${B.name}</h2>
+      <p>The ${them.short} wrote it without you: <b>more for ${fund.map(t => TAG[t][1]).join(' and ')}, less for ${TAG[cut][1]}</b>. Reconciliation means no filibuster, so it takes a simple majority either way.</p>
+      ${grid}<div class="fx" style="margin:10px 0">${fxChips(B.fx)}</div>
+      <div class="fl-stance">${aimBadge(deal ? 'pass' : 'kill')}<div class="choices">
+        <button class="btn ${deal ? '' : 'on'}" data-baim="kill">Kill it<small>Hold ${vpYours() ? '50 nays and the VP' : '51 nays'}. The government shuts down, and the majority owns the shutdown.</small></button>
+        <button class="btn ${deal ? 'on' : ''}" data-baim="deal" ${!deal && c.capital < 1 ? 'disabled' : ''}>Sell your votes<small>1 capital: ${TAG[mine][0]} ${TAG[mine][1]} +2 written in, and your caucus whips it through.</small></button></div></div>
+      <p>Committee count: <b style="color:var(--yes)">${yes} likely yeas</b> · <b style="color:var(--mid)">${mid} on the fence</b> · <b style="color:var(--no)">${no} likely nays</b><br>
+      House passes it: <b>${Math.round(houseOdds() * 100)}%</b> · ${vetoOdds() ? `veto risk <b>${Math.round(vetoOdds() * 100)}%</b>` : `${presTitle()} will sign it`}</p>
+      <div class="choices"><button class="btn primary big" id="bgo">${deal ? 'Whip it through' : 'Take it to the floor and kill it'}</button></div>`);
+    $('#modal-card').querySelectorAll('[data-fund]').forEach(b => b.onclick = () => { if (!maj) return; const t = b.dataset.fund; if (fund.includes(t)) fund = fund.filter(x => x !== t); else { if (cut === t) cut = null; fund = fund.concat(t).slice(-2); } sfx.click(); draw(); });
+    $('#modal-card').querySelectorAll('[data-cut]').forEach(b => b.onclick = () => { if (!maj) return; const t = b.dataset.cut; cut = cut === t ? null : t; fund = fund.filter(x => x !== t); sfx.click(); draw(); });
+    $('#modal-card').querySelectorAll('[data-baim]').forEach(b => b.onclick = () => { deal = b.dataset.baim === 'deal' && (deal || c.capital >= 1); B.aim = deal ? 'pass' : 'kill'; sfx.click(); draw(); });
     $('#bgo').onclick = () => {
+      if ((maj && !(fund.length === 2 && cut)) || B.written) return;
+      B.written = true;
       apply(); B.applied.push(`Funds ${fund.map(t => TAG[t][1]).join(' and ')}; cuts ${TAG[cut][1]}`);
-      log(`You wrote the budget: more for ${fund.map(t => TAG[t][1]).join(' and ')}, less for ${TAG[cut][1]}.`, 'sys');
+      if (maj) log(`You wrote the budget: more for ${fund.map(t => TAG[t][1]).join(' and ')}, less for ${TAG[cut][1]}.`, 'sys');
+      else if (deal) { c.capital -= 1; B.applied.push(`${TAG[mine][1]} +2 (your price)`); B.aim = 'pass'; calibrate(B.short); log(`You sold your caucus's votes for more ${TAG[mine][1]}. Now you have to deliver them: you need ${needText()}.`, 'sys'); }
+      else { B.aim = 'kill'; calibrate(B.short); log(`Your caucus will kill the ${PARTY[other(S.side)].name} budget. You need ${needText()}. If it dies, the government shuts down.`, 'sys'); }
       hideModal(); startDay(true);
     };
   };
@@ -451,13 +479,14 @@ function startDay(first) {
 }
 
 // who the opposing whip will work tonight. Independents answer to no whip, so they're never targets.
+// They work whoever is closest to slipping out of your column: toward nay on your bills, toward yea on theirs.
 function planRival() {
   const B = S.bill;
   const moves = clamp(rivalMoves(1 + Math.floor(B.n / 5) + (B.landmark ? 1 : 0) + (S.president.party !== S.side ? 1 : 0) - (has('mole') ? 1 : 0)), 1, 7);
   const pool = S.members.filter(m => !isLockedYes(m) && !m.b.absent && m.party !== 'I');
   const picks = [];
   for (let i = 0; i < moves; i++) {
-    const cands = pool.filter(m => !picks.includes(m)).map(m => ({ m, s: support(m) })).filter(o => o.s > -12 && o.s < 40);
+    const cands = pool.filter(m => !picks.includes(m)).map(m => ({ m, s: support(m) * aimSign() })).filter(o => o.s > -12 && o.s < 40);
     if (!cands.length) break;
     let tot = 0; for (const o of cands) { o.wt = (T(o.m, 'leader') ? 1.3 : 1) / (1 + Math.abs(o.s - 6) / 6); tot += o.wt; }
     let r = Math.random() * tot, ch = cands[0];
@@ -474,8 +503,9 @@ function endDay() {
     const m = S.members[id];
     if (isLockedYes(m) || m.b.absent) { log(`${S.rival} came for ${sen(m)} but found them already committed.`, 'good'); continue; }
     const push = rnd(6, 12) * (T(m, 'loyal') && side(m) === 'you' ? 0.5 : 1) * (has('hardball') ? 0.7 : 1) * rivalPush();
-    m.b.bonus -= push; m.b.last = -push;
-    log(m.b.intel ? `${S.rival} leaned on ${sen(m)} overnight (${fmt(-push)}).` : `${S.rival} was seen leaving ${sen(m)}'s office.`, 'rival');
+    const d = -push * aimSign();
+    m.b.bonus += d; m.b.last = d;
+    log(m.b.intel ? `${S.rival} leaned on ${sen(m)} overnight (${fmt(d)}).` : `${S.rival} was seen leaving ${sen(m)}'s office.`, 'rival');
   }
   for (const m of S.members) if (T(m, 'fickle') && !isLockedYes(m)) m.b.bonus += rnd(-9, 9);
   B.scrutiny = Math.max(0, B.scrutiny - (has('ethics') ? 18 : 6));
@@ -487,12 +517,20 @@ function endDay() {
 }
 
 function randOf(f) { const a = S.members.filter(f); return a.length ? pick(a) : null; }
+// opinion moves are written as "good for you": +d helps your bill, or hurts theirs when you're killing it
+function goodOp(B, d) { B.opinion += d * aimSign(); }
+function opS(d) { return killing() ? `Opinion of the bill ${fmt(-d)}` : `Opinion ${fmt(d)}`; }
+// events that only make sense when it's your bill (the rival's poison pills, veto threats, holds and deals)
+const KILL_SKIP = ['poison', 'veto', 'hold', 'deal', 'evt_filibuster', 'evt_whcounter', 'evt_vpwhip', 'evt_pledge_due', 'evt_nominee', 'evt_indcause'];
 const EVENTS = [
   { id: 'lobby', w: 1, make: () => ({ title: 'K Street Comes Calling', text: 'A lobbyist with a very nice watch offers to "help your members with their state projects."', choices: [
     { t: 'Take the money', s: '+$40M earmark budget, +25 scrutiny', f: B => { B.pork += 40; B.scrutiny += 25; log('You took the lobby\'s help.', 'bad'); } },
-    { t: 'Show them the door', s: 'Public opinion +4', f: B => { B.opinion += 4; log('You turned the lobbyist away. A reporter noticed.', 'good'); } },
+    { t: 'Show them the door', s: () => opS(4), f: B => { goodOp(B, 4); log('You turned the lobbyist away. A reporter noticed.', 'good'); } },
   ] }) },
-  { id: 'cbo', w: 1, make: () => ({ title: 'The CBO Score Lands', text: 'The Congressional Budget Office says your bill costs twice what you claimed.', choices: [
+  { id: 'cbo', w: 1, make: () => killing() ? { title: 'The CBO Score Lands', text: `The Congressional Budget Office says the ${S.bill.name} costs twice what its sponsors claimed. Christmas came early.`, choices: [
+    { t: 'Hammer it on every show', s: `Costs 1 action today · ${opS(9)}`, f: B => { B.ap--; goodOp(B, 9); log('You read the CBO score aloud on four networks.', 'good'); } },
+    { t: 'Let it speak for itself', s: opS(4), f: B => { goodOp(B, 4); log('The CBO score did your talking for you.', 'good'); } },
+  ] } : ({ title: 'The CBO Score Lands', text: 'The Congressional Budget Office says your bill costs twice what you claimed.', choices: [
     { t: 'Spin it hard', s: 'Costs 1 action today, opinion −3', f: B => { B.ap--; B.opinion -= 3; log('You spun the CBO score. Damage contained.'); } },
     { t: 'Ignore it', s: 'Opinion −12', f: B => { B.opinion -= 12; log('The CBO score led every newscast.', 'bad'); } },
   ] }) },
@@ -512,22 +550,22 @@ const EVENTS = [
   } },
   { id: 'viral', w: 1, make: () => {
     const m = randOf(x => side(x) === 'opp');
-    return m && { title: 'Gone Viral', text: `A clip of ${sen(m)} calling your bill "a dumpster fire with a bow on it" has 9 million views.`, choices: [
-      { t: 'Clap back online', s: () => has('social') ? 'Your team never misses: opinion +10' : 'Gamble: opinion ±10', f: B => { const d = has('social') || Math.random() < .55 ? 10 : -10; B.opinion += d; log(d > 0 ? 'Your reply won the internet.' : 'Your reply got ratioed. Badly.', d > 0 ? 'good' : 'bad'); } },
-      { t: 'Rise above it', s: 'Opinion −5', f: B => { B.opinion -= 5; m.b.bonus -= 8; log('You stayed silent. The clip kept spreading.', 'bad'); } },
+    return m && { title: 'Gone Viral', text: killing() ? `A clip of ${sen(m)} calling your caucus "obstructionists who would filibuster a sandwich" has 9 million views.` : `A clip of ${sen(m)} calling your bill "a dumpster fire with a bow on it" has 9 million views.`, choices: [
+      { t: 'Clap back online', s: () => has('social') ? 'Your team never misses: ' + opS(10) : 'Gamble: opinion swings 10 either way', f: B => { const d = has('social') || Math.random() < .55 ? 10 : -10; goodOp(B, d); log(d > 0 ? 'Your reply won the internet.' : 'Your reply got ratioed. Badly.', d > 0 ? 'good' : 'bad'); } },
+      { t: 'Rise above it', s: () => opS(-5), f: B => { goodOp(B, -5); m.b.bonus -= 8 * aimSign(); log('You stayed silent. The clip kept spreading.', 'bad'); } },
     ] };
   } },
-  { id: 'celeb', w: 0.8, make: () => ({ title: 'Celebrity Endorsement', text: 'A beloved country-pop superstar posts that your bill is "honestly kind of iconic."', choices: [
-    { t: 'Amazing', s: 'Opinion +10', f: B => { B.opinion += 10; log('A superstar backed the bill!', 'good'); } },
+  { id: 'celeb', w: 0.8, make: () => ({ title: killing() ? 'Celebrity Takedown' : 'Celebrity Endorsement', text: killing() ? `A beloved country-pop superstar posts that the ${S.bill.name} is "honestly kind of evil."` : 'A beloved country-pop superstar posts that your bill is "honestly kind of iconic."', choices: [
+    { t: 'Amazing', s: () => opS(10), f: B => { goodOp(B, 10); log(killing() ? 'A superstar trashed their bill!' : 'A superstar backed the bill!', 'good'); } },
   ] }) },
   { id: 'storm', w: 0.8, make: () => {
     const st = pick(['FL', 'LA', 'TX', 'NC', 'SC', 'MS', 'AL', 'GA']);
     return { title: `Hurricane Hits ${ST[st].name}`, text: `Both ${ST[st].name} senators, and every farm-state colleague, want disaster aid attached. Now.`, choices: [
-      { t: 'Fund disaster relief', s: '−$30M earmarks; they and rural senators warm up', f: B => { B.pork -= 30; for (const m of S.members) if (m.state === st) m.b.bonus += 20; else if (m.w.rural > 0.6) m.b.bonus += 6; log(`Disaster aid for ${ST[st].name} announced.`, 'good'); }, can: () => S.bill.pork >= 30 },
-      { t: 'Not in this bill', s: `${st} senators cool sharply`, f: () => { for (const m of S.members) if (m.state === st) m.b.bonus -= 15; log(`The ${st} delegation is furious.`, 'bad'); } },
+      { t: killing() ? 'Promise them the aid' : 'Fund disaster relief', s: '−$30M earmarks; they and rural senators come your way', f: B => { B.pork -= 30; for (const m of S.members) if (m.state === st) m.b.bonus += 20 * aimSign(); else if (m.w.rural > 0.6) m.b.bonus += 6 * aimSign(); log(`Disaster aid for ${ST[st].name} announced.`, 'good'); }, can: () => S.bill.pork >= 30 },
+      { t: killing() ? 'Not your problem' : 'Not in this bill', s: `${st} senators turn on you sharply`, f: () => { for (const m of S.members) if (m.state === st) m.b.bonus -= 15 * aimSign(); log(`The ${st} delegation is furious.`, 'bad'); } },
     ] };
   } },
-  { id: 'leader', w: 1, make: () => ({ title: vpYours() ? 'The President Calls' : 'Your Leader Calls', text: '"I don\'t just want this passed. I want a margin. Make us look strong."', choices: [
+  { id: 'leader', w: 1, make: () => ({ title: vpYours() ? 'The President Calls' : 'Your Leader Calls', text: killing() ? '"I don\'t just want it dead. I want it buried. Make them look weak."' : '"I don\'t just want this passed. I want a margin. Make us look strong."', choices: [
     { t: 'You\'ll get 3 to spare', s: 'Win by 3+: +4 capital. Miss: −1 confidence', f: B => { B.goal = { margin: 3, reward: 4 }; log('You promised a 3-vote margin.', 'sys'); } },
     { t: 'Manage expectations', s: 'No side goal', f: () => log('You kept expectations low.') },
   ] }) },
@@ -548,13 +586,13 @@ const EVENTS = [
   { id: 'primary', w: 0.8, make: () => {
     const m = randOf(x => side(x) === 'you' && isUp(x) && !x.b.absent);
     return m && { title: 'Primary Challenger', text: `${sen(m)} just drew a well-funded primary challenger back in ${ST[m.state].name} and is suddenly very nervous.`, choices: [
-      { t: 'Have the party endorse them', s: '1 capital; they warm up (+15)', f: () => { S.career.capital -= 1; m.b.bonus += 15; m.rel += 1; log(`The party closed ranks behind ${sen(m)}.`, 'good'); }, can: () => S.career.capital >= 1 },
-      { t: 'Let them sweat', s: 'They get skittish (−12)', f: () => { m.b.bonus -= 12; log(`${sen(m)} is sweating.`, 'bad'); } },
+      { t: 'Have the party endorse them', s: '1 capital; they come your way (15)', f: () => { S.career.capital -= 1; m.b.bonus += 15 * aimSign(); m.rel += 1; log(`The party closed ranks behind ${sen(m)}.`, 'good'); }, can: () => S.career.capital >= 1 },
+      { t: 'Let them sweat', s: 'They get skittish (12 the wrong way)', f: () => { m.b.bonus -= 12 * aimSign(); log(`${sen(m)} is sweating.`, 'bad'); } },
     ] };
   } },
   { id: 'scandal', w: 1, cond: () => S.bill.scrutiny >= 45, make: () => ({ title: 'Reporters Are Digging', text: 'A national paper is asking pointed questions about your earmarks.', choices: [
     { t: 'Blame a staffer', s: 'Scrutiny −30; your caucus −1 relationship', f: B => { B.scrutiny -= 30; for (const m of S.members) if (side(m) === 'you') m.rel -= 1; log('You blamed a staffer. Your colleagues winced.', 'bad'); } },
-    { t: 'Stonewall', s: 'Opinion −10, scrutiny −10', f: B => { B.opinion -= 10; B.scrutiny -= 10; log('"No comment," you said, seventeen times.', 'bad'); } },
+    { t: 'Stonewall', s: () => `${opS(-10)}, scrutiny −10`, f: B => { goodOp(B, -10); B.scrutiny -= 10; log('"No comment," you said, seventeen times.', 'bad'); } },
   ] }) },
   { id: 'deal', w: 0.6, make: () => ({ title: 'A Note Slipped Under the Door', text: `"Drop your amendments and I'll release two of mine." — Sen. ${S.rival}`, choices: [
     { t: 'Accept', s: 'No more amendments this bill; 2 opposing senators warm up', f: B => { B.amends.forEach(a => a.used = true); const os = shuffle(S.members.filter(m => side(m) === 'opp')).slice(0, 2); os.forEach(m => m.b.bonus += 18); log(`You took the deal. ${os.map(sen).join(' and ')} softened.`, 'good'); } },
@@ -563,7 +601,7 @@ const EVENTS = [
 ];
 
 function runEvent() {
-  const avail = EVENTS.filter(e => !S.bill.events.includes(e.id) && (!e.cond || e.cond()));
+  const avail = EVENTS.filter(e => !S.bill.events.includes(e.id) && !(killing() && KILL_SKIP.includes(e.id)) && (!e.cond || e.cond()));
   if (!avail.length) return render();
   const wt = e => e.weight ? e.weight() : e.w;
   let tot = avail.reduce((a, e) => a + wt(e), 0), r = Math.random() * tot, ev = avail[0];
@@ -584,16 +622,19 @@ function runEvent() {
 function spend(n) { S.bill.ap -= n; }
 // leaders are seasoned operators: everything you try on them lands 40% weaker
 function diminish(m) { return Math.pow(0.85, m.b.touches) * (side(m) !== 'you' && has('bridge') ? 1.3 : 1) * (T(m, 'leader') && m.party !== 'I' ? 0.6 : 1); }
-function applyDelta(m, d) {
+// g is how far you moved them toward your caucus's position: toward yea on your bill, toward nay on theirs
+function applyDelta(m, g) {
+  const d = g * aimSign();
   m.b.bonus += d; m.b.last = d;
   ui.lastDelta = { id: m.id, d };
   if (T(m, 'leader') && Math.abs(d) >= 4) {
     // the pull is live through support(); just show it
     const mates = factionOf(m).filter(x => !isLockedYes(x)), k = pullK();
     for (const x of mates) x.b.last = d * k;
-    if (mates.length) log(`The ${m.faction} watch their leader: ${mates.length} senators ${d > 0 ? 'warm' : 'cool'} (${fmt(d * k)} each).`, d > 0 ? 'good' : 'bad');
+    if (mates.length) log(`The ${m.faction} watch their leader: ${mates.length} senators ${d > 0 ? 'warm to' : 'cool on'} the bill (${fmt(d * k)} each).`, g > 0 ? 'good' : 'bad');
   }
-  if (d > 0) sfx.up(); else if (d < 0) sfx.down();
+  if (g > 0) sfx.up(); else if (g < 0) sfx.down();
+  return d;
 }
 function say(m, kind) { ui.lastQuote = `“${pick(LINES[kind])}” — Sen. ${m.name}`; }
 function reactQuote(m, d) { say(m, d >= 15 ? 'bigup' : d >= 3 ? 'up' : d <= -8 ? 'angry' : d < 0 ? 'down' : 'meh'); }
@@ -613,15 +654,15 @@ const ACTIONS = {
       sfx.click();
     },
   },
-  pitch: { label: 'Pitch the Bill', desc: 'Choose an argument that speaks to their priorities.', cost: () => 1, ok: () => true, run() { ui.pitchOpen = !ui.pitchOpen; } },
+  pitch: { label: 'Pitch the Bill', desc: () => killing() ? 'Make the case against it, in terms of what they care about.' : 'Choose an argument that speaks to their priorities.', cost: () => 1, ok: () => true, run() { ui.pitchOpen = !ui.pitchOpen; } },
   photo: {
     label: 'Photo Op', desc: 'A joint event back home. Camera-hungry senators adore it.', cost: () => 1, ok: () => true,
     run(m) {
       spend(1);
       let d = (T(m, 'vain') ? 18 : 4) + (T(m, 'swing') ? 5 : 0);
       d *= diminish(m); m.b.touches++;
-      applyDelta(m, d); say(m, T(m, 'vain') ? 'vain' : 'meh');
-      log(`Photo op with ${sen(m)} (${fmt(d)}).`, 'good');
+      const sd = applyDelta(m, d); say(m, T(m, 'vain') ? 'vain' : 'meh');
+      log(`Photo op with ${sen(m)} (${fmt(sd)}).`, 'good');
     },
   },
   pork: {
@@ -634,8 +675,8 @@ const ACTIONS = {
       if (T(m, 'principled')) { d = -10; m.rel -= 1; say(m, 'porkno'); }
       else { d = ((T(m, 'greedy') ? 30 : 16) + (has('lobbyist') ? 5 : 0)) * diminish(m); say(m, 'pork'); }
       m.b.touches++;
-      applyDelta(m, d);
-      log(`An earmark for ${ST[m.state].name} to win ${sen(m)} (${fmt(d)}).`, d > 0 ? 'good' : 'bad');
+      const sd = applyDelta(m, d);
+      log(`An earmark for ${ST[m.state].name} to win ${sen(m)} (${fmt(sd)}).`, d > 0 ? 'good' : 'bad');
       checkScandal();
     },
   },
@@ -645,8 +686,8 @@ const ACTIONS = {
     run(m) {
       spend(1); m.iou = true;
       const d = (T(m, 'ambitious') ? 33 : 22) * (has('dealmaker') ? 1.2 : 1) * diminish(m); m.b.touches++;
-      applyDelta(m, d); reactQuote(m, d);
-      log(`You promised ${sen(m)} a favor (${fmt(d)}). They will collect.`, 'good');
+      const sd = applyDelta(m, d); reactQuote(m, d);
+      log(`You promised ${sen(m)} a favor (${fmt(sd)}). They will collect.`, 'good');
     },
   },
   twist: {
@@ -664,8 +705,8 @@ const ACTIONS = {
         if (!has('ironfist') && Math.random() < 0.3) { m.rel -= 1; log(`${sen(m)} will remember this.`, 'bad'); }
       }
       m.b.touches++;
-      applyDelta(m, d); say(m, d < 0 ? 'angry' : 'up');
-      log(`You twisted ${sen(m)}'s arm (${fmt(d)}).`, d > 0 ? 'good' : 'bad');
+      const dd = applyDelta(m, d); say(m, d < 0 ? 'angry' : 'up');
+      log(`You twisted ${sen(m)}'s arm (${fmt(dd)}).`, d > 0 ? 'good' : 'bad');
     },
   },
   prescall: {
@@ -674,17 +715,23 @@ const ACTIONS = {
     run(m) {
       spend(1); S.bill.presCalls++;
       const d = (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * Math.max(0.4, 1 - (S.undermine || 0) * 0.12) * diminish(m);
-      m.b.touches++; applyDelta(m, d);
+      m.b.touches++; const sd = applyDelta(m, d);
       ui.lastQuote = `“The President? Calling me? …Yes, ma'am. Yes, sir.” — Sen. ${m.name}`;
-      log(`${presTitle()} called ${sen(m)} (${fmt(d)}).`, 'good');
+      log(`${presTitle()} called ${sen(m)} (${fmt(sd)}).`, 'good');
     },
   },
   deal: {
-    label: 'Cut a Deal', desc: m => m.cause ? `They answer to no whip, but they'll trade their vote for their cause: ${m.cause[0]}. 2 capital. Writes it into the bill (${TAG[m.cause[1]][1]} +1), which shifts everyone else too.` : '', cost: () => 1,
+    label: 'Cut a Deal', desc: m => !m.cause ? '' : killing() ? `They answer to no whip, but they'll trade their nay for your help on their cause: ${m.cause[0]}. 2 capital.` : `They answer to no whip, but they'll trade their vote for their cause: ${m.cause[0]}. 2 capital. Writes it into the bill (${TAG[m.cause[1]][1]} +1), which shifts everyone else too.`, cost: () => 1,
     ok: m => m.party === 'I' && m.cause && !m.b.dealt && S.career.capital >= 2,
     run(m) {
       spend(1); S.career.capital -= 2; m.b.dealt = true; unlock('deal');
       const B = S.bill, t = m.cause[1];
+      if (killing()) {
+        applyDelta(m, 28 * diminish(m)); m.b.touches++;
+        ui.lastQuote = `“${m.cause[0]}. Next session, your caucus carries it. Then you have my nay.” — Sen. ${m.name}`;
+        log(`You cut a deal with ${sen(m)}: your caucus will carry ${m.cause[0]} next session.`, 'good');
+        return;
+      }
       const before = new Map(S.members.map(x => [x.id, support(x)]));
       B.fx[t] = (B.fx[t] || 0) + 1; B.applied.push(`${m.cause[0]} (Sen. ${lastName(m)}'s deal)`);
       for (const x of S.members) x.b.last = support(x) - before.get(x.id);
@@ -694,32 +741,37 @@ const ACTIONS = {
     },
   },
   pledge: {
-    label: 'Lock In a Commitment', desc: 'A public commitment. The rival can\'t move them; they vote yea.', cost: () => 1,
-    ok: m => m.b.intel && support(m) >= 25 && !m.b.pledged,
-    run(m) { spend(1); m.b.pledged = true; sfx.yes(); if (T(m, 'leader') && m.party !== 'I') unlock('leader'); ui.lastQuote = `“You have my word.” — Sen. ${m.name}`; log(`${sen(m)} committed publicly to vote YEA. 🔒`, 'good'); },
+    label: 'Lock In a Commitment', desc: () => `A public commitment. The rival can't move them; they vote ${killing() ? 'nay' : 'yea'}.`, cost: () => 1,
+    ok: m => m.b.intel && support(m) * aimSign() >= 25 && !m.b.pledged,
+    run(m) {
+      spend(1);
+      if (!this.ok(m)) { ui.lastQuote = `“Commit? To that? Ask me again when you mean it.” — Sen. ${m.name}`; log(`${sen(m)} wouldn't commit.`, 'bad'); return; }
+      m.b.pledged = true; sfx.yes(); if (T(m, 'leader') && m.party !== 'I') unlock('leader'); ui.lastQuote = `“You have my word.” — Sen. ${m.name}`; log(`${sen(m)} committed publicly to vote ${killing() ? 'NAY' : 'YEA'}. 🔒`, 'good');
+    },
   },
   dirt: {
-    label: 'Use the Dirt', desc: 'Guaranteed yea. Huge scrutiny. They will hate you forever.', cost: () => 0,
+    label: 'Use the Dirt', desc: () => `Guaranteed ${killing() ? 'nay' : 'yea'}. Huge scrutiny. They will hate you forever.`, cost: () => 0,
     ok: m => m.dirt && !m.b.blackmailed,
     run(m) {
       m.b.blackmailed = true; m.dirt = false; m.rel -= 3; m.grudge = true; S.dirtied = true; unlock('dirt');
       S.bill.scrutiny += 35 * (has('teflon') ? 0.5 : 1); sfx.gavel();
       ui.lastQuote = `“…How did you get those photos?” — Sen. ${m.name}`;
-      log(`You showed ${sen(m)} the file. They'll vote yea. They'll never forgive you.`, 'bad');
+      log(`You showed ${sen(m)} the file. They'll vote ${killing() ? 'nay' : 'yea'}. They'll never forgive you.`, 'bad');
       checkScandal();
     },
   },
 };
 
+// a pitch on one issue: for your bill, how good it is for them; against theirs, how bad
 function doPitch(m, tag) {
   const B = S.bill; spend(1);
   const fx = B.fx[tag] || 0;
-  let d = 4 + 5.5 * m.w[tag] * sgn(fx) * Math.sqrt(Math.abs(fx));
+  let d = 4 + 5.5 * m.w[tag] * sgn(fx) * aimSign() * Math.sqrt(Math.abs(fx));
   if (d > 0) { if (T(m, 'principled')) d *= 1.5; if (has('speech')) d *= 1.4; if (has('silver')) d *= 1.25; }
   else if (has('wonk')) d = 2;
   d *= diminish(m); m.b.touches++;
-  applyDelta(m, d); reactQuote(m, d);
-  log(`You pitched ${sen(m)} on ${TAG[tag][1]} (${fmt(d)}).`, d > 0 ? 'good' : 'bad');
+  const sd = applyDelta(m, d); reactQuote(m, d);
+  log(`You pitched ${sen(m)} ${killing() ? 'against it' : ''} on ${TAG[tag][1]} (${fmt(sd)}).`.replace('  ', ' '), d > 0 ? 'good' : 'bad');
   ui.pitchOpen = false;
 }
 
@@ -727,38 +779,54 @@ function checkScandal() {
   const B = S.bill;
   if (B.scrutiny >= 100) {
     S.dirtied = true;
-    B.scrutiny = 40; if (!has('ethics')) B.pork = 0; B.opinion = clamp(B.opinion - 15, 0, 100);
-    for (const m of S.members) if (side(m) === 'you') m.b.bonus -= 8;
+    B.scrutiny = 40; if (!has('ethics')) B.pork = 0; B.opinion = clamp(B.opinion - 15 * aimSign(), 0, 100);
+    for (const m of S.members) if (side(m) === 'you') m.b.bonus -= 8 * aimSign();
     S.mood -= 1.5;
     sfx.gavel();
     showModal(`<div class="kicker">Scandal</div><h2>EARMARKGATE</h2><p>Every front page: <i>"WHIP'S SLUSH FUND EXPOSED."</i> Your earmark budget is frozen, public opinion tanks, your caucus is nervous, and your party's election prospects take a hit.</p><div class="choices"><button class="btn primary" id="ok">Damage control…</button></div>`);
     $('#ok').onclick = () => { hideModal(); render(); };
-    log('SCANDAL! Earmark budget frozen, opinion −15.', 'bad');
+    log(`SCANDAL! Earmark budget frozen, ${opS(-15).toLowerCase()}.`, 'bad');
   }
 }
 
 /* ---------------- floor actions ---------------- */
 const FLOOR = {
-  amend: { label: 'Amend the Bill', sub: () => `${amendCost()} action${amendCost() > 1 ? 's' : ''} · reshapes who likes it`, cost: () => amendCost(), ok: () => S.bill.amends.some(a => !a.used), run: () => openAmend() },
-  rally: { label: 'Caucus Lunch', sub: () => `${has('chef') ? 1 : 2} action${has('chef') ? '' : 's'} · your caucus +7 (loyalists +12)`, cost: () => has('chef') ? 1 : 2, ok: () => true, run() {
-    spend(has('chef') ? 1 : 2); for (const m of S.members) if (side(m) === 'you' && !m.b.absent) { const d = T(m, 'loyal') ? 12 : 7; m.b.bonus += d; m.b.last = d; }
-    sfx.fanfare(); log(`You rallied the ${PARTY[S.side].name} caucus over lunch.`, 'good');
+  amend: { label: () => killing() ? 'Poison Pill' : 'Amend the Bill', sub: () => `${amendCost()} action${amendCost() > 1 ? 's' : ''} · ${killing() ? `${Math.round(pillOdds() * 100)}% the majority lets it on` : 'reshapes who likes it'}`, cost: () => amendCost(), ok: () => S.bill.amends.some(a => !a.used), run: () => openAmend() },
+  rally: { label: 'Caucus Lunch', sub: () => `${has('chef') ? 1 : 2} action${has('chef') ? '' : 's'} · ${killing() ? 'hold the line: your caucus 7 toward nay' : 'your caucus +7'} (loyalists 12)`, cost: () => has('chef') ? 1 : 2, ok: () => true, run() {
+    spend(has('chef') ? 1 : 2); for (const m of S.members) if (side(m) === 'you' && !m.b.absent) { const d = (T(m, 'loyal') ? 12 : 7) * aimSign(); m.b.bonus += d; m.b.last = d; }
+    sfx.fanfare(); log(killing() ? `You held the ${PARTY[S.side].name} caucus together over lunch: nobody crosses over.` : `You rallied the ${PARTY[S.side].name} caucus over lunch.`, 'good');
   } },
-  blitz: { label: 'Media Blitz', sub: () => `1 action + 2 capital · opinion +${has('spin') ? 18 : 11}`, cost: 1, ok: () => S.career.capital >= 2, run() {
-    spend(1); S.career.capital -= 2; const d = has('spin') ? 18 : 11; S.bill.opinion = clamp(S.bill.opinion + d, 0, 100);
-    sfx.up(); log(`Media blitz: public opinion ${fmt(d)}.`, 'good');
+  blitz: { label: 'Media Blitz', sub: () => `1 action + 2 capital · ${opS(has('spin') ? 18 : 11).toLowerCase()}`, cost: 1, ok: () => S.career.capital >= 2, run() {
+    spend(1); S.career.capital -= 2; const d = (has('spin') ? 18 : 11) * aimSign(); S.bill.opinion = clamp(S.bill.opinion + d, 0, 100);
+    sfx.up(); log(`Media blitz${killing() ? ' against the bill' : ''}: public opinion ${fmt(d)}.`, 'good');
   } },
-  house: { label: 'Whip the House', sub: () => S.bill.nomination ? 'Confirmations skip the House' : `See the caucuses and work them · odds ${Math.round(houseOdds() * 100)}%`, cost: 0, ok: () => !S.bill.nomination, run: () => openHouse() },
+  house: { label: () => killing() ? 'Lobby the House' : 'Whip the House', sub: () => S.bill.nomination ? 'Confirmations skip the House' : killing() ? `Line up a kill there if it passes · House passes it ${Math.round(houseOdds() * 100)}%` : `See the caucuses and work them · odds ${Math.round(houseOdds() * 100)}%`, cost: 0, ok: () => !S.bill.nomination, run: () => openHouse() },
   pulse: { label: '📈 The Pulse', sub: () => `Approval ${S.president.approval}% · generic ballot ${Math.round(genericBallot())}% · mood ${fmt(S.mood)}`, cost: 0, ok: () => true, run: () => openPulse(() => { hideModal(); render(); }) },
   hands: { label: 'Extra Hands', sub: '2 capital · +2 actions today (once a day)', cost: 0, ok: () => S.career.capital >= 2 && S.bill.handsDay !== S.bill.day, run() {
     S.career.capital -= 2; S.bill.ap += 2; S.bill.handsDay = S.bill.day; sfx.click(); log('You borrowed staff from the leadership office: +2 actions today.', 'good');
   } },
-  delay: { label: 'Delay the Vote', sub: () => isMajority() ? '3 capital · +1 day (once)' : 'Only the majority controls the calendar', cost: 0, ok: () => isMajority() && !S.bill.delayed && S.career.capital >= 3, run() {
-    S.career.capital -= 3; S.bill.delayed = true; S.bill.days++; log('You bought another day on the floor.', 'sys'); sfx.click();
+  // the majority can buy a day; the minority can only talk one out, on bills that need 60
+  delay: { label: () => killing() && !isMajority() ? 'Talking Filibuster' : 'Delay the Vote', sub: () => killing() && !isMajority() ? (S.bill.super || S.bill.cloture ? '3 capital · hold the floor all night: +1 day (once)' : 'Only bills that need 60 can be talked out') : isMajority() ? '3 capital · +1 day (once)' : 'Only the majority controls the calendar',
+    cost: 0, ok: () => (isMajority() || (killing() && (S.bill.super || S.bill.cloture))) && !S.bill.delayed && S.career.capital >= 3, run() {
+    S.career.capital -= 3; S.bill.delayed = true; S.bill.days++;
+    log(isMajority() ? 'You bought another day on the floor.' : `Your caucus took the floor in shifts and talked all night. ${S.rival} gets nothing done: +1 day.`, 'sys'); sfx.click();
   } },
 };
 
 function amendCost() { return has('parl') ? 1 : 2; }
+// in the minority, the majority can table your poison pills
+function pillOdds() { return isMajority() ? 1 : clamp(0.55 + (seats(S.side) - 47) * 0.03 + (has('parl') ? 0.15 : 0), 0.35, 0.9); }
+// adopt an amendment (a poison pill on their bill may get tabled); returns true if it went on
+function adoptAmend(a) {
+  const B = S.bill; spend(amendCost()); a.used = true;
+  if (killing() && Math.random() > pillOdds()) { log(`The majority tabled your ${a.name}. ${S.rival} smirks.`, 'bad'); sfx.down(); return false; }
+  B.applied.push(killing() ? `${a.name} (your poison pill)` : a.name);
+  const before = new Map(S.members.map(m => [m.id, support(m)]));
+  for (const t in a.fx) B.fx[t] = (B.fx[t] || 0) + a.fx[t];
+  for (const m of S.members) m.b.last = support(m) - before.get(m.id);
+  log(killing() ? `Poison pill adopted: ${a.name}. Watch their coalition wobble.` : `Amendment adopted: ${a.name}.`, killing() ? 'good' : 'sys'); sfx.gavel();
+  return true;
+}
 function presCallMax() { return has('whliaison') ? 2 : 1; }
 // the House, caucus by caucus
 function openHouse() {
@@ -768,18 +836,20 @@ function openHouse() {
     const rows = p => blocs.filter(b => b.p === p).map(b => {
       const i = blocs.indexOf(b), dis = B.ap < 1 || S.career.capital < 1 || b.work >= 2;
       return `<div class="race"><span><b>${b.name}</b> <small style="color:var(--dim)">· ${b.seats} seats · chair ${b.leader}</small><br><span class="mbar"><i style="width:${b.frac * 100}%;background:${PARTY[p].color}"></i></span> <small>~${Math.round(b.yes)} yeas (${Math.round(b.frac * 100)}%)</small></span>
-        <button class="btn" style="padding:4px 10px" data-bloc="${i}" ${dis ? 'disabled' : ''}>Work them ${'●'.repeat(b.work)}<small>1 action + 1 capital</small></button></div>`;
+        <button class="btn" style="padding:4px 10px" data-bloc="${i}" ${dis ? 'disabled' : ''}>${killing() ? 'Peel them off' : 'Work them'} ${'●'.repeat(b.work)}<small>1 action + 1 capital</small></button></div>`;
     }).join('');
-    showModal(`<div class="kicker">House of Representatives · ${S.house.D}D–${S.house.R}R · ${PARTY[houseMaj()].name} Speaker</div><h2>Whip the House</h2>
-      <p>Expected yeas: <b>${Math.round(houseExpected())}</b> of 218 needed · House odds <b style="color:${houseOdds() > 0.6 ? 'var(--yes)' : houseOdds() > 0.35 ? 'var(--mid)' : 'var(--no)'}">${Math.round(houseOdds() * 100)}%</b>${houseMaj() !== S.side && dotPrior(other(S.side), B.fx) <= 0 && !isBipartisan() ? ' · <span style="color:var(--no)">the Speaker may refuse to bring it up</span>' : ''}</p>
-      <p style="color:var(--dim)">Each caucus votes by its own lights. Working a caucus (twice at most) means calls to its chair and a few favors. You have ${B.ap} actions and ${S.career.capital} capital.</p>
+    const ho = houseOdds(), good = killing() ? 1 - ho : ho, spon = sponsor();
+    showModal(`<div class="kicker">House of Representatives · ${S.house.D}D–${S.house.R}R · ${PARTY[houseMaj()].name} Speaker</div><h2>${killing() ? 'Lobby the House' : 'Whip the House'}</h2>
+      ${killing() ? `<p>${aimBadge('kill')} If the ${B.name} gets out of the Senate, the House is your next chance to bury it. Line up the caucuses now.</p>` : ''}
+      <p>Expected yeas: <b>${Math.round(houseExpected())}</b> of 218 needed · House ${killing() ? 'passes it' : 'odds'} <b style="color:${good > 0.6 ? 'var(--yes)' : good > 0.35 ? 'var(--mid)' : 'var(--no)'}">${Math.round(ho * 100)}%</b>${houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan() ? ` · <span style="color:${killing() ? 'var(--yes)' : 'var(--no)'}">the ${PARTY[houseMaj()].name} Speaker may refuse to bring it up</span>` : ''}</p>
+      <p style="color:var(--dim)">Each caucus votes by its own lights. Working a caucus (twice at most) means calls to its chair and a few favors${killing() ? ', to vote it down' : ''}. You have ${B.ap} actions and ${S.career.capital} capital.</p>
       <b style="color:${PARTY[S.side].color}">${PARTY[S.side].name} caucuses</b><div class="races" style="max-height:none">${rows(S.side)}</div>
       <b style="color:${PARTY[other(S.side)].color}">${PARTY[other(S.side)].name} caucuses</b><div class="races" style="max-height:none">${rows(other(S.side))}</div>
       <div class="choices"><button class="btn primary" id="hdone">Back to the Senate</button></div>`);
     $('#modal-card').querySelectorAll('[data-bloc]').forEach(btn => btn.onclick = () => {
       const b = houseBlocs()[+btn.dataset.bloc]; if (B.ap < 1 || S.career.capital < 1 || b.work >= 2) return;
       spend(1); S.career.capital -= 1; B.hw[b.name] = (B.hw[b.name] || 0) + 1; B.houseWork++;
-      log(`You worked the ${b.name} through ${b.leader}. House odds now ${Math.round(houseOdds() * 100)}%.`, 'good'); sfx.click();
+      log(`You worked the ${b.name} through ${b.leader}. House ${killing() ? 'passes it' : 'odds'} now ${Math.round(houseOdds() * 100)}%.`, 'good'); sfx.click();
       const sc = $('#modal-card').scrollTop; draw(); render(); $('#modal-card').scrollTop = sc;
     });
     $('#hdone').onclick = () => { hideModal(); render(); };
@@ -787,28 +857,24 @@ function openHouse() {
   draw();
 }
 function openAmend() {
-  const B = S.bill;
+  const B = S.bill, k = killing();
   const rows = B.amends.map((a, i) => {
     if (a.used) return '';
     const pv = previewAmend(a);
-    return `<button class="btn" data-am="${i}"><b>${a.name}</b> <span class="fx" style="display:inline-flex;margin-left:6px">${fxChips(a.fx)}</span><small>Senators you've sounded out: <b style="color:var(--yes)">${pv.gain} would flip to yea</b> · <b style="color:var(--no)">${pv.loss} would flip to nay</b></small></button>`;
+    return `<button class="btn" data-am="${i}"><b>${a.mine ? '★ ' : ''}${a.name}</b> <span class="fx" style="display:inline-flex;margin-left:6px">${fxChips(a.fx)}</span><small>Senators you've sounded out: <b style="color:var(--yes)">${pv.gain} would flip to ${k ? 'nay' : 'yea'}</b> · <b style="color:var(--no)">${pv.loss} would flip to ${k ? 'yea' : 'nay'}</b></small></button>`;
   }).join('');
-  showModal(`<div class="kicker">Amendment</div><h2>Rewrite the bill</h2><p>Each amendment changes what the bill does, so it changes who likes it. You only see the effect on senators you've sounded out.</p><div class="choices">${rows}<button class="btn ghost" id="am-cancel">Never mind</button></div>`);
+  showModal(k ? `<div class="kicker">Poison pill · ${Math.round(pillOdds() * 100)}% the majority lets it on</div><h2>Make it worse for its friends</h2><p>Offer an amendment built to split their coalition: the right rider turns their own members against the bill. You only see the effect on senators you've sounded out. The majority may table it.</p><div class="choices">${rows}<button class="btn ghost" id="am-cancel">Never mind</button></div>`
+    : `<div class="kicker">Amendment</div><h2>Rewrite the bill</h2><p>Each amendment changes what the bill does, so it changes who likes it. You only see the effect on senators you've sounded out.</p><div class="choices">${rows}<button class="btn ghost" id="am-cancel">Never mind</button></div>`);
   $('#am-cancel').onclick = hideModal;
-  $('#modal-card').querySelectorAll('[data-am]').forEach(b => b.onclick = () => {
-    const a = B.amends[+b.dataset.am]; spend(amendCost()); a.used = true; B.applied.push(a.name);
-    const before = new Map(S.members.map(m => [m.id, support(m)]));
-    for (const t in a.fx) B.fx[t] = (B.fx[t] || 0) + a.fx[t];
-    for (const m of S.members) m.b.last = support(m) - before.get(m.id);
-    log(`Amendment adopted: ${a.name}.`, 'sys'); sfx.gavel(); hideModal(); render();
-  });
+  $('#modal-card').querySelectorAll('[data-am]').forEach(b => b.onclick = () => { adoptAmend(B.amends[+b.dataset.am]); hideModal(); render(); });
 }
+// how many sounded-out senators an amendment would move to your side (gain) or away (loss)
 function previewAmend(a) {
-  const B = S.bill; let gain = 0, loss = 0;
+  const B = S.bill, k = aimSign(); let gain = 0, loss = 0;
   const known = S.members.filter(m => m.b.intel && !isLockedYes(m));
-  const before = known.map(support);
+  const before = known.map(m => support(m) * k);
   for (const t in a.fx) B.fx[t] = (B.fx[t] || 0) + a.fx[t];
-  known.forEach((m, i) => { const s = support(m); if (before[i] <= 0 && s > 0) gain++; if (before[i] > 0 && s <= 0) loss++; });
+  known.forEach((m, i) => { const s = support(m) * k; if (before[i] <= 0 && s > 0) gain++; if (before[i] > 0 && s <= 0) loss++; });
   for (const t in a.fx) B.fx[t] -= a.fx[t];
   return { gain, loss };
 }
@@ -818,16 +884,16 @@ function castVotes() {
   const byName = (a, b) => lastName(a).localeCompare(lastName(b));
   const leaders = S.members.filter(m => T(m, 'leader') && m.party !== 'I').sort(byName);
   const order = leaders.concat(S.members.filter(m => !leaders.includes(m)).sort(byName));
-  const lead = {};
+  const lead = {}, k = aimSign();
   return order.map(m => {
     let v;
     const key = m.party + '|' + m.faction;
     if (m.b.absent) v = 'abs';
-    else if (isLockedYes(m)) v = 'yes';
+    else if (isLockedYes(m)) v = k > 0 ? 'yes' : 'no';
     else {
       const s = support(m);
       if (Math.abs(s) < 8) {
-        let p = 0.5 + s / 16 + (has('floor') ? 0.15 : 0) + (has('closer') ? 0.12 : 0);
+        let p = 0.5 + s / 16 + k * ((has('floor') ? 0.15 : 0) + (has('closer') ? 0.12 : 0));
         if (!T(m, 'leader')) p += lead[key] === 'yes' ? 0.15 : lead[key] === 'no' ? -0.15 : 0;
         v = Math.random() < p ? 'yes' : 'no';
       } else v = s > 0 ? 'yes' : 'no';
@@ -839,7 +905,7 @@ function castVotes() {
 function callVote() {
   const B = S.bill;
   const results = castVotes();
-  showModal(`<div class="kicker">${season(B.n)} ${billYear(B.n)} · Roll call vote</div><h2>The ${B.name}</h2><p style="color:var(--dim)">The clerk calls the roll, faction leaders first. Needed: <b style="color:var(--ink)">${needText()}</b>.</p>
+  showModal(`<div class="kicker">${season(B.n)} ${billYear(B.n)} · ${B.override ? 'Veto override vote' : B.cloture ? 'Cloture vote' : 'Roll call vote'}</div><h2>The ${B.name}</h2><p style="color:var(--dim)">${aimBadge(B.aim)} The clerk calls the roll, faction leaders first. ${killing() ? 'To kill it' : 'Needed'}: <b style="color:var(--ink)">${needText()}</b>${B.cloture ? ' (cloture takes 60)' : ''}.</p>
     <div class="tally"><div class="y"><span id="ty">0</span><small>YEAS</small></div><div class="n"><span id="tn">0</span><small>NAYS</small></div></div>
     <div class="rollcall">${results.map((r, i) => `<div class="rc" id="rc${i}">${T(r.m, 'leader') && r.m.party !== 'I' ? '👑 ' : ''}${lastName(r.m)} <span style="color:${PARTY[r.m.party].color}">(${tagOf(r.m)})</span><span class="v"></span></div>`).join('')}</div><div id="vres"></div>`);
   sfx.gavel();
@@ -861,35 +927,41 @@ function callVote() {
 }
 
 function finishVote(results, y, n) {
-  const B = S.bill;
-  let won, vpNote = '';
-  if (B.super) won = y >= B.super;
-  else if (y > n) won = true;
-  else if (y === n && vpYours()) { won = true; vpNote = 'The Vice President breaks the tie! '; B.tiebreak = true; }
-  else won = false;
+  const B = S.bill, k = killing(), thr = B.super || B.cloture;
+  const pass = passes(y, n), tie = !thr && y === n;
+  const vpNote = tie ? `The Vice President breaks the tie ${vpBacks() ? 'for it' : 'against it'}! ` : '';
+  if (tie && pass !== k) B.tiebreak = true; // the tie broke your way
   B.yeas = y; B.nays = n;
-  const spare = B.super ? y - B.super : vpYours() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
+  const spare = k ? (thr ? thr - 1 - y : n - y - (vpBacks() ? 1 : 0)) : thr ? y - thr : vpYours() ? y - Math.max(n, 50) : y - Math.max(n + 1, 51);
   if (!B.override) B.spare = spare;
   // votes go on the record back home, and party-line defections feed primary challenges
-  const partyLine = B.budget || AGENDA[S.side].some(b => b[0] === B.name) || LANDMARKS[S.side].some(l => l[0] === B.name);
+  const P = B.budget ? sponsor() : billParty(B.name), mine = k ? 'no' : 'yes';
   for (const r of results) {
     if (r.v === 'abs') continue;
-    if (partyLine && ((r.m.party === S.side && r.v === 'no') || (r.m.party === other(S.side) && r.v === 'yes'))) { r.m.defy = (r.m.defy || 0) + 1; hist(r.m, `Broke with the ${PARTY[r.m.party].name} Party to vote ${r.v === 'yes' ? 'YEA' : 'NAY'} on the ${B.name}`); }
+    if (P && ((r.m.party === P && r.v === 'no') || (r.m.party === other(P) && r.v === 'yes'))) { r.m.defy = (r.m.defy || 0) + 1; hist(r.m, `Broke with the ${PARTY[r.m.party].name} Party to vote ${r.v === 'yes' ? 'YEA' : 'NAY'} on the ${B.name}`); }
     else if (B.landmark || B.budget || B.nomination || B.aumf || B.wpr || B.override) hist(r.m, `Voted ${r.v === 'yes' ? 'YEA' : 'NAY'} on the ${B.name}`);
     const fit = stateFit(r.m.state, B.fx);
     r.m.rec = clamp(r.m.rec + (r.v === 'yes' ? fit : -fit * 0.5), -15, 15);
-    if (r.v === 'yes' && side(r.m) !== 'you') r.m.rel = clamp(r.m.rel + 0.5, -4, 4);
+    if (r.v === mine && side(r.m) !== 'you') r.m.rel = clamp(r.m.rel + 0.5, -4, 4);
   }
-  const tally = `${vpNote}Senate: ${y}–${n}${won && spare > 0 ? `, ${spare} to spare` : ''}.`;
-  if (!won) return settle(false, B.override ? `${tally} The override fell ${B.super - y} short. The veto stands.` : `${tally}${B.super ? ` ${B.super - y} short of ${B.super}.` : ''}`, 'THE BILL FAILS');
+  const tally = `${vpNote}Senate: ${y}–${n}${pass !== k && spare > 0 ? `, ${spare} to spare` : ''}.`;
+  if (!pass) {
+    if (!k) return settle(false, B.override ? `${tally} The override fell ${B.super - y} short. The veto stands.` : `${tally}${thr ? ` ${thr - y} short of ${thr}.` : ''}`, 'THE BILL FAILS');
+    if (B.override) return settle(true, `${tally} The override falls ${B.super - y} short. The veto stands, and the bill is dead.`, 'VETO SUSTAINED', false, true);
+    return settle(true, `${tally} ${B.nomination ? `The nominee falls short. Judge ${S.nominee ? S.nominee.name : ''} goes home.` : thr ? `They came up ${thr - y} short of ${thr}. The filibuster holds, and the bill is dead.` : 'The bill dies on the floor.'}`, B.nomination ? 'NOMINEE REJECTED' : thr ? 'FILIBUSTERED' : 'KILLED ON THE FLOOR');
+  }
   if (B.nomination) {
     const j = newJustice(S.president.party); j.name = S.nominee.name; S.court.push(j); S.nominee = null;
-    return settle(true, `${tally} Justice ${j.name} takes a seat on the Supreme Court (now ${courtLabel()}).`, 'CONFIRMED');
+    return settle(!k, `${tally} Justice ${j.name} takes a seat on the Supreme Court (now ${courtLabel()}).`, 'CONFIRMED');
   }
   if (B.override) {
     const ho = houseOverrideOdds();
-    if (Math.random() < ho) return settle(true, `${tally} The House follows, ${ri(290, 320)}–${ri(100, 140)}. <b>The veto is overridden!</b> The bill becomes law.`, 'VETO OVERRIDDEN', true);
-    return settle(false, `${tally} But the House falls short of two-thirds. The veto is sustained.`, 'VETO SUSTAINED');
+    if (Math.random() < ho) return settle(!k, `${tally} The House follows, ${ri(290, 320)}–${ri(100, 140)}. <b>The veto is overridden!</b> The bill becomes law.`, 'VETO OVERRIDDEN', true);
+    return settle(k, `${tally} But the House falls short of two-thirds. The veto is sustained.`, 'VETO SUSTAINED', false, k);
+  }
+  if (k) {
+    sfx.gavel();
+    return stage(`<div class="verdict lose">THE SENATE PASSES IT</div><p style="text-align:center">${tally} The ${S.rival.split(' ').pop()} operation got it through.<br><span style="color:var(--dim)">Your next shot: the House (${S.house.D}D–${S.house.R}R, ${PARTY[houseMaj()].short} majority) passes it ${Math.round(houseOdds() * 100)}% of the time. Then ${presTitle()}: ${vetoOdds() ? `${Math.round(vetoOdds() * 100)}% veto odds` : 'they will sign it'}.</span></p>`, 'On to the House 🏠', houseStage);
   }
   sfx.fanfare();
   stage(`<div class="verdict win">THE SENATE PASSES IT</div><p style="text-align:center">${tally}<br><span style="color:var(--dim)">Next stop: the House of Representatives (${S.house.D}D–${S.house.R}R, ${PARTY[houseMaj()].short} majority). Odds ${Math.round(houseOdds() * 100)}%.</span></p>`, 'Send it to the House 🏠', houseStage);
@@ -900,39 +972,70 @@ function stage(html, label, next) {
   const card = $('#modal-card'); card.scrollTop = card.scrollHeight;
 }
 function houseStage() {
-  const B = S.bill, odds = houseOdds(), pass = Math.random() < odds;
+  const B = S.bill, odds = houseOdds(), pass = Math.random() < odds, k = killing(), spon = sponsor();
   const e = Math.round(houseExpected());
   const yes = pass ? clamp(e + ri(-3, 6), 218, 400) : clamp(e + ri(-6, 3), 120, 217);
   sfx.gavel();
   if (!pass) {
-    const why = houseMaj() !== S.side && dotPrior(other(S.side), B.fx) <= 0 && Math.random() < 0.5 ? `The ${PARTY[other(S.side)].name} Speaker refused to bring it to the floor.` : `The House votes it down, ${yes}–${435 - yes}.`;
-    return settle(false, `Passed the Senate, but died in the House. ${why}`, 'DEAD IN THE HOUSE');
+    const why = houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && Math.random() < 0.5 ? `The ${PARTY[other(spon)].name} Speaker refused to bring it to the floor.` : `The House votes it down, ${yes}–${435 - yes}.`;
+    return settle(k, `Passed the Senate, but died in the House. ${why}`, 'DEAD IN THE HOUSE', false, k);
   }
-  stage(`<div class="verdict win">THE HOUSE PASSES IT</div><p style="text-align:center">House: ${yes}–${435 - yes}.<br><span style="color:var(--dim)">Now it goes to ${presTitle()} (${PARTY[S.president.party].name}). ${vetoOdds() ? `Veto risk ${Math.round(vetoOdds() * 100)}%.` : 'A signature is all but certain.'}</span></p>`, 'Send it to the White House 🖋', presStage);
+  const vo = vetoOdds();
+  stage(`<div class="verdict ${k ? 'lose' : 'win'}">THE HOUSE PASSES IT</div><p style="text-align:center">House: ${yes}–${435 - yes}.<br><span style="color:var(--dim)">Now it goes to ${presTitle()} (${PARTY[S.president.party].name}). ${vo ? `Veto ${k ? 'odds' : 'risk'} ${Math.round(vo * 100)}%.` : 'A signature is all but certain.'}</span></p>`, k ? 'On to the White House 🖋' : 'Send it to the White House 🖋', presStage);
+}
+// a veto fight: one more day on the floor at 67
+function startOverride() {
+  const B = S.bill;
+  hideModal();
+  B.override = true; B.super = 67; B.cloture = 0; B.day = Math.min(B.day, B.days); B.days = B.day; B.ap = B.apMax; B.goal = null;
+  for (const m of S.members) if (side(m) === 'you') m.b.bonus += 5 * aimSign(); // your caucus is angry
+  log(killing() ? `${presTitle()} vetoed it, and the ${PARTY[other(S.side)].name} majority wants an override. Hold ${needText()}.` : `${presTitle()} vetoed the bill. Override fight: you need 67.`, 'sys');
+  ui.sel = null; render();
 }
 function presStage() {
-  const B = S.bill;
+  const B = S.bill, k = killing();
   if (Math.random() < vetoOdds()) {
     sfx.gavel();
+    if (k) {
+      // your President's veto: the majority tries to override only if the Senate vote came close to 67
+      if ((B.yeas || 0) < 62) return settle(true, `${presTitle()} vetoes the ${B.name}: "Not on my watch." With ${B.yeas} Senate votes, the majority doesn't even try an override.`, 'VETOED', false, true);
+      const odds = clamp(((B.yeas || 0) - 61) * 0.1, 0.05, 0.6) * houseOverrideOdds();
+      $('#vres').innerHTML = `<div class="verdict win">VETOED</div><p style="text-align:center">${presTitle()} vetoes the ${B.name}: "Not on my watch."<br><span style="color:var(--dim)">But it got ${B.yeas} votes in the Senate, and the ${PARTY[other(S.side)].name} majority smells an override: 67 here, then two-thirds of the House. Whip against it for one more day, or let the roll call play out (roughly ${Math.round(odds * 100)}% they get there).</span></p>
+        <div class="choices"><button class="btn primary big" id="ovr">Defend the veto (1 more day, hold 34 nays)</button><button class="btn ghost" id="die">Let the roll call play out</button></div>`;
+      $('#ovr').onclick = startOverride;
+      $('#die').onclick = () => Math.random() < odds ? settle(false, `The override vote comes in at ${ri(67, 70)}, and the House follows. <b>The veto is overridden</b>, and the ${B.name} becomes law.`, 'VETO OVERRIDDEN', true) : settle(true, `The override falls short in the Senate. The veto stands, and the ${B.name} is dead.`, 'VETO SUSTAINED', false, true);
+      return;
+    }
     $('#vres').innerHTML = `<div class="verdict lose">VETOED</div><p style="text-align:center">${presTitle()} vetoes the ${B.name}: ${S.president.party === S.side ? '"I will not be dictated to by the Senate." A veto from your own party\'s President, payback for the feud.' : '"This bill is wrong for America."'}<br><span style="color:var(--dim)">An override needs <b>67</b> senators and two-thirds of the House (House odds ~${Math.round(houseOverrideOdds() * 100)}% if the Senate gets there). You'd get one more day to whip it.</span></p>
       <div class="choices"><button class="btn primary big" id="ovr">Fight for an override (1 more day, 67 votes)</button><button class="btn ghost" id="die">Let it die</button></div>`;
-    $('#ovr').onclick = () => {
-      hideModal();
-      B.override = true; B.super = 67; B.day = Math.min(B.day, B.days); B.days = B.day; B.ap = B.apMax; B.goal = null;
-      for (const m of S.members) if (side(m) === 'you') m.b.bonus += 5; // your caucus is angry
-      log(`${presTitle()} vetoed the bill. Override fight: you need 67.`, 'sys');
-      ui.sel = null; render();
-    };
+    $('#ovr').onclick = startOverride;
     $('#die').onclick = () => settle(false, `${presTitle()} vetoed it, and you chose not to fight.`, 'VETOED');
     return;
   }
-  settle(true, `${presTitle()} signs the ${B.name} into law${S.president.party === S.side ? ' at a Rose Garden ceremony' : ', grudgingly'}.`, 'SIGNED INTO LAW', true);
+  settle(!k, `${presTitle()} signs the ${B.name} into law${S.president.party === sponsor() ? ' at a Rose Garden ceremony' : ', grudgingly'}.`, 'SIGNED INTO LAW', true);
 }
-function settle(won, detail, headline, isLaw) {
-  const B = S.bill, c = S.career;
+// won = your caucus's position prevailed. partial = a kill that happened after the bill got out of the Senate
+function settle(won, detail, headline, isLaw, partial) {
+  const B = S.bill, c = S.career, k = killing(), enacted = k ? !won : won;
   c.bills++;
   const lines = [];
-  if (won) {
+  if (won && k) {
+    c.wins++;
+    if (partial) { const cap = 2 + (B.landmark ? 1 : 0); c.capital += cap; lines.push(`+${cap} political capital`, 'It got out of the Senate, so the win is only partial: no streak, but no blame'); }
+    else {
+      c.streak++; c.best = Math.max(c.best, c.streak);
+      let cap = 2 + clamp(B.spare || 0, 0, 3) + Math.min(c.streak - 1, 2);
+      if (S.calledEarly) { cap += S.calledEarly; lines.push(`Called early: +${S.calledEarly} capital`); }
+      if (B.landmark) cap = Math.round(cap * 1.5);
+      if (B.goal) { if ((B.spare || 0) >= B.goal.margin) { cap += B.goal.reward; lines.push(`Margin delivered: +${B.goal.reward}`); } else { c.confidence--; lines.push('Missed the promised margin: −1 confidence'); } }
+      if (has('bundler')) { cap += 2; lines.push('Bundler: +2'); }
+      c.capital += cap;
+      if (c.streak % 3 === 0 && c.confidence < 5) { c.confidence++; lines.push('Three in a row: +1 confidence'); }
+      lines.unshift(`+${cap} political capital`);
+    }
+    S.mood = clamp(S.mood + (partial ? 0.3 : 0.8) + (50 - B.opinion) / 15 * (B.landmark ? 1.5 : 1) * (partial ? 0.5 : 1), -15, 15);
+    sfx.fanfare();
+  } else if (won) {
     c.wins++; c.streak++; c.best = Math.max(c.best, c.streak);
     const spare = B.spare || 0;
     let cap = 3 + clamp(spare, 0, 4) + Math.min(c.streak - 1, 3);
@@ -945,36 +1048,41 @@ function settle(won, detail, headline, isLaw) {
     lines.unshift(`+${cap} political capital`);
     S.mood = clamp(S.mood + 1 + (B.opinion - 50) / 12 * (B.landmark ? 2 : 1), -15, 15);
     sfx.fanfare();
-    if (isLaw && !B.nomination) {
-      const cr = courtRisk();
-      if (Math.random() < cr.challenge) { S.laws.push({ name: B.name, party: S.side, inBills: ri(2, 4), landmark: B.landmark }); lines.push('⚖ Lawsuits have already been filed. The Supreme Court will decide.'); }
-    }
   } else {
     c.losses++; c.streak = 0;
-    if (['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
-    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift('In the minority, the caucus expected to lose this one: no confidence lost · +1 capital'); }
+    if (!k && ['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) { c.capital += 2; lines.unshift('You delivered the Senate, so the caucus doesn\'t blame you · +2 capital'); }
+    else if (!isMajority() && Math.random() < 0.5) { c.capital += 1; lines.unshift(`In the minority, the caucus expected to lose this one: no confidence lost · +1 capital`); }
     else { c.confidence--; c.capital += 1; lines.unshift('−1 party confidence · +1 capital (consolation)'); }
-    if (B.nomination) { S.nominee = { name: fullName(), tries: (S.nominee.tries || 0) + 1 }; lines.push(`The nomination is withdrawn. ${presTitle()} will send a more moderate pick, Judge ${S.nominee.name}, next.`); }
-    S.mood = clamp(S.mood - 1.5, -15, 15);
+    // an enemy law helps the other side's mood more when it's popular
+    S.mood = clamp(S.mood - 1.5 - (k ? Math.max(0, (B.opinion - 50) / 15) : 0), -15, 15);
     sfx.gavel();
   }
+  if (B.nomination && !enacted && S.nominee) { S.nominee = { name: fullName(), tries: (S.nominee.tries || 0) + 1, party: S.nominee.party }; lines.push(`The nomination is withdrawn. ${presTitle()} will send a more moderate pick, Judge ${S.nominee.name}, next.`); }
+  if (enacted && isLaw && !B.nomination) {
+    const cr = courtRisk();
+    if (Math.random() < cr.challenge) { S.laws.push({ name: B.name, party: sponsor(), inBills: ri(2, 4), landmark: B.landmark }); lines.push(k ? '⚖ Your side has already sued. The Supreme Court will decide.' : '⚖ Lawsuits have already been filed. The Supreme Court will decide.'); }
+  }
   if (B.budget) {
-    if (won) { S.approps = 3; c.capital += 2; lines.push('Budget enacted: +2 capital, +$20M earmarks for the next three bills'); }
-    else {
+    if (enacted) { S.approps = 3; if (!k) { c.capital += 2; lines.push('Budget enacted: +2 capital, +$20M earmarks for the next three bills'); } else lines.push('Their budget is law. At least appropriations flow: +$20M earmarks for the next three bills'); }
+    else if (k) {
+      S.shutdown = 2; S.mood = clamp(S.mood - 0.5, -12, 12);
+      if (S.president.party !== S.side) S.president.approval -= 3;
+      lines.push(`🚨 GOVERNMENT SHUTDOWN: you blocked their budget. Earmarks frozen for two bills; ${S.president.party !== S.side ? 'the White House takes most of the blame' : 'the majority takes most of the blame'}`);
+    } else {
       S.shutdown = 2; S.mood = clamp(S.mood - 2, -12, 12);
       if (S.president.party === S.side) S.president.approval -= 4;
       if (['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) c.confidence--;
       lines.push('🚨 GOVERNMENT SHUTDOWN: −1 confidence, national mood −2, earmarks frozen for two bills');
     }
   }
-  // the President's approval moves with the agenda
+  // the President's approval moves with their party's agenda
   const P = S.president;
-  if (P.party === S.side) P.approval += won ? 1 + Math.round((B.opinion - 50) / 20) : -2;
-  else P.approval += won ? -1 : 1;
+  if (P.party === sponsor()) P.approval += enacted ? 1 + Math.round((B.opinion - 50) / 20) : -2;
+  else P.approval += enacted ? -1 : 1;
   P.approval = clamp(Math.round(P.approval + (50 - P.approval) * 0.15) + ri(-2, 2), 18, 82);
   S.calledEarly = 0;
   // legacy and achievements
-  if (won) {
+  if (won && !k) {
     addLegacy(10 + (B.landmark ? 20 : 0) + (B.super === 67 ? 15 : 0) + (B.override ? 20 : 0) + (B.nomination ? 15 : 0) + (B.budget ? 5 : 0));
     if (isLaw) unlock('first');
     if (B.budget) unlock('budget');
@@ -984,26 +1092,36 @@ function settle(won, detail, headline, isLaw) {
     if (B.tiebreak) unlock('tiebreak');
     if ((B.yeas || 0) >= 70) unlock('blowout');
     if (B.nomination) unlock('justice');
+  }
+  if (won && k) {
+    addLegacy(partial ? 3 : 6 + (B.landmark ? 10 : 0) + (B.nomination ? 8 : 0) + (B.budget ? 3 : 0));
+    if (!partial) unlock('killshot');
+    if (!partial && (B.super || B.cloture) >= 60 && !isMajority()) unlock('lastline');
+    if (B.tiebreak) unlock('tiebreak');
+  }
+  if (won) {
     if (c.streak >= 5) unlock('streak5');
     if (c.streak >= 10) unlock('streak10');
     if (rank() === 'Master of the Senate' || c.wins >= 30) unlock('master');
   }
-  if (B.budget && !won) unlock('shutdown');
-  lines.push(...creditPromises(won, isLaw));
+  if (B.budget && !enacted) unlock('shutdown');
+  // promises are about laws you pass (and budgets that keep the lights on)
+  lines.push(...creditPromises(k ? B.budget && enacted : won, k ? false : isLaw));
   if (B.aumf) {
     S.pendingAUMF = null;
-    if (won) { startWar(B.aumf, 64); lines.push(`⚔️ Congress authorizes force. The war in ${B.aumf} begins with ${S.war.support}% public support.`); }
+    if (enacted) { startWar(B.aumf, 64); lines.push(`⚔️ Congress authorizes force. The war in ${B.aumf} begins with ${S.war.support}% public support.`); }
     else { S.president.approval -= 3; lines.push('The Senate refuses to authorize war. The President is humiliated (−3 approval).'); }
   }
-  if (B.wpr && won && isLaw && S.war) { lines.push(`☮️ The troops are coming home from ${S.war.place}.`); S.war = null; }
+  if (B.wpr && enacted && isLaw && S.war) { lines.push(`☮️ The troops are coming home from ${S.war.place}.`); S.war = null; }
   pulseTick();
-  S.history.push({ n: B.n, name: B.name, won });
+  // won here means the bill went through (other modules read budget history this way); aim says whose side you were on
+  S.history.push({ n: B.n, name: B.name, won: enacted, aim: B.aim });
   saveRecords();
   const elNext = c.bills % 6 === 0;
-  const hl = billHeadline(won, headline, B.yeas || 0, B.nays || 0);
+  const hl = k ? floorHeadline(won, headline, B.yeas || 0, B.nays || 0) : billHeadline(won, headline, B.yeas || 0, B.nays || 0);
   $('#vres').innerHTML = `<div class="verdict ${won ? 'win' : 'lose'}">${headline}</div>
-    <p style="text-align:center">${detail}<br><span style="color:var(--dim)">${lines.join(' · ')}</span></p>
-    ${frontPage({ headline: hl.h, sub: hl.d, body: paperBody(won), mood: hl.mood, date: `The morning after · ${season(B.n)} ${billYear(B.n)}` })}
+    <p style="text-align:center">${k ? `${aimBadge('kill')} ${won ? (partial ? 'Dead, the long way round.' : 'Your caucus wanted it dead. It\'s dead.') : 'Your caucus wanted it dead. It\'s law.'}<br>` : ''}${detail}<br><span style="color:var(--dim)">${lines.join(' · ')}</span></p>
+    ${frontPage({ headline: hl.h, sub: hl.d, body: k ? floorPaperBody(won) : paperBody(won), mood: hl.mood, date: `The morning after · ${season(B.n)} ${billYear(B.n)}` })}
     <div class="choices"><button class="btn primary big" id="next">${c.confidence <= 0 ? 'Face the caucus…' : elNext ? `On to Election Day ${electionYear(c.bills / 6)} 🗳` : 'Back to the whip\'s office'}</button></div>`;
   $('#next').onclick = () => { if (c.confidence <= 0) gameOver(); else if (elNext) electionPrep(); else interlude(); };
   const card = $('#modal-card'); card.scrollTop = card.scrollHeight;
@@ -1017,17 +1135,18 @@ function presVec() {
   return v;
 }
 function makeHouseLeaders() { const o = {}; for (const p of ['D', 'R']) for (const [f] of HOUSE_FAC[p]) o[f] = 'Rep. ' + fullName(); return o; }
+// the House, caucus by caucus, from the point of view of the bill's own party (yours, or theirs when you're killing it)
 function houseBlocs() {
-  const B = S.bill, out = [];
+  const B = S.bill, out = [], spon = sponsor(), k = aimSign();
   for (const p of ['D', 'R']) {
     let left = S.house[p];
     HOUSE_FAC[p].forEach(([name, share, tilt], i) => {
       const seats = i === HOUSE_FAC[p].length - 1 ? left : Math.round(S.house[p] * share); left -= seats;
       let dot = 0; for (const t of TAGS) dot += (0.8 * (PARTY[p].prior[t] || 0) + (tilt[t] || 0)) * (B.fx[t] || 0);
       const work = B.hw[name] || 0;
-      const frac = p === S.side
-        ? clamp(0.955 + dot * 0.008 + (B.opinion - 50) / 500 + work * 0.03, 0.55, 0.997)
-        : clamp(0.03 + Math.max(0, dot) * 0.06 + (B.opinion - 50) / 300 + (isBipartisan() ? 0.3 : 0) + work * 0.05, 0.01, 0.85);
+      const frac = p === spon
+        ? clamp(0.955 + dot * 0.008 + (B.opinion - 50) / 500 + k * work * 0.03, 0.55, 0.997)
+        : clamp(0.03 + Math.max(0, dot) * 0.06 + (B.opinion - 50) / 300 + (isBipartisan() ? 0.3 : 0) + k * work * 0.05, 0.01, 0.85);
       out.push({ p, name, seats, frac, yes: seats * frac, work, leader: S.houseLeaders[name] });
     });
   }
@@ -1048,28 +1167,34 @@ function houseExpected() { return houseBlocs().reduce((a, b) => a + b.yes, 0); }
 function houseOdds() {
   const B = S.bill;
   let p = 1 / (1 + Math.exp(-(houseExpected() - 217.5) / 6));
-  if (houseMaj() !== S.side && dotPrior(other(S.side), B.fx) <= 0 && !isBipartisan()) p *= 0.55; // their Speaker may bury it
-  return clamp(p + (has('housewhip') ? 0.1 : 0), 0.02, 0.98);
+  const spon = sponsor();
+  if (houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan()) p *= 0.55; // the other party's Speaker may bury it
+  return clamp(p + (has('housewhip') ? 0.1 * aimSign() : 0), 0.02, 0.98);
 }
-function houseOverrideOdds() { return clamp(1 / (1 + Math.exp(-(houseExpected() + 20 - 290) / 12)) + S.bill.houseWork * 0.05, 0.03, 0.9); }
+function houseOverrideOdds() { return clamp(1 / (1 + Math.exp(-(houseExpected() + 20 - 290) / 12)) + S.bill.houseWork * 0.05 * aimSign(), 0.03, 0.9); }
 function vetoOdds() {
   const B = S.bill;
   if (B.nomination) return 0;
-  if (S.president.party === S.side) return typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
+  const spon = sponsor();
+  if (S.president.party === spon) return spon === S.side && typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
   let d = 0; const v = presVec(); for (const t of TAGS) d += v[t] * (B.fx[t] || 0);
+  if (spon !== S.side) return clamp(0.8 - d * 0.1 - (isBipartisan() ? 0.35 : 0), 0.1, 0.97); // your President, their bill
   return clamp(0.55 - d * 0.1 - (isBipartisan() ? 0.35 : 0) - (B.softened ? 0.3 : 0) - (S.president.approval < 40 ? 0.1 : 0) - (has('whliaison') ? 0.15 : 0) + (typeof wingVetoAdj === 'function' ? wingVetoAdj() : 0), 0.05, 0.95);
 }
 function courtRisk() {
   const B = S.bill;
   if (B.nomination || B.budget || B.super === 67) return { challenge: 0, strike: 0, total: 0 }; // budgets, treaties and amendments don't go to court
   const challenge = AGENDA.both.some(b => b[0] === B.name) ? 0.1 : B.landmark ? 0.6 : 0.3;
-  const strike = clamp((courtCount(other(S.side)) - 4) * 0.2 + 0.08 + (B.landmark ? 0.1 : 0), 0.03, 0.9) * (has('legal') ? 0.5 : 1);
+  const spon = sponsor(), strike = clamp((courtCount(other(spon)) - 4) * 0.2 + 0.08 + (B.landmark ? 0.1 : 0), 0.03, 0.9) * (has('legal') && spon === S.side ? 0.5 : 1);
   return { challenge, strike, total: challenge * strike };
 }
 // rulings, retirements and nominations between bills
 function courtNews() {
   const msgs = [];
-  if (S.nominee && S.president.party !== S.side) S.nominee = null;
+  // a nominee belongs to the President who sent them (old saves: always your party's)
+  // (an opposing nominee waiting on a floor vote goes back to the block-or-confirm decision if your party takes the Senate)
+  const np = S.nominee && (S.nominee.party || S.side);
+  if (S.nominee && (np !== S.president.party || (np !== S.side && isMajority()))) S.nominee = null;
   if (S.career.bills % 3 === 0) S.court.forEach(j => j.age++);
   for (const L of S.laws) L.inBills--;
   const due = S.laws.filter(L => L.inBills <= 0); S.laws = S.laws.filter(L => L.inBills > 0);
@@ -1099,11 +1224,11 @@ function courtNews() {
   }
   if (S.court.length < 9 && !S.nominee) {
     if (S.president.party === S.side) {
-      S.nominee = { name: fullName() };
+      S.nominee = { name: fullName(), party: S.side };
       msgs.push(`🖋 ${presTitle()} nominates Judge ${S.nominee.name}. <b>Your next fight is the confirmation.</b>`);
     } else if (!isMajority()) {
-      const j = newJustice(S.president.party); S.court.push(j);
-      msgs.push(`⚖ The ${PARTY[other(S.side)].name} Senate majority confirms ${presTitle()}'s nominee, ${j.name}. Court now ${courtLabel()}.`);
+      S.nominee = { name: fullName(), party: S.president.party };
+      msgs.push(`🖋 ${presTitle()} nominates Judge ${S.nominee.name}, and the ${PARTY[S.president.party].name} majority will rush the confirmation to the floor. <b>Your caucus wants the nominee defeated:</b> no filibuster for judges, so you need 51 nays.`);
     } else if (!S.vacancyBlocked) S.courtDecision = true;
   }
   return msgs;
@@ -1505,7 +1630,7 @@ function load() {
   try {
     const d = JSON.parse(localStorage.getItem('floorfight.v5.save'));
     if (!d || !d.president || !d.governors) return false;
-    S = { ...d, log: [] };
+    S = { ...d, log: [] }; delete S.docketOffer; // the old docket's offers; the floor schedule rebuilds itself (floor.js)
     S.houseLeaders = S.houseLeaders || {}; for (const p of ['D', 'R']) for (const [f] of HOUSE_FAC[p]) if (!S.houseLeaders[f]) S.houseLeaders[f] = 'Rep. ' + fullName();
     layoutSeats(); startBill(); return true;
   } catch (e) { return false; }
@@ -1534,7 +1659,7 @@ function layoutSeats() {
 function stance(s) { return s >= 25 ? 'solid yea' : s >= 12 ? 'leaning yea' : s > -12 ? 'on the fence' : s > -25 ? 'leaning nay' : 'firm nay'; }
 function seatColor(m) {
   if (m.b.absent) return '#444';
-  if (isLockedYes(m)) return '#2fae64';
+  if (isLockedYes(m)) return killing() ? '#c94b5b' : '#2fae64';
   if (m.b.intel) { const s = support(m); return s >= 12 ? '#46c27a' : s > -12 ? '#e3b54a' : '#5a1f2a'; }
   if (m.b.fuzzy != null) { const s = support(m) + m.b.fuzzy; return s >= 12 ? '#2f6b47' : s > -12 ? '#6b5a2a' : '#3a1a20'; }
   return '#3a4250';
@@ -1543,7 +1668,7 @@ function counts() {
   let yes = 0, mid = 0, no = 0, unk = 0;
   for (const m of S.members) {
     if (m.b.absent) continue;
-    if (isLockedYes(m)) { yes++; continue; }
+    if (isLockedYes(m)) { if (killing()) no++; else yes++; continue; }
     if (!m.b.intel) { unk++; continue; }
     const s = support(m); if (s >= 12) yes++; else if (s > -12) mid++; else no++;
   }
@@ -1555,7 +1680,7 @@ function fxChips(fx) {
 
 function chamberSVG() {
   let svg = `<text x="0" y="-12" text-anchor="middle" fill="#c9d0de" font-size="9" letter-spacing="2" font-family="Inter,sans-serif" font-weight="700">UNITED STATES SENATE</text>`;
-  svg += `<text x="0" y="17" text-anchor="middle" fill="#ffe7a8" font-size="18" font-family="'Playfair Display',Georgia" font-weight="900">${needText()} to pass</text>`;
+  svg += `<text x="0" y="17" text-anchor="middle" fill="${killing() ? '#ffb4b4' : '#ffe7a8'}" font-size="18" font-family="'Playfair Display',Georgia" font-weight="900">${needText()} to ${killing() ? 'kill it' : 'pass'}</text>`;
   for (const m of S.members) {
     const p = SEATPOS[m.id]; if (!p) continue;
     const cls = ['seat']; if (ui.sel === m.id) cls.push('sel');
@@ -1588,7 +1713,7 @@ function mapSVG(mode, opts = {}) {
     sub: code => pair(code).map(m => m.party).join(''),
     ring: code => { const m = S.members[ui.sel]; return m && m.state === code ? '#fff' : pair(code).some(targeted) ? '#ff6b6b' : null; },
     attr: code => pair(code).length ? `data-code="${code}"` : '',
-    title: code => pair(code).map(m => `${sen(m)}: ${m.b.intel || isLockedYes(m) ? (isLockedYes(m) ? 'committed' : stance(support(m))) : 'unknown'}`).join(' · ') || stName(code),
+    title: code => pair(code).map(m => `${sen(m)}: ${m.b.intel || isLockedYes(m) ? (isLockedYes(m) ? `committed ${killing() ? 'nay' : 'yea'}` : stance(support(m))) : 'unknown'}`).join(' · ') || stName(code),
   });
 }
 
@@ -1602,7 +1727,7 @@ function render() {
     <div class="stat"><span class="k">Actions${B.freeSound ? ' · free Sound Out' : ''}</span><div class="ap-pips">${pips}</div></div>
     <div class="stat"><span class="k">Capital</span><span class="v" style="color:var(--gold2)">${c.capital}</span></div>
     <div class="stat"><span class="k">Earmarks</span><span class="v">$${B.pork}M</span></div>
-    <div class="stat"><span class="k">Public opinion</span><div class="meter"><b style="width:${B.opinion}%;background:${B.opinion > 55 ? 'var(--yes)' : B.opinion < 45 ? 'var(--no)' : 'var(--mid)'}"></b></div></div>
+    <div class="stat"><span class="k">Public opinion${killing() ? ' of the bill' : ''}</span><div class="meter"><b style="width:${B.opinion}%;background:${(killing() ? 100 - B.opinion : B.opinion) > 55 ? 'var(--yes)' : (killing() ? 100 - B.opinion : B.opinion) < 45 ? 'var(--no)' : 'var(--mid)'}"></b></div></div>
     <div class="stat"><span class="k">Scrutiny</span><div class="meter"><b style="width:${Math.min(100, B.scrutiny)}%;background:${B.scrutiny > 60 ? 'var(--no)' : '#a78bfa'}"></b></div></div>
     <div class="stat"><span class="k">Mood · generic ballot</span><span class="v" style="font-size:13px;color:${S.mood >= 0 ? 'var(--yes)' : 'var(--no)'}">${fmt(S.mood)} · ${Math.round(genericBallot())}%${S.war ? ` <span title="War in ${S.war.place}" style="color:#ff8a8a">⚔ ${S.war.support}%</span>` : ''}</span></div>
     <div class="stat"><span class="k">Confidence</span><span class="v" style="color:var(--no)">${'♥'.repeat(Math.max(0, c.confidence))}</span></div>
@@ -1613,10 +1738,10 @@ function render() {
     <div class="stat"><span class="k">${PARTY[S.side].short} ${isMajority() ? 'majority' : 'minority'} · ${c.wins}–${c.losses} · streak ${c.streak}</span><span class="v rank">${rank()}</span></div>`;
 
   $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival}, the <span title="${RIVAL_STYLES[rivalStyle()][1]}" style="border-bottom:1px dotted">${RIVAL_STYLES[rivalStyle()][0]}</span> · Next election ${electionYear(nextElectionK())}${isPresYear(nextElectionK()) ? ' · a presidential year' : ' · midterms'}</div>
-    <h2>${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}</h2><div class="blurb">${B.blurb}</div>
+    <h2>${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}${aimBadge(B.aim)}</h2><div class="blurb">${B.blurb}${floorByline()}</div>
     <div class="fx">${fxChips(B.fx)}</div>
     ${B.applied.length ? `<div class="amend-list">Amended: ${B.applied.join(', ')}</div>` : ''}
-    ${B.goal ? `<div class="goal">★ You promised ${B.goal.margin} votes to spare</div>` : ''}
+    ${B.goal ? `<div class="goal">★ You promised ${B.goal.margin} votes to spare${killing() ? ' when it dies' : ''}</div>` : ''}
     ${pathToLaw()}${promiseStrip()}`;
 
   document.querySelectorAll('[data-view]').forEach(b => { b.classList.toggle('on', b.dataset.view === ui.view); b.onclick = () => { ui.view = b.dataset.view; render(); }; });
@@ -1642,25 +1767,25 @@ function render() {
   svgEl.querySelectorAll('[data-id]').forEach(g => g.onclick = () => { ui.sel = +g.dataset.id; ui.pitchOpen = false; ui.lastQuote = ''; sfx.click(); render(); });
   ui.lastDelta = null;
 
-  const k = counts();
-  $('#count').innerHTML = `<span class="c" style="color:var(--yes)">Yea / locked<b>${k.yes}</b></span><span class="c" style="color:var(--mid)">On the fence<b>${k.mid}</b></span><span class="c" style="color:var(--no)">Nay<b>${k.no}</b></span><span class="c">Unknown<b>${k.unk}</b></span>`
+  const k = counts(), kill = killing();
+  $('#count').innerHTML = `<span class="c fl-need ${B.aim}">${kill ? 'Nays needed' : 'Yeas needed'}<b>${kill ? (B.super || B.cloture ? 101 - needNum() : vpYours() ? 50 : 51) : needNum()}</b></span><span class="c" style="color:var(--yes)">Yea${kill ? '' : ' / locked'}<b>${k.yes}</b></span><span class="c" style="color:var(--mid)">On the fence<b>${k.mid}</b></span><span class="c" style="color:var(--no)">Nay${kill ? ' / locked' : ''}<b>${k.no}</b></span><span class="c">Unknown<b>${k.unk}</b></span>`
     + `<div class="legend"><span><i style="background:${PARTY.D.color}"></i>Democrat</span><span><i style="background:${PARTY.I.color}"></i>Independent</span><span><i style="background:${PARTY.R.color}"></i>Republican</span><span>★ locked · ✚ absent · ⚪ up for re-election · 🟡 owed a favor · 🔴 grudge</span></div>`;
 
   let fa = '';
   for (const [key, a] of Object.entries(FLOOR)) {
     const sub = typeof a.sub === 'function' ? a.sub() : a.sub;
     const cost = typeof a.cost === 'function' ? a.cost() : a.cost;
-    fa += `<button class="btn" data-floor="${key}" ${B.ap < cost || !a.ok() ? 'disabled' : ''}><b>${a.label}</b><small>${sub}</small></button>`;
+    fa += `<button class="btn" data-floor="${key}" ${B.ap < cost || !a.ok() ? 'disabled' : ''}><b>${typeof a.label === 'function' ? a.label() : a.label}</b><small>${sub}</small></button>`;
   }
   const daysLeft = B.days - B.day;
   fa += `<button class="btn" id="endday"><b>${B.day >= B.days ? 'Go to the vote ⚖' : 'End Day'}</b><small>${B.day >= B.days ? 'Final day' : 'The opposing whip works overnight'}</small></button>`;
-  fa += `<button class="btn primary" id="callvote"><b>Call the Vote Now</b><small>${daysLeft > 0 ? `+${daysLeft} capital if it passes` : 'Roll call'}</small></button>`;
+  fa += `<button class="btn primary" id="callvote"><b>Call the Vote Now</b><small>${daysLeft > 0 ? `+${daysLeft} capital if ${kill ? 'it dies' : 'it passes'}` : 'Roll call'}</small></button>`;
   $('#floor-actions').innerHTML = fa;
   $('#floor-actions').querySelectorAll('[data-floor]').forEach(b => b.onclick = () => { FLOOR[b.dataset.floor].run(); render(); });
   $('#endday').onclick = () => endDay();
   $('#callvote').onclick = () => {
     const dl = B.days - B.day;
-    confirmBox(`Call the vote now${dl > 0 ? `, ${dl} day${dl > 1 ? 's' : ''} early` : ''}? Your count says ${k.yes} solid yea, ${k.mid} on the fence, ${k.unk} unknown. You need ${needText()}.`, () => { S.calledEarly = dl; callVote(); });
+    confirmBox(`Call the vote now${dl > 0 ? `, ${dl} day${dl > 1 ? 's' : ''} early` : ''}? Your count says ${kill ? `${k.no} solid nay` : `${k.yes} solid yea`}, ${k.mid} on the fence, ${k.unk} unknown. You need ${needText()}${kill ? ' to kill it' : ''}.`, () => { S.calledEarly = dl; callVote(); });
   };
 
   renderMember();
@@ -1670,10 +1795,14 @@ function render() {
 function pathToLaw() {
   const B = S.bill;
   if (B.nomination) return `<div class="path"><span class="step">🏛 Senate confirmation: ${needText()}</span><span class="arr">→</span><span class="step">⚖ A lifetime seat. Court now ${courtLabel()}</span></div>`;
-  if (B.override) return `<div class="path"><span class="step" style="border-color:var(--no)">🖋 VETO OVERRIDE: 67 senators, then two-thirds of the House (~${Math.round(houseOverrideOdds() * 100)}%)</span></div>`;
+  if (B.override) return `<div class="path"><span class="step" style="border-color:var(--no)">🖋 VETO OVERRIDE: ${killing() ? `they need 67 senators; you need ${needText()} to sustain it` : '67 senators'}, then two-thirds of the House (~${Math.round(houseOverrideOdds() * 100)}%)</span></div>`;
   const ho = houseOdds(), vo = vetoOdds(), cr = courtRisk();
   const col = p => p >= 0.65 ? 'var(--yes)' : p >= 0.4 ? 'var(--mid)' : 'var(--no)';
-  return `<div class="path"><span class="step">🏛 Senate: ${needText()}</span><span class="arr">→</span>
+  if (killing()) return `<div class="path kill"><span class="pl">Their path to law: break any link</span><span class="step">🏛 Senate: they need ${needNum()}${B.cloture ? ' for cloture' : ''}; you need ${needText()}</span><span class="arr">→</span>
+    <span class="step">🏠 House ${S.house.D}D–${S.house.R}R passes it: <b style="color:${col(1 - ho)}">${Math.round(ho * 100)}%</b></span><span class="arr">→</span>
+    <span class="step">🖋 ${presTitle()}: ${vo === 0 ? '<b style="color:var(--no)">will sign</b>' : `<b style="color:${col(vo)}">${Math.round(vo * 100)}% veto</b>`}</span><span class="arr">→</span>
+    <span class="step">⚖ Court ${courtLabel()}: <b style="color:${col(cr.total * 2)}">${Math.round(cr.total * 100)}%</b> struck down</span></div>`;
+  return `<div class="path"><span class="step">🏛 Senate: ${needText()}${B.cloture ? ' (cloture)' : ''}</span><span class="arr">→</span>
     <span class="step">🏠 House ${S.house.D}D–${S.house.R}R: <b style="color:${col(ho)}">${Math.round(ho * 100)}%</b></span><span class="arr">→</span>
     <span class="step">🖋 ${presTitle()}: ${vo === 0 ? '<b style="color:var(--yes)">will sign</b>' : `<b style="color:${col(1 - vo)}">${Math.round(vo * 100)}% veto risk</b>`}</span><span class="arr">→</span>
     <span class="step">⚖ Court ${courtLabel()}: <b style="color:${col(1 - cr.total * 2)}">${Math.round(cr.total * 100)}%</b> struck down</span></div>`;
@@ -1687,10 +1816,10 @@ function renderFactions() {
   }
   const card = L => {
     const ms = factionOf(L), known = ms.filter(m => m.b.intel || isLockedYes(m));
-    const yes = known.filter(m => isLockedYes(m) || support(m) >= 12).length, no = known.filter(m => !isLockedYes(m) && support(m) <= -12).length;
-    const st = leaderStance(L), col = isLockedYes(L) || st >= 12 ? 'var(--yes)' : st > -12 ? 'var(--mid)' : 'var(--no)';
+    const kill = killing(), yes = known.filter(m => isLockedYes(m) ? !kill : support(m) >= 12).length, no = known.filter(m => isLockedYes(m) ? kill : support(m) <= -12).length;
+    const st = leaderStance(L), col = isLockedYes(L) ? (kill ? 'var(--no)' : 'var(--yes)') : st >= 12 ? 'var(--yes)' : st > -12 ? 'var(--mid)' : 'var(--no)';
     return `<div class="fcard" style="border-left-color:${PARTY[L.party].color}"><div class="fh"><b>${L.faction}</b><small>${ms.length + 1} senators</small></div>
-      <button class="btn fl" data-goto="${L.id}">👑 Sen. ${L.name} (${tagOf(L)})<small>Leader · <b style="color:${col}">${isLockedYes(L) ? 'committed yea' : stance(st)}</b> · pulls members ${fmt(L.b.start == null ? 0 : pullK() * (leaderStance(L) - L.b.start) + (isLockedYes(L) ? 2 : 0))}</small></button>
+      <button class="btn fl" data-goto="${L.id}">👑 Sen. ${L.name} (${tagOf(L)})<small>Leader · <b style="color:${col}">${isLockedYes(L) ? `committed ${kill ? 'nay' : 'yea'}` : stance(st)}</b> · pulls members ${fmt(leaderPull(factionOf(L)[0] || L))}</small></button>
       <div class="fm">${ms.map(m => `<i title="Sen. ${m.name}" data-goto="${m.id}" style="background:${seatColor(m)}"></i>`).join('')}</div>
       <small style="color:var(--dim)">Known: <b style="color:var(--yes)">${yes} yea</b> · <b style="color:var(--no)">${no} nay</b> · ${ms.length - known.length} not sounded out</small></div>`;
   };
@@ -1709,13 +1838,13 @@ function renderMember() {
   const L = leaderOf(m), pull = leaderPull(m);
   const leadLine = T(m, 'leader') && m.party !== 'I'
     ? `<div class="concerns lead">👑 <b>Leader of the ${m.faction}</b>: ${factionOf(m).length} senators follow their lead (${Math.round(pullK() * 100)}% of the way), and fence-sitters follow their vote. Seasoned: your moves on them land 40% weaker.</div>`
-    : L ? `<div class="concerns lead">Follows <a href="#" data-goto="${L.id}">Sen. ${L.name}</a>, leader of the ${m.faction}, who is <b>${isLockedYes(L) ? 'committed yea' : stance(leaderStance(L))}</b> (pull ${fmt(pull)}).</div>` : '';
+    : L ? `<div class="concerns lead">Follows <a href="#" data-goto="${L.id}">Sen. ${L.name}</a>, leader of the ${m.faction}, who is <b>${isLockedYes(L) ? `committed ${killing() ? 'nay' : 'yea'}` : stance(leaderStance(L))}</b> (pull ${fmt(pull)}).</div>` : '';
   const fit = stateFit(m.state, B.fx);
   const home = `<div class="concerns">Back in ${st.name} (${leanLabel(st.lean)}), this bill is <b style="color:${fit > 1.5 ? 'var(--yes)' : fit < -1.5 ? 'var(--no)' : 'var(--mid)'}">${fit > 4 ? 'very popular' : fit > 1.5 ? 'popular' : fit < -4 ? 'very unpopular' : fit < -1.5 ? 'unpopular' : 'a wash'}</b>.${isUp(m) ? ` They're <b>up for re-election in ${electionYear(nextElectionK())}</b> and feel it.` : ''}</div>`;
-  const delta = known && m.b.last && Math.abs(m.b.last) >= 1 ? ` <span class="delta ${m.b.last > 0 ? 'up' : 'down'}">${fmt(m.b.last)}</span>` : '';
+  const delta = known && m.b.last && Math.abs(m.b.last) >= 1 ? ` <span class="delta ${m.b.last * aimSign() > 0 ? 'up' : 'down'}">${fmt(m.b.last)}</span>` : '';
   const pos = ((s + 60) / 120 * 100);
   const bar = known || isLockedYes(m)
-    ? `<div class="sbar"><div class="mid"></div><div class="dot" style="left:${clamp(pos, 2, 98)}%"></div></div><div class="slabels"><span>Firm nay</span><span class="sval">${isLockedYes(m) ? 'LOCKED YEA' : stance(s) + ' (' + fmt(s) + ')'}${delta}</span><span>Solid yea</span></div>`
+    ? `<div class="sbar"><div class="mid"></div><div class="dot" style="left:${clamp(pos, 2, 98)}%"></div></div><div class="slabels"><span>Firm nay</span><span class="sval">${isLockedYes(m) ? (killing() ? 'LOCKED NAY' : 'LOCKED YEA') : stance(s) + ' (' + fmt(s) + ')'}${delta}</span><span>Solid yea</span></div>`
     : `<div class="sbar" style="background:#2a303b"><div class="unk">${m.b.fuzzy != null ? 'POLLSTER: ' + stance(s + m.b.fuzzy).toUpperCase() : '? ? ?'}</div></div>`;
   const badges = [targeted(m) && '<span class="badge grudge">🎯 Targeted tonight</span>', m.party === 'I' && `<span class="badge" style="background:#2e2840;color:#d5c6ff">Answers to no whip${m.cause ? ` · Cause: ${m.cause[0]}` : ''}</span>`, m.defy && `<span class="badge" style="background:#3a3220;color:var(--gold2)">Broke ranks ${m.defy}×</span>`, m.b.pledged && '<span class="badge pledged">★ Committed</span>', m.b.blackmailed && '<span class="badge pledged">★ Compromised</span>', m.iou && '<span class="badge iou">You owe them a favor</span>', m.grudge && '<span class="badge grudge">Holds a grudge</span>', m.b.absent && '<span class="badge absent">Absent</span>', m.dirt && '<span class="badge dirt">You have dirt</span>', isUp(m) && `<span class="badge" style="background:#2c2c2c;color:#fff">Up in ${electionYear(nextElectionK())}</span>`, `<span class="badge" style="background:#232a35;color:var(--dim)">Relationship ${fmt(m.rel)}</span>`].filter(Boolean).join('');
 
@@ -1728,7 +1857,7 @@ function renderMember() {
       if (key === 'prescall' && S.president.party !== S.side) continue;
       if (key === 'deal' && m.party !== 'I') continue;
       if (key === 'twist' && m.party === 'I') continue;
-      if (key === 'pledge' && !(m.b.intel && s >= 25)) continue;
+      if (key === 'pledge' && !(m.b.intel && s * aimSign() >= 25)) continue;
       const cost = a.cost(m);
       const desc = typeof a.desc === 'function' ? a.desc(m) : a.desc;
       const dis = B.ap < cost || !a.ok(m);
@@ -1737,7 +1866,8 @@ function renderMember() {
   }
   let args = '';
   if (ui.pitchOpen && !isLockedYes(m)) {
-    args = `<div class="args"><div class="h">Pick your argument. Match what they care about${known ? '' : ' (you\'re guessing — sound them out first)'}:</div>${Object.entries(B.fx).filter(([, v]) => v).map(([t, v]) => `<button class="btn" data-arg="${t}">${TAG[t][0]} ${v > 0 ? 'It\'s great for' : 'It\'s not so bad for'} ${TAG[t][1]}</button>`).join('')}</div>`;
+    const argTxt = (t, v) => killing() ? (v > 0 ? `It goes way too far on ${TAG[t][1]}` : `It guts ${TAG[t][1]}`) : `${v > 0 ? 'It\'s great for' : 'It\'s not so bad for'} ${TAG[t][1]}`;
+    args = `<div class="args"><div class="h">${killing() ? 'Pick your case against it' : 'Pick your argument'}. Match what they care about${known ? '' : ' (you\'re guessing — sound them out first)'}:</div>${Object.entries(B.fx).filter(([, v]) => v).map(([t, v]) => `<button class="btn" data-arg="${t}">${TAG[t][0]} ${argTxt(t, v)}</button>`).join('')}</div>`;
   }
   el.innerHTML = `<div class="m-head">${portrait(m)}<div><h3>Sen. ${m.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[m.party].color}">${PARTY[m.party].name}</span>${typeof indLabelHTML === 'function' ? indLabelHTML(m) : ''} · ${m.faction}</div><div class="m-sub">${st.name} · ${leanLabel(st.lean)} · Class ${m.cls}</div></div></div>
     <div class="support">${bar}</div>
@@ -1760,13 +1890,15 @@ function confirmBox(text, yes) {
 }
 
 const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><ul class="how">
-<li>You're your party's whip in the <b>US Senate</b>: 100 senators, two per state. Regular bills need a majority: <b>50 + the Vice President</b> if your party holds the White House, otherwise 51. You start in the <b>minority</b>, 47 seats to 51, facing a President from the other party. <b>Landmark</b> bills need <b>60</b> to beat a filibuster, and treaties need <b>67</b>.</li>
-<li>Every bill starts a few votes short. You have <b>5 days</b> and a handful of <b>actions</b> per day.</li>
+<li>You're your party's whip in the <b>US Senate</b>: 100 senators, two per state. You start in the <b>minority</b>, 47 seats to 51, facing a President from the other party. Whoever holds the majority <b>controls the floor</b>: they decide what comes up.</li>
+<li>Every bill carries your caucus's position: <b>PASS IT</b> or <b>KILL IT</b>. Your own agenda you pass. When the other side brings up <i>their</i> agenda, their landmarks, their budget or their President's nominees, your job is to <b>kill it</b>: every tool works in reverse, the opposing whip works to pass it, and a commitment you lock in is a committed <b>nay</b>. A dead enemy bill is a win, and none of it happens. If it gets out of the Senate anyway, the House or your President's veto can still bury it: a partial win.</li>
+<li><b>The filibuster:</b> a party's own agenda needs <b>60 votes for cloture</b>, so in the minority <b>41 nays</b> kill their partisan bills. Budgets (reconciliation), nominations, war votes and bipartisan deals need a simple majority: <b>51</b>, or 50 + the Vice President. Treaties need <b>67</b>. In the majority your own partisan bills face the same 60, unless you <b>go nuclear</b> from the floor schedule, which ends the filibuster for everyone, for good.</li>
+<li>Every bill starts a few votes short of what your caucus wants. You have <b>5 days</b> and a handful of <b>actions</b> per day.</li>
 <li><b>Click a seat</b> (or a state on the <b>Map</b>) to visit a senator. <b>Sound Out</b> to learn where they stand, their traits and what they care about.</li>
 <li><b>Pitch</b> with an argument they care about (a bad match backfires). Use <b>earmarks</b> on the pork-hungry and <b>photo ops</b> on the camera-hungry. <b>Promise a favor</b> and you'll owe them later. <b>Twist an arm</b> unless they're thin-skinned. Dig up <b>dirt</b> if you dare.</li>
-<li>Get a senator to a solid yea and <b>lock in</b> their commitment so the other side's whip can't steal them back overnight.</li>
+<li>Get a senator to a solid yea (or a solid nay, when you're killing it) and <b>lock in</b> their commitment so the other side's whip can't steal them back overnight.</li>
 <li>Every faction has a <b>leader</b> 👑. Their public stance pulls every member of the faction, they vote first in the roll call, and fence-sitters follow them. Win the leader, win the bloc. See them all under <b>Factions</b>.</li>
-<li><b>Amendments</b> change what the bill does, which reshuffles who supports it.</li>
+<li><b>Amendments</b> change what the bill does, which reshuffles who supports it. On their bills they're <b>poison pills</b> built to split their coalition, if the majority doesn't table them. In the minority you can't buy an extra day, but on a 60-vote bill you can <b>talk one out</b>.</li>
 <li><b>Elections</b> come every two years (every 6 bills), with a third of the Senate up each time and the White House every four years. Senators up for re-election vote with their home state in mind, and those who voted against it are vulnerable. Your party's national mood depends on what you passed. Spend campaign cash in the close races. Lose the majority and you lose control of the calendar.</li>
 <li>Passing the Senate is only step one. Every bill then needs the <b>House</b> (whip it to raise the odds) and the <b>President's</b> signature. An opposing President may veto, and an override needs 67 senators. A friendly President can call wavering senators for you, and their approval lifts your whole caucus. Once it's law, the <b>Supreme Court</b> may strike it down. When a justice retires, a friendly President nominates a replacement and you whip the confirmation; with an opposing President, your majority can block their pick.</li>
 <li><b>Factions</b> run everything: senators belong to caucuses, the House votes caucus by caucus (use <b>Whip the House</b>), and the President's own wing follows them hardest.</li>
@@ -1777,7 +1909,7 @@ const HOW = `<div class="kicker">Briefing</div><h2>How to whip the Senate</h2><u
 <li><b>Election Night</b> calls the races east to west: a projection banner at 270, a decision-desk ticker, sortable tables, swings since last time and the popular vote. Afterwards, <b>Full results</b> opens the detailed explorer, and <b>The Almanac</b> in the whip's office keeps every past election, the presidents and the standings.</li>
 <li>Expect the unexpected: breaking news on the floor (faction ultimatums, filibuster threats, a senator's resignation or a party switch, town-hall revolts, a Supreme Court ruling mid-fight…), world news between bills (the economy, indictments, impeachment inquiries) and moments that need your call (a scandal in your caucus, a defector, a book deal).</li>
 <li>Know your opponent: the opposing whip is a <b>Bulldog</b>, a <b>Schemer</b> (watch for poison-pill amendments) or a <b>Charmer</b>.</li>
-<li>Between bills, use <b>The Docket</b> to choose what comes next, or bring your own bill on any issue (especially one you promised). In the minority it takes a discharge petition.</li>
+<li>Between bills, <b>The Floor Schedule</b> in the whip's office shows the next three bills. In the majority you set the picks and the order (your agenda, bipartisan deals, landmarks, your own bill on any issue), <b>fast-track</b> a bill, <b>hold the floor</b> to spare your vulnerable members a tough vote, or go nuclear. In the minority the majority sets it, and you fight back: <b>discharge petitions</b>, <b>unanimous-consent ambushes</b>, <b>threats</b> that bump their bills, <b>riders</b> you'll offer as amendments on their bills, and <b>message votes</b> that put their vulnerable senators on record. Budgets, war votes and Supreme Court nominations can't wait.</li>
 <li>The <b>Administration</b>: the President signs executive orders, faces foreign crises and may ask Congress to authorize war. New presidents send a whole cabinet for confirmation. Governors appoint senators when seats open up.</li>
 <li>In presidential years, both parties hold <b>primaries</b> state by state (Spring). Senators, House members, governors and cabinet officials run. Endorse a candidate and you <b>run their campaign</b>: before each contest you plan their days on the ground, ads, attacks, message, debate strategy and favors from the party. Every state reports full results with raw vote totals. Sitting Presidents draw challengers when their approval sags (near 30%, expect a real fight), and you can back the challenger. Watch the other party's race too.</li>
 <li>Each party then holds its <b>convention</b> (Summer). At yours you pick the <b>running mate</b> (vet them for hidden risks), settle the <b>platform</b> fight between the flank and the center, choose the keynote and the speech, and ride out the surprises; a party that leaves united gets a <b>bounce</b>. If nobody clinched, it's a <b>brokered convention</b> and you can be the kingmaker. The other party's convention plays out on the news.</li>
