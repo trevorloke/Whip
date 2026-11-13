@@ -183,7 +183,7 @@ function paperBody(won) {
   const B = S.bill, L = pick(S.members.filter(m => T(m, 'leader') && m.party === S.side)) || pick(S.members);
   const O = pick(S.members.filter(m => side(m) === 'opp')) || pick(S.members);
   return [
-    `WASHINGTON — ${won ? 'In a win for the ' + PARTY[S.side].short : 'In a setback for the ' + PARTY[S.side].short}, the Senate ${won ? 'cleared' : 'rejected'} the ${B.name} after ${B.days} days of furious whipping on the floor.`,
+    `WASHINGTON — ${won ? 'In a win for the ' + PARTY[S.side].short : 'In a setback for the ' + PARTY[S.side].short}, the Senate ${won ? 'cleared' : 'rejected'} the ${B.name} after ${B.days} day${B.days === 1 ? '' : 's'} of furious whipping on the floor.`,
     `"${won ? pick(['The people sent us here to deliver. Today we delivered.', 'This is what governing looks like.', 'We counted every vote twice.']) : pick(['We\'ll be back.', 'The fight isn\'t over.', 'Some days the count just isn\'t there.'])}" said Sen. ${L.name} (${tagOf(L)}).`,
     `"${won ? pick(['A sad day for the country.', 'They\'ll regret this at the ballot box.', 'Rammed through, plain and simple.']) : pick(['Common sense won today.', 'The American people dodged a bullet.', 'Washington finally listened.'])}" countered Sen. ${O.name} (${tagOf(O)}).`,
   ];

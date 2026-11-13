@@ -26,7 +26,7 @@ function newPerson(party, state, opts = {}) {
 }
 function nameTaken(n) {
   if (!S) return false;
-  return (S.members || []).some(m => m && m.name === n) || Object.values(S.governors || {}).some(g => g && g.name === n) || Object.values(S.cabinet || {}).some(c => c && c.name === n) || (S.reps || []).some(r => r.name === n);
+  return (S.members || []).some(m => m && m.name === n) || Object.values(S.governors || {}).some(g => g && g.name === n) || Object.values(S.cabinet || {}).some(c => c && c.name === n) || (S.reps || []).some(r => r.name === n) || Object.values(S.mayors || {}).some(M => M && M.person && M.person.name === n);
 }
 function hist(p, text, year) { (p.history = p.history || []).push({ y: year || currentYear(), t: text }); if (p.history.length > 24) p.history.splice(1, 1); }
 function currentYear() { return S && S.career ? billYear(Math.max(1, S.career.bills + 1)) : 2027; }

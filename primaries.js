@@ -41,6 +41,7 @@ function primaryField(party, withIncumbent) {
   shuffle(Object.keys(S.governors).filter(c => S.governors[c].party === party)).slice(0, 3).forEach(c => pool.push(() => add(S.governors[c], `Governor of ${ST[c].name}`, { type: 'gov', code: c })));
   if (P.party === party && !withIncumbent) shuffle(CABINET_POSTS.slice(0, 5)).slice(0, 2).forEach(([post, title]) => { if (S.cabinet[post]) pool.push(() => add(S.cabinet[post], title, { type: 'cab', post })); });
   shuffle((S.reps || []).filter(r => r.party === party)).slice(0, 2).forEach(r => pool.push(() => add(r, `Representative (${r.district})`, { type: 'rep' })));
+  if (typeof localMayors === 'function') shuffle(localMayors(party)).slice(0, 2).forEach(x => pool.push(() => add(x.p, x.office, { type: 'mayor' })));
   formers.slice(0, 1).forEach(f => pool.push(() => add(f, f.cls ? `Former Senator from ${ST[f.state] ? ST[f.state].name : f.state}` : 'Former official', { type: 'former' })));
   const fill = n => { const order = shuffle(pool.slice()); while (field.length < n && order.length) order.shift()(); while (field.length < n) { const [o, office] = outsider(); add(o, office, { type: 'outsider' }); } };
   if (withIncumbent) {

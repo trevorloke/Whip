@@ -59,7 +59,7 @@ function midGB() { const M = midM(); return clamp(genericBallot() + (M ? (M.nati
 function midCand(rc, p) {
   const m = rc.m;
   if (m.party === p && !rc.retiring) return rc.primaried && rc.nominee ? rc.nominee.name : `Sen. ${m.name}`;
-  return `the ${PARTY[p].name} ${m.party === p || m.party === 'I' ? 'nominee' : 'challenger'}`;
+  return (rc.names && rc.names[p]) || `the ${PARTY[p].name} ${m.party === p || m.party === 'I' ? 'nominee' : 'challenger'}`;
 }
 function midInc(rc) { return !rc.retiring && !rc.primaried && rc.m.party !== 'I' ? rc.m : null; }
 

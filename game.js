@@ -1431,7 +1431,7 @@ function raceRow(rc) {
   const pc = PARTY[m.party].color;
   const rec = m.rec <= -4 ? ' · <span style="color:var(--no)">bad record at home</span>' : m.rec >= 4 ? ' · <span style="color:var(--yes)">popular record</span>' : '';
   const who = rc.retiring ? `<i>Open seat (${m.party} retiring)</i>` : rc.primaried ? `<i>${rc.nominee.name} (${rc.nominee.faction}), after beating Sen. ${lastName(m)} in the primary</i>` : sen(m);
-  const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ Independent ${rc.ind.name} (${rc.ind.cause[0]}), polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
+  const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ ${rc.ind.label ? `${rc.ind.label} candidate` : 'Independent'} ${rc.ind.name}${rc.ind.cause ? ` (${rc.ind.cause[0]})` : ''}, polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
   return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${typeof raceDetailBtn === 'function' ? raceDetailBtn(rc, i) : ''}${rec}${ind}</span>
     <span class="cashctl"><span class="chance"><b style="color:${chanceColor(p)}">${Math.round(p * 100)}%</b><span class="mbar"><i style="width:${p * 100}%;background:${chanceColor(p)}"></i></span><small>your chance${rc.ind ? ' · 3-way' : ''}</small></span>
       <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${money(rc.cash)}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
@@ -1459,11 +1459,12 @@ function countBallots() {
     let winner = m;
     const l = cands[1];
     if (flip || rc.retiring || rc.primaried) {
-      const nominee = !flip && rc.primaried ? rc.nominee : null;
-      winner = newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : (typeof wingRecruitFaction === 'function' ? wingRecruitFaction(np) : null));
-      if (nominee || (np === 'I' && rc.ind)) winner.name = w.name;
+      const nominee = !flip && rc.primaried ? rc.nominee : null, pre = np !== 'I' && rc.people && rc.people[np] && rc.people[np] !== m ? rc.people[np] : null; // races.js: the nominee the primaries picked
+      winner = newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : (typeof wingRecruitFaction === 'function' && wingRecruitFaction(np)) || (pre && pre.faction) || null);
+      if (nominee || pre || (np === 'I' && rc.ind)) winner.name = w.name;
       if (np === 'I' && rc.ind && rc.ind.cause) winner.cause = rc.ind.cause;
-      senatorBackstory(winner, E.year);
+      if (pre) { for (const k of ['gender', 'born', 'background', 'hometown', 'seed']) if (pre[k] != null) winner[k] = pre[k]; winner.history = (pre.history || []).slice(-12); hist(winner, 'Elected to the U.S. Senate', E.year); }
+      else senatorBackstory(winner, E.year);
       winner.history[winner.history.length - 1].t = `Elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${flip && !rc.retiring ? `, unseating Sen. ${m.name}` : ' (open seat)'}`;
       if (rc.primaried) hist(winner, `Won the ${PARTY[np].name} primary over Sen. ${m.name}`, E.year);
       hist(m, rc.retiring ? 'Retired from the Senate' : rc.primaried ? `Lost the primary to ${rc.nominee.name}` : `Lost re-election to ${winner.name}`, E.year);
@@ -1495,7 +1496,7 @@ function countBallots() {
   const wasMaj = before[S.side] > before[other(S.side)], nowMaj = isMajority();
   if (wasMaj && !nowMaj) conf += ' <b style="color:var(--no)">You have lost the Senate majority.</b> You no longer control the calendar, and every bill starts further behind.';
   if (!wasMaj && nowMaj) conf += ' <b style="color:var(--yes)">You have WON the Senate majority!</b>';
-  let presLine = pres ? `<p style="font-size:16px"><b style="color:${PARTY[S.president.party].color}">President:</b> ${pres.what} (${pres.evD}–${pres.evR} in the Electoral College.) ${S.president.party === S.side ? 'Your Vice President breaks ties, and the President is on your side.' : 'Their VP now breaks ties, and expect vetoes.'}</p>` : '';
+  let presLine = pres ? `<p style="font-size:16px"><b style="color:${PARTY[S.president.party].color}">President:</b> ${pres.what} (${pres.evD}–${pres.evR}${pres.evI ? `–${pres.evI} I` : ''} in the Electoral College.) ${S.president.party === S.side ? 'Your Vice President breaks ties, and the President is on your side.' : 'Their VP now breaks ties, and expect vetoes.'}</p>` : '';
   const hNet = S.house[S.side] - house.before[S.side];
   presLine += `<p><b>House:</b> ${S.house.D}D–${S.house.R}R (${fmt(hNet)} for your party). ${houseMaj() !== hMajBefore ? `<b style="color:${houseMaj() === S.side ? 'var(--yes)' : 'var(--no)'}">The House flips to the ${PARTY[houseMaj()].short}!</b>` : `${PARTY[houseMaj()].short} keep the House.`}</p>`;
   S.mood *= 0.3;
@@ -1541,6 +1542,7 @@ function balanceBar() {
 function interlude() {
   S.worldNews = worldNews();
   const steps = [];
+  if (typeof localOffYearDue === 'function' && localOffYearDue()) steps.push(next => localOffYear(next)); // November comes before the next year's primaries
   if (S.crisis) steps.push(next => crisisModal(next));
   if (S.pendingCabinet) { S.pendingCabinet = false; S.cabinetVacancy = null; steps.push(next => cabinetConfirmations(CABINET_POSTS.map(c => c[0]), next)); }
   else if (S.cabinetVacancy) { const post = S.cabinetVacancy; S.cabinetVacancy = null; steps.push(next => cabinetConfirmations([post], next)); }

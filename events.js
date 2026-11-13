@@ -44,7 +44,7 @@ function evtFreshB(m) {
 // a senator on a presidential ticket (or in the primaries) can't die, resign or switch parties on the floor
 function evtOnTicket(m) {
   const N = S.nominees; if (!N) return false;
-  return ['D', 'R'].some(p => N[p] && (N[p].name === m.name || (N[p].vp && N[p].vp.name === m.name) || (N[p].runnerUp && N[p].runnerUp.name === m.name)));
+  return ['D', 'R', 'I'].some(p => N[p] && (N[p].name === m.name || (N[p].vp && N[p].vp.name === m.name) || (N[p].runnerUp && N[p].runnerUp.name === m.name)));
 }
 function evtFixLeaders() {
   if (!S.bill) return;

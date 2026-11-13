@@ -176,7 +176,7 @@ function conventionsDue() { const n = S.career.bills + 1; return n % 6 === 5 && 
 function conventionsModal(done) {
   convEnsureNominees();
   CONV_TAKEN = [];
-  const P = S.president, order = [other(P.party), P.party];
+  const P = S.president, order = P.party === 'I' ? ['D', 'R'] : [other(P.party), P.party];
   let finished = false;
   const finish = () => {
     if (finished) return; finished = true;
