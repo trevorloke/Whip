@@ -26,6 +26,22 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   interests. You start in the **minority**, 47 seats to 51, with a President
   from the other party. Regular bills need 51 votes, or 50 plus the Vice
   President; landmark bills need 60 to beat a filibuster; treaties need 67.
+- **Pass it or kill it.** Every bill has a caucus position. When the other
+  party controls the floor, the majority leader schedules their agenda and
+  your job is to **kill** it: your arguments, favors and arm-twisting push
+  senators toward nay, a commitment locks in a nay, amendments become poison
+  pills, and the minority's great weapon is the **filibuster**: their partisan
+  bills need 60 votes for cloture, so 41 nays kill them. Budgets, nominations
+  and war votes still pass with a simple majority. A bill that survives the
+  Senate can still die in the House or under a veto. Killing their bills is a
+  win; their bill becoming law is a loss.
+- **The floor schedule.** The Whip's Office shows the next three bills. In
+  the majority you set the schedule (and can fast-track, hold a tough vote, or
+  go nuclear on the filibuster). In the minority the majority sets it, and you
+  fight it with discharge petitions, unanimous-consent ambushes, filibuster
+  threats, amendments that ride on their bills, and message votes that put
+  their vulnerable senators on record. You can also flip your caucus's
+  position on their bipartisan bills, or sell your votes on their budget.
 - **Your wing.** At the start you pick the wing of your party you champion
   (five per party, including Conservative Democrats from deep-red states and
   Progressive Republicans from deep-blue ones). Its senators start out warmer
@@ -93,6 +109,22 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   be ended with a War Powers Resolution. Long, unpopular wars drain the
   President's approval; after two years Congress may force a War Powers vote
   onto the docket, and after five the President pulls out.
+- **Off-year elections, mayors and statehouses.** Virginia and New Jersey
+  elect governors the year after a presidential election; Kentucky,
+  Louisiana and Mississippi the year before. They get their own Off-Year
+  Election Night every November of an odd year, with mayors and state
+  legislatures, read as a verdict on the President. Thirty-nine big-city
+  mayors are characters with careers who run for governor, senator and
+  president. All 50 state legislatures are tracked (real chamber sizes and
+  calendars); the Statehouses view shows trifectas, chambers, governors and
+  mayors.
+- **Third parties.** Independents carry labels (Green, Democratic Socialist,
+  Working Families, Forward, Common Ground, Libertarian, Heartland,
+  Constitution). Every presidential year has an independent primary of its
+  own, the Ballot Alliance, with state results and a convention; some years
+  nobody qualifies, some years the field runs left to right. About once in
+  15 cycles a heavyweight bolts and runs as a real independent: they can win
+  states, throw the election to the House, or win the White House.
 - **Governors.** All 50, elected on the real calendar (36 in midterms, 11 in
   presidential years, New Hampshire and Vermont every two years). They help
   their party's Senate candidates, appoint senators when seats open, and run
@@ -117,6 +149,17 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
 - **The opposing whip** has a personality: a Bulldog who works more senators,
   a Schemer who springs poison-pill amendments, or a Charmer whose visits land
   harder.
+- **Senate primaries for every seat.** Every seat up holds a Democratic and
+  a Republican primary, with real fields (mayors, House members, attorneys
+  general, former senators coming back, self-funders) and runoffs in the
+  South. Endorse up to three candidates in your party and plan their
+  campaigns, or put quiet money on one in the other party's. Primary nights
+  run from March to September with raw vote totals for every candidate,
+  upsets, photo finishes and incumbents falling.
+- **Race rooms.** Every Senate race on the campaign trail has a room: both
+  nominees, a poll trend, the state's issues, both primaries' results, and
+  your moves: debate prep, oppo research, a surrogate, a negative ad blitz, a
+  tour with the candidate.
 - **Primaries.** Before each election, senators who broke with the party line
   draw challengers from their flank. Protect them, back the challenger, or
   meddle in the other party's primaries.
@@ -183,7 +226,8 @@ Then go to <http://localhost:8077>. Opening `index.html` directly also works.
   Forecasters see most of a wave coming, but not all of it, so landslides are
   rare but never come from nowhere.
 - **Election Night.** Results come in from east to west, with close races
-  called last. A projection banner lands the moment a ticket reaches 270 (or
+  called last. The House is decided seat by seat across all 435 districts,
+  each with its own representative. A projection banner lands the moment a ticket reaches 270 (or
   a deadlock sends it to the House), a decision-desk ticker logs every call,
   and each tab (President, Senate, House, Governors) has a map, a sortable
   table with swings since the last election, before-and-after seat counts, a
@@ -223,7 +267,12 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | `art.js` | The map renderer, the Capitol illustration, portraits, the newspaper, the chamber backdrop |
 | `depth.js` | Achievements and legacy, the opposing whip's personality and poison pills, campaign promises, headlines |
 | `names.js` | Name pools, backgrounds, hometowns and generated political histories |
-| `world.js` | Governors, the VP and cabinet, executive orders, war, the Docket, the Pulse (horse race, Senate outlook) |
+| `world.js` | Governors (including the off-year calendar), the VP and cabinet, executive orders, war, the Pulse (horse race, Senate outlook) |
+| `floor.js` | The floor schedule: who sets it, minority and majority tools, pass/kill positions |
+| `local.js` | Mayors, state legislatures and the Off-Year Election Night |
+| `races.js` | Senate primaries for every seat, and the race rooms |
+| `house.js` | All 435 House districts and their representatives |
+| `indie.js` | Third-party labels, the independent presidential primary, the rare major independent |
 | `primaries.js` | Presidential primaries, state by state, with ranked endorsements |
 | `convention.js` | The two national conventions: running mates, platforms, speeches, brokered conventions, the bounce |
 | `campaign.js` | The fall campaign: five rounds, debates, October surprises, strategy, surrogates, the battleground |

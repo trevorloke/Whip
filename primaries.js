@@ -310,7 +310,7 @@ function primariesModal(done) {
       S.nominees[p] = { p: nom, name: nom.name, state: nom.state, faction: nom.faction || pick(FACTIONS[p])[0], office, charisma, del, runnerUp, others, contested, vp: null };
     }
     S.challenger = false; S.undermine = 0;
-    const n = S.nominees, outParty = other(P.party);
+    const n = S.nominees, outParty = P.party === 'I' ? 'D' : other(P.party), inParty = P.party === 'I' ? 'R' : P.party;
     const ind = typeof indFinish === 'function' ? indFinish(IR, state, n, year) : null;
     const head = p => n[p].contested ? `NO ONE CLINCHES: A CONTESTED ${PARTY[p].name.toUpperCase()} CONVENTION LOOMS` : `${lastName(n[p].p).toUpperCase()} CLINCHES THE ${PARTY[p].name.toUpperCase()} NOMINATION`;
     const headline = n.D.contested && n.R.contested ? 'NO ONE CLINCHES: TWO CONTESTED CONVENTIONS LOOM' : head(mine);
@@ -320,7 +320,7 @@ function primariesModal(done) {
       if (N.contested) return `${PARTY[p].short}: the June primaries end with ${N.name} (${N.office}) at ${primN(N.del)} delegates${ru ? `, ${ru.name} at ${primN(ru.del)}` : ''} and ${primN(need)} needed. The nomination will be settled on the convention floor.`;
       return `${PARTY[p].short}: ${N.name} (${N.office}) clinched with ${primN(N.del)} of ${primN(totalDel)} delegates${ru ? `; ${ru.name} finished second with ${primN(ru.del)}` : ''}.`;
     };
-    const sub = `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority${n[mine].contested ? ' either' : ''}.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[P.party].short} in August.`;
+    const sub = `${n[theirs].contested ? `Across the aisle, the ${PARTY[theirs].short} have no majority${n[mine].contested ? ' either' : ''}.` : `Across the aisle, ${n[theirs].name} is the ${PARTY[theirs].name} nominee-in-waiting.`} The conventions open this summer: the ${PARTY[outParty].short} in late July, the ${PARTY[inParty].short} in August.`;
     const showNominees = () => {
       const major = ind && ind.major;
       showModal(`${frontPage({ headline, sub, body: [major ? `<b>Breaking:</b> ${major.name} (${major.office}) is launching an independent campaign for President. <i>See the extra edition.</i>` : '', para(mine), para(theirs), ...lines, ind ? ind.line : '', endorsed || !contest[mine] ? '' : 'You stayed neutral in your party\'s primary.', 'Running mates, platforms and the first real polls of the fall all wait on the conventions.'].filter(Boolean), mood: 'dawn', date: `June ${year} · End of the primaries` })}

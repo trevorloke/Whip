@@ -588,7 +588,9 @@ function evtNewsRedistrict() {
   S.evtRedistrict = y;
   const pool = STATES.filter(([c]) => (typeof EV !== 'undefined' ? EV[c] : 10) >= 8).map(s => s[0]), code = pick(pool) || 'TX', p = Math.random() < 0.5 ? 'D' : 'R', d = ri(1, 3), maj = houseMaj();
   const shift = p === maj ? d : Math.min(d, Math.max(0, S.house[maj] - 218));
-  if (shift > 0) { S.house[p] += shift; S.house[other(p)] -= shift; }
+  if (shift > 0) { S.house[p] += shift; S.house[other(p)] -= shift;
+    const L = S.districts && S.districts[code];   // redraw this state's lines (house.js); hdSync covers any remainder
+    if (L && typeof hdNewRep === 'function') L.filter(x => x.party !== p).sort((a, b) => p === 'D' ? b.m - a.m : a.m - b.m).slice(0, shift).forEach(x => { x.lean = hdR1(x.lean + (p === 'D' ? 6 : -6)); x.party = p; x.m = 0; x.rep = hdNewRep(p, x.lean); x.star = 0; }); }
   return [`🗺️ <b>Redistricting fight in ${stName(code)}:</b> the state supreme court throws out the congressional map as a partisan gerrymander. The new lines ${shift ? `hand the ${PARTY[p].short} about ${shift} House seat${shift > 1 ? 's' : ''}` : 'change little'} heading into the next election (House now ${S.house.D}D–${S.house.R}R).`];
 }
 // a celebrity flirts with a Senate run

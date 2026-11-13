@@ -80,10 +80,10 @@ function docketTemplate(n) {
   return { ...it, wpr: warIsWPR(it) };
 }
 function flNomination() {
-  const N = S.nominee, p = N.party || S.side, pr = PARTY[p].prior, fx = {}, mod = 1 / (1 + (N.tries || 0)), mine = p === S.side;
+  const N = S.nominee, p = N.party || S.side, pr = PARTY[p === 'I' ? other(S.side) : p].prior, fx = {}, mod = 1 / (1 + (N.tries || 0)), mine = p === S.side;
   TAGS.slice().sort((a, b) => Math.abs(pr[b] || 0) - Math.abs(pr[a] || 0)).slice(0, 3).forEach(t => fx[t] = Math.round((pr[t] || 0) * 2 * mod) || Math.sign(pr[t] || 0));
   return { tpl: [`Confirmation of Judge ${N.name}`, mine ? `${presTitle()}'s nominee for the Supreme Court. No filibuster: a simple majority confirms. The other side calls the nominee an extremist.`
-    : `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARTY[p].name} majority. No filibuster for judges: a simple majority confirms. Your caucus calls the nominee an extremist; peel off enough of theirs and the seat stays open.`, fx],
+    : `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARTY[other(S.side)].name} majority. No filibuster for judges: a simple majority confirms. Your caucus calls the nominee an extremist; peel off enough of theirs and the seat stays open.`, fx],
     nomination: true, aim: mine ? 'pass' : 'kill', by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '' };
 }
 // old saves call this
@@ -93,13 +93,13 @@ function billPool() { return AGENDA[S.side].concat(AGENDA.both).filter(b => !(S.
 // per-visit UI state (not saved): offers, the selected slot (majority), your bill (minority), tools used
 let flUI = { bills: -1 };
 function flState() {
-  if (flUI.bills !== S.career.bills) {
+  if (flUI.bills !== S.career.bills || flUI.S !== S) {
     const taken = flTaken(), fresh = a => shuffle(a.filter(b => !taken.has(b[0])));
     const due = flSlotBills(3).some(bn => bn % 5 === 0);
     const offers = isMajority()
       ? fresh(AGENDA[S.side]).slice(0, due ? 2 : 3).concat(fresh(AGENDA.both).slice(0, 2), due ? fresh(LANDMARKS[S.side].concat(LANDMARKS.both)).slice(0, 1) : [])
       : fresh(AGENDA[S.side]).slice(0, 2).concat(fresh(AGENDA.both).slice(0, 1));
-    flUI = { bills: S.career.bills, offers: offers.map(t => flItem(t, 'you')), sel: 0, pick: null, used: {} };
+    flUI = { S, bills: S.career.bills, offers: offers.map(t => flItem(t, 'you')), sel: 0, pick: null, used: {} };
     flUI.pick = flUI.offers[0] || null;
   }
   return flUI;
@@ -153,14 +153,14 @@ function docketHTML() {
         ${S.nuclear ? '' : tool('data-nuke', 'nuke', '☢️ Go nuclear', `Abolish the legislative filibuster: your agenda needs a simple majority from now on. So will theirs, the next time they run the place. National mood −1.`, 3)}
         ${wpr ? tool('data-wpr', 'wpr', `☮ War Powers Resolution on ${S.war.place}`, 'Put it in the selected slot: order the troops home.', 1) : ''}</div>`;
   } else {
-    const head = flTheirs(flQueue()), pk = U.pick;
+    const head = flTheirs(flQueue()), pk = U.pick, rideOn = flQueue().find(x => x.by === 'them' && x.aim === 'pass');
     const rideT = pk && flTopTag(pk.tpl[2]);
     body = `<p class="fl-sub">Your bill${pk ? `: <b>${pk.name}</b> <small>${flFx(pk.tpl[2])}</small>` : ''}. Pick one, then use the minority's tools to fight for floor time:</p>
       <div class="shop docket">${U.offers.map(offerBtn).join('')}</div>${own}
       <div class="shop fl-tools">${tool('data-mt="discharge"', 'discharge', '📜 Discharge petition', '60% odds: a majority of senators sign, and your bill is pried out of committee. It takes their next slot; theirs goes to the back.', 2, !!pk)}
         ${tool('data-mt="uc"', 'uc', '🎯 Unanimous-consent ambush', 'A 30% shot: ask for a vote while their whip is at lunch. Your bill goes in right after this week\'s.', 1, !!pk)}
         ${tool('data-mt="pull"', 'pull', '🧱 Threaten to filibuster everything', head ? `50% they blink and postpone the ${head.name} to the back of the line.` : 'Nothing of theirs to bump.', 2, !!head)}
-        ${tool('data-mt="ride"', 'ride', '🐎 Ride it as an amendment', head && rideT ? `Offer your ${TAG[rideT][1]} language as an amendment on the ${head.name}: an extra card in that fight.` : 'Pick a bill, and they need a bill on the schedule.', 1, !!(head && rideT && !head.ride))}
+        ${tool('data-mt="ride"', 'ride', '🐎 Ride it as an amendment', rideOn && rideT ? `Offer your ${TAG[rideT][1]} language as an amendment on the ${rideOn.name}: an extra card in that fight.` : 'Pick a bill, and they need a bill your caucus backs on the schedule.', 1, !!(rideOn && rideT && !rideOn.ride))}
         ${tool('data-mt="message"', 'message', '📣 Message vote', pk ? `Force a show vote on the ${pk.name}. It fails, but their senators up in ${electionYear(nextElectionK())} from states that like it go on the record (record back home −2); your party's mood rises.` : 'Pick a bill first.', 1, !!pk)}
         ${wpr ? tool('data-wpr', 'wpr', `☮ War Powers Resolution on ${S.war.place}`, '60% odds: force a vote to bring the troops home.', 2) : ''}</div>`;
   }
@@ -180,7 +180,8 @@ function flHoldTarget() {
 }
 // the majority's next bill on the schedule, the target of threats and riders: one they want and you don't, if there is one
 function flTheirs(q) { return q.find(x => x.by === 'them' && x.aim === 'kill') || q.find(x => x.by === 'them') || null; }
-function bindDocket(redraw) {
+function bindDocket(redraw0) {
+  const redraw = () => { const sc = $('#modal-card').scrollTop; redraw0(); $('#modal-card').scrollTop = sc; };
   const card = $('#modal-card'), maj = isMajority(), c = S.career, U = flState(), q = flQueue();
   const pay = (key, cost) => { if (c.capital < cost || U.used[key]) return false; c.capital -= cost; U.used[key] = true; return true; };
   const done = (msg, good) => { toast(msg); good ? sfx.up() : sfx.down(); redraw(); };
@@ -245,7 +246,7 @@ function flTool(k, pay, done) {
     return done(`They blinked. The ${t.name} goes to the back of the line.`, true);
   }
   if (k === 'ride') {
-    const t = flTheirs(q), tag = pk && flTopTag(pk.tpl[2]); if (!t || !tag || t.ride || !pay(k, 1)) return;
+    const t = q.find(x => x.by === 'them' && x.aim === 'pass'), tag = pk && flTopTag(pk.tpl[2]); if (!t || !tag || t.ride || !pay(k, 1)) return;
     t.ride = tag;
     return done(`Your ${TAG[tag][1]} language will ride as an amendment on the ${t.name}.`, true);
   }
@@ -263,9 +264,9 @@ function flTool(k, pay, done) {
 function floorHeadline(won, headline, y, n) {
   const B = S.bill, name = B.name.toUpperCase(), me = PARTY[S.side].short, them = PARTY[other(S.side)].short, P = lastName(S.president).toUpperCase();
   if (B.budget) return won ? { h: 'GOVERNMENT SHUTS DOWN', d: `The ${them}' budget dies ${headline === 'DEAD IN THE HOUSE' ? 'in the House' : /VETO/.test(headline) ? 'by veto' : `on the Senate floor, ${y}–${n}`}; the ${me} dig in and dare the majority to blink.`, mood: 'storm' }
-    : { h: `${them.toUpperCase()} PUSH THEIR BUDGET THROUGH`, d: `A ${y}–${n} vote over ${me} objections. The lights stay on; the priorities are theirs.`, mood: 'night' };
+    : { h: `${them.toUpperCase()} PUSH THEIR BUDGET THROUGH`, d: `A ${y}–${n} vote over ${me}' objections. The lights stay on; the priorities are theirs.`, mood: 'night' };
   if (B.nomination) return won ? { h: 'SENATE REJECTS NOMINEE', d: `A ${n}–${y} rebuke for ${presTitle()}. The seat stays open.`, mood: 'dawn' }
-    : { h: `SENATE CONFIRMS ${B.name.replace('Confirmation of Judge ', '').toUpperCase()}`, d: `Over ${me} objections, ${y}–${n}. The Court now stands ${courtLabel()}.`, mood: 'night' };
+    : { h: `SENATE CONFIRMS ${B.name.replace('Confirmation of Judge ', '').toUpperCase()}`, d: `Over ${me}' objections, ${y}–${n}. The Court now stands ${courtLabel()}.`, mood: 'night' };
   if (won) {
     if (headline === 'FILIBUSTERED') return { h: `FILIBUSTER KILLS ${name}`, d: `${y} votes, ${(B.cloture || B.super) - y} short of cloture. The ${me} hold the line.`, mood: 'dawn' };
     if (headline === 'DEAD IN THE HOUSE') return { h: `${name} DIES IN THE HOUSE`, d: `It cleared the Senate ${y}–${n}, then hit a wall across the Capitol.`, mood: 'dawn' };
@@ -275,13 +276,13 @@ function floorHeadline(won, headline, y, n) {
   }
   if (headline === 'VETO OVERRIDDEN') return { h: 'CONGRESS OVERRIDES VETO', d: `The ${B.name} becomes law over ${presTitle()}'s objection.`, mood: 'storm' };
   if (y - n <= 2) return { h: `BY A HAIR: ${name} SQUEAKS THROUGH`, d: `A ${y}–${n} nail-biter; the ${me} whip comes up one short.`, mood: 'night' };
-  return { h: `${name} BECOMES LAW`, d: `The Senate passes it ${y}–${n} over ${me} objections; ${presTitle()} signs.`, mood: 'night' };
+  return { h: `${name} BECOMES LAW`, d: `The Senate passes it ${y}–${n} over ${me}' objections; ${presTitle()} signs.`, mood: 'night' };
 }
-function floorPaperBody(won) {
+function floorPaperBody(won, headline) {
   const B = S.bill, L = pick(S.members.filter(m => T(m, 'leader') && m.party === S.side)) || pick(S.members);
   const O = pick(S.members.filter(m => side(m) === 'opp')) || pick(S.members);
   return [
-    `WASHINGTON — ${won ? 'In a win for the ' + PARTY[S.side].short : 'In a setback for the ' + PARTY[S.side].short}, the ${B.name} is ${won ? 'dead' : 'the law of the land'} after ${B.days} day${B.days === 1 ? '' : 's'} of furious whipping on the Senate floor${won && B.cloture ? ', felled by a filibuster' : ''}.`,
+    `WASHINGTON — ${won ? 'In a win for the ' + PARTY[S.side].short : 'In a setback for the ' + PARTY[S.side].short}, the ${B.name} is ${won ? 'dead' : B.nomination ? 'done: the nominee is confirmed' : 'the law of the land'} after ${B.days} day${B.days === 1 ? '' : 's'} of furious whipping on the Senate floor${won && headline === 'FILIBUSTERED' ? ', felled by a filibuster' : won && headline === 'DEAD IN THE HOUSE' ? ', then left for dead in the House' : won && /VETO/.test(headline || '') ? ', then finished off by a veto' : ''}.`,
     `"${won ? pick(['We said no, and we meant it.', 'Some bills deserve to die. This was one.', 'The minority still has a voice in this chamber.']) : pick(['We\'ll repeal it the day we take this place back.', 'They had the votes. We had the arguments.', 'Remember this vote in November.'])}" said Sen. ${L.name} (${tagOf(L)}).`,
     `"${won ? pick(['Obstruction, plain and simple.', 'They\'d filibuster the Pledge of Allegiance.', 'The American people will remember who said no.']) : pick(['Today the Senate worked.', 'Promises made, promises kept.', 'The obstruction is over.'])}" countered Sen. ${O.name} (${tagOf(O)}).`,
   ];

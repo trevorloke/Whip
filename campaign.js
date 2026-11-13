@@ -71,7 +71,7 @@ function campLeadText(pt) { const l = pt.me - pt.them; return Math.abs(l) < 1 ? 
 function campTPFrom(I) { const ln = +I.lean || 0; return { name: I.name, share: +clamp(+I.strength || 3, 0.5, 45).toFixed(1), hurts: ln < -0.05 ? 'D' : ln > 0.05 ? 'R' : pick(['D', 'R']), cause: null, label: I.label || 'Independent', major: !!I.major, lean: ln, color: I.color || PARTY.I.color, nom: true }; }
 function campTPShare(v) { const C = campC(), tp = C && C.thirdParty; if (!tp) return; tp.share = +clamp(v, 0.5, 45).toFixed(1); const I = S.nominees && S.nominees.I; if (tp.nom && I && I.name === tp.name) I.strength = tp.share; }
 // what share of the third candidate's vote comes out of the Democratic column (by lean; an unlabeled surge draws evenly)
-function campTPDrawD(tp) { return tp && tp.lean != null ? clamp(0.5 - 0.4 * tp.lean, 0.1, 0.9) : 0.5; }
+function campTPDrawD(tp) { return tp && tp.lean != null ? clamp(0.5 - 0.3 * tp.lean, 0.1, 0.9) : 0.5; }
 const campTPColor = tp => (tp && tp.color) || PARTY.I.color;
 const campTPTag = tp => tp && tp.label && tp.label !== 'Independent' ? tp.label : 'I';
 function campTopSalience(n) { return Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]); }
@@ -292,7 +292,7 @@ function fallCampaign(done) {
   E.presCash = E.presCash || 0;
   E.camp = { round: 0, stage: 'r1', polls: [], strategy: null, theme: null, themeHot: false, focus: [], debates: [], events: [], surrogates: [], national: 0, stateAdj: {}, thirdParty: null, momentum: false, adBuy: 0, gotv: false, opp: null, ui: {}, autoLog: [] };
   CAMP_UI = { done, draw: null };
-  const IN = S.nominees && S.nominees.I;
+  const IN = presSetup().noms.I;   // indie.js's nominee, or a sitting independent President seeking a second term
   if (IN && IN.name) { E.camp.thirdParty = campTPFrom(IN); log(`On the ballot too: ${IN.name} (${IN.label || 'Independent'}), polling ${E.camp.thirdParty.share}%.`, 'sys'); }
   campStartPolls();
   log(`The fall campaign begins: ${S.nominees[S.side].name} vs ${S.nominees[other(S.side)].name}.`, 'sys');
@@ -761,7 +761,7 @@ const CAMP_EVENTS = [
       body: tp0 ? [`${name}${I && I.office && I.name === name ? ` (${I.office})` : ''} gained ${(share - tp0.share).toFixed(1)} points in a week on a promise of ${cause[0]} and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, tp0.major ? 'This is no protest vote anymore: the independent leads outright in a handful of state polls.' : 'Third-party surges usually fade. Usually.']
         : [`${name}, ${pick(BACKGROUNDS)} from ${pick(STATES)[1]} running on "${cause[0]}", qualified for the ballot in ${ri(38, 50)} states and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, 'Third-party surges usually fade. Usually.'],
       stakes: `${hurts === x.mine ? '−0.5 for your ticket' : '+0.5 for your ticket'} already in; ${tp0 ? `${lastName({ name })} polls ${share.toFixed(1)}% from here on` : `${name} appears in the polls from here on`}.`,
-      auto: fx => { if (tp0) { campTPShare(share); x.C.thirdParty.surged = true; } else x.C.thirdParty = { name, share, hurts, cause: cause[0] }; fx.n(hurts === x.mine ? -0.5 : 0.5, 'votes siphoned'); },
+      auto: fx => { if (tp0) { campTPShare(share); x.C.thirdParty.surged = true; } else x.C.thirdParty = { name, share, hurts, cause: cause[0] }; if (!tp0) fx.n(hurts === x.mine ? -0.5 : 0.5, 'votes siphoned'); },
       choices: [
         { t: `Attack ${lastName({ name })} as a spoiler`, s: `Their share −2; ${hurts === x.mine ? '+0.3 national as voters come home' : '−0.2 national: you drove their voters back to the other side'}.`, go: fx => { campTPShare(Math.max(1, x.C.thirdParty.share - 2)); fx.n(hurts === x.mine ? 0.3 : -0.2); return `"A vote for ${lastName({ name })} is a vote for ${hurts === x.mine ? x.theirL : x.myL}," the ads said. Some voters listened.`; } },
         { t: `Court their voters: adopt "${cause[0]}"`, s: 'A coin flip: +0.6 if it works, −0.3 if your base grumbles.', go: fx => { if (Math.random() < 0.5) { fx.n(0.6); fx.sal(cause[1], 1); return `${x.my.name} gave a whole speech on ${cause[0].toLowerCase() === cause[0] ? cause[0] : `"${cause[0]}"`}. ${lastName({ name })}'s voters noticed.`; } fx.n(-0.3); return 'Your base wondered why the nominee was suddenly talking like the independent.'; } },

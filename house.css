@@ -23,3 +23,4 @@
 .hd-filters{display:flex;flex-wrap:wrap;gap:5px;align-items:center;margin:4px 0 8px}
 .hd-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px;margin:8px 0}
 @media (max-width:640px){.hd-row{grid-template-columns:48px minmax(0,1fr);}.hd-mg{grid-column:2}.hd-list{max-height:240px}}
+.res-table tr.hd-fliprow td small{display:block}

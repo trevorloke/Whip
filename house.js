@@ -104,6 +104,7 @@ function hdElect(swingSide) {
     }
     d.party = w; d.m = hdR1(margin);
   }
+  S.reps = (S.reps || []).filter(r => !busy.has(r.name));   // a member who moved up leaves the notable-House list
   let D = 0, R = 0, popD = 0, popR = 0;
   for (const [c, L] of Object.entries(districts)) {
     L.sort((a, b) => a.n - b.n);

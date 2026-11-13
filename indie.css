@@ -3,7 +3,7 @@
 .ind-pill.big{font-size:12px;padding:1px 10px}
 .ind-pills{display:flex;flex-wrap:wrap;gap:5px;margin:6px 0}
 .ind-none{align-items:center;gap:12px;border-color:#a78bfa66}
-.ind-major{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;background:#e3b54a;color:#1a1405;padding:1px 6px;border-radius:4px}
+.ind-major{font-size:10px;font-weight:800;letter-spacing:1px;text-transform:uppercase;background:#e3b54a;color:#1a1405;padding:1px 6px;border-radius:4px;white-space:nowrap}
 .camp-tk.ind-tk{flex:.7;min-width:220px;background:linear-gradient(180deg,#1d1a2c,#151424)}
 .camp-tk.ind-tk svg,.camp-tk.ind-tk .camp-noport{width:46px;height:46px}
 .ind-podium{border:1px solid;border-left-width:5px;border-radius:8px;padding:8px 10px;margin:10px 0 0;background:#181628}

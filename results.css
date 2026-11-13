@@ -133,3 +133,4 @@
 .res-stand .res-card{padding:10px 12px}
 .res-stand .balance{margin:6px 0}
 .res-stand p{margin:4px 0;font-size:12px;color:var(--dim)}
+.res-region .pv div{padding:0 3px;font-size:10px}.res-region .pv div:nth-child(2):not(:last-child){font-size:0}@media (max-width:600px){.res-regions{grid-template-columns:1fr}}

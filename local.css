@@ -41,3 +41,6 @@
 @keyframes loc-in{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 @media (max-width:600px){.loc-list{grid-template-columns:1fr}.loc-table{font-size:11px}.loc-table td,.loc-table th{padding:4px 5px}}
 .loc-tabs .btn small{display:inline}
+.loc-chips .bchip{display:inline-block;line-height:1.5}
+.loc-table th{cursor:default}.loc-table th:hover{color:var(--dim)}
+@media (max-width:600px){.loc-nm{white-space:normal}}

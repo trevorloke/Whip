@@ -14,7 +14,7 @@
 .rs-pic{flex:none;width:34px;height:34px;border-radius:50%;overflow:hidden;background:#0d1220}
 .rs-pic svg{width:100%;height:100%;display:block}
 .rs-cn{flex:1;min-width:0;font-size:13px}
-.rs-cn small{display:block;color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rs-cn small{display:block;color:var(--dim);font-size:11px;overflow-wrap:anywhere}
 .rs-poll{display:flex;flex-direction:column;align-items:flex-end;min-width:64px;font-size:13px}
 .rs-poll .mbar{width:60px}
 .rs-cand .btn{padding:4px 9px;font-size:12px;flex:none}
@@ -57,3 +57,4 @@
 .rs-pb .salrow b{text-align:right}
 @media (max-width:760px){.rs-cards{grid-template-columns:1fr}.rs-res,.rs-room{grid-template-columns:1fr}.rs-noms{flex-direction:column}.rs-vs{display:none}}
 @media (max-width:480px){.rs-cand{flex-wrap:wrap}.rs-cand .btn{margin-left:42px}.rs-prow{flex-direction:column;align-items:flex-start}}
+@media (max-width:480px){.rs-pb .salrow{grid-template-columns:minmax(0,1fr) 80px 40px}}

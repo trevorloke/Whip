@@ -248,12 +248,17 @@ function indMajor(state, n, minor) {
   hist(p, `Launched an independent campaign for President`, y);
   const centrist = minor && Math.abs(indLabelInfo(minor.label).lean) <= 0.15 && Math.random() < 0.6;
   const label = centrist ? minor.label : 'Independent';
-  const I = { p, name: p.name, label, office, home: p.state, state: p.state, lean: +lean.toFixed(2), color: centrist ? indLabelInfo(label).color : PARTY.I.color, strength: +rnd(19, 29).toFixed(1), major: true, charisma: +rnd(1.1, 1.45).toFixed(2), kind, why, minor: minor ? { name: minor.name, label: minor.label, strength: minor.strength, stepped: centrist } : null };
+  const I = { p, name: p.name, label, office, home: p.state, state: p.state, lean: +lean.toFixed(2), color: centrist ? indLabelInfo(label).color : PARTY.I.color, strength: +rnd(21, 30).toFixed(1), major: true, charisma: +rnd(1.1, 1.45).toFixed(2), kind, why, minor: minor ? { name: minor.name, label: minor.label, strength: minor.strength, stepped: centrist } : null };
   if (minor) hist(minor.p, centrist ? `Stepped aside to hand the ${minor.label} ballot line to ${p.name}` : `Was eclipsed by ${p.name}'s independent campaign`, y);
   return I;
 }
 // end of the primaries: finish the Alliance's contests, hold its convention, maybe launch a major independent; S.nominees.I is set (or not)
 function indFinish(R, state, n, year) {
+  const P = S.president;
+  if (P.party === 'I' && P.terms < 2) { // a sitting independent President runs again: the Alliance stands aside
+    n.I = { p: P, name: P.name, label: P.label || 'Independent', office: 'President of the United States', home: P.state || null, state: P.state || null, lean: 0, color: P.label ? indLabelInfo(P.label).color : PARTY.I.color, strength: 16, major: true, charisma: 1.05, kind: 'incumbent', incumbent: true };
+    return { line: `<b>Independents:</b> ${presTitle()} seeks a second term outside both parties; the Ballot Alliance stands aside.`, major: null, minor: null, conv: null };
+  }
   let minor = null, line;
   if (!R || R.none) line = R ? `<b>No third party on the ballot:</b> ${R.why}.` : '';
   else {
@@ -264,14 +269,13 @@ function indFinish(R, state, n, year) {
     R.conv = conv; conv.strength = minor.strength;
   }
   const major = indMajor(state, n, minor);
-  n.I = major || minor || undefined;
-  if (!n.I) delete n.I;
+  n.I = major || minor || null;   // null = the Alliance ran and nobody qualified (night.js presThird tests 'I' in S.nominees)
   if (n.I) n.I.p.label = n.I.label;
   return { line, major, minor, conv: R && R.conv };
 }
 // the first three-way poll after a launch (your ticket's margin from presSetup, the newcomer drawing by lean)
 function indThreeWay(I) {
-  const s = presSetup(), mD = (s.inc === 'D' ? 1 : -1) * s.base, und = 9, tp = I.strength, fD = clamp(0.5 - 0.4 * I.lean, 0.1, 0.9);
+  const s = presSetup(), mD = presEnvD(s), und = 9, tp = I.strength, fD = clamp(0.5 - 0.3 * I.lean, 0.1, 0.9);
   const D = (100 - und) / 2 + mD / 2 - tp * fD, R = (100 - und) / 2 - mD / 2 - tp * (1 - fD);
   return { D: +D.toFixed(1), R: +R.toFixed(1), I: tp, und };
 }

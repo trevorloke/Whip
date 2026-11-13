@@ -76,7 +76,7 @@ function cabinetPick(party, allowSitting = true) {
   return { ...p, from: 'outsider', competence: ri(1, 5), controversy: Math.random() };
 }
 function profileModal(p, title, back) {
-  showModal(`<div class="kicker">${title}</div><div class="m-head">${portrait(p)}<div><h3>${p.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[p.party].color}">${PARTY[p.party].name}</span>${p.faction ? ' · ' + p.faction : ''}</div></div></div>${careerHTML(p)}<div class="choices"><button class="btn primary" id="pmok">Close</button></div>`);
+  showModal(`<div class="kicker">${title}</div><div class="m-head">${portrait(p)}<div><h3>${p.name}</h3><div class="m-sub"><span class="m-party" style="color:${PARTY[p.party].color}">${PARTY[p.party].name}</span>${p.faction ? ' · ' + p.faction : ''}</div></div></div>${careerHTML(p)}<div class="choices"><button class="btn primary adv" id="pmok">Close</button></div>`);
   $('#pmok').onclick = () => { if (back) back(); else hideModal(); };
 }
 // a Senate seat opens: the governor appoints someone from their own party
@@ -399,7 +399,8 @@ function warCardHTML() {
 // confirmation votes for the cabinet: projected votes, and you can whip for or against
 function cabinetConfirmations(posts, done) {
   const P = S.president;
-  const noms = posts.map(post => ({ post, title: CABINET_POSTS.find(c => c[0] === post)[1], icon: CABINET_POSTS.find(c => c[0] === post)[2], p: cabinetPick(P.party), work: 0 }));
+  const taken = new Set(Object.entries(S.cabinet || {}).filter(([k, c]) => c && !posts.includes(k)).map(([, c]) => c.name));
+  const noms = posts.map(post => { let p = cabinetPick(P.party); for (let i = 0; i < 8 && taken.has(p.name); i++) p = cabinetPick(P.party); taken.add(p.name); return { post, title: CABINET_POSTS.find(c => c[0] === post)[1], icon: CABINET_POSTS.find(c => c[0] === post)[2], p, work: 0 }; });
   const proj = n => {
     const mine = S.members.filter(m => m.party === P.party).length, ind = S.members.filter(m => m.party === 'I').length;
     const cross = Math.round((1 - n.p.controversy) * 14 + (n.p.from === 'senator' || n.p.from === 'former' ? 6 : 0) + (n.p.competence - 3) * 2);
@@ -571,7 +572,7 @@ function openAdmin(back) {
     ${warCardHTML()}
     <hr><b>The Cabinet</b><div class="races" style="max-height:none">${rows}</div>
     ${eos.length ? `<hr><b>Recent executive orders</b>${eos.map(e => `<p style="margin:4px 0">🖋️ ${e.name} <small style="color:var(--dim)">(${e.party}, ${e.year}${e.sued ? ', challenged in court' : ''})</small></p>`).join('')}` : ''}
-    <div class="choices"><button class="btn primary" id="adback">Back</button></div>`);
+    <div class="choices"><button class="btn primary adv" id="adback">Back</button></div>`);
   const me = () => openAdmin(back);
   $('#modal-card').querySelectorAll('[data-cab]').forEach(a => a.onclick = e => { e.preventDefault(); profileModal(S.cabinet[a.dataset.cab], CABINET_POSTS.find(c => c[0] === a.dataset.cab)[1], me); });
   $('#profP').onclick = e => { e.preventDefault(); profileModal(P, 'President of the United States', me); };

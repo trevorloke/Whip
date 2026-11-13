@@ -133,12 +133,12 @@ function runPres() {
   const vps = { D: noms.D.vp ? { name: noms.D.vp.name, state: noms.D.vp.state || null } : null, R: noms.R.vp ? { name: noms.R.vp.name, state: noms.R.vp.state || null } : null };
   if (T && T.vp && T.vp.name) vps.I = { name: T.vp.name, state: T.vp.state || null };
   const offices = { D: noms.D.office || (noms.D.p === P ? 'President' : null), R: noms.R.office || (noms.R.p === P ? 'President' : null), ...(T ? { I: T.office || (T.incumbent ? 'President' : null) } : {}) };
-  const evSorted = [evD, evR, evI].filter(Boolean).sort((a, b) => b - a), evStr = evSorted.join('–');
+  const evStr = [['D', evD], ['R', evR], ['I', evI]].filter(x => x[1]).sort((a, b) => b[1] - a[1]).map(([p, v]) => `${v} ${p}`).join('–');
   const evTxt = houseVote ? (tie ? ' by the House after a 269–269 Electoral College deadlock' : ' by the House after no candidate won a majority in the Electoral College') : `, ${evStr} in the Electoral College`;
   // the live record behind a nominee or running mate, by name: after a save/load the record's `p` is a detached copy,
   // and someone who left office in this very count (a term-limited governor, a retiring senator) is already among the formers
   const liveOf = (n, p) => { if (!n || !n.name) return null; if (P.name === n.name) return P; if (S.vp && S.vp.name === n.name) return S.vp;
-    return S.members.find(m => m.name === n.name && (!p || m.party === p)) || Object.values(S.governors || {}).find(g => g && g.name === n.name) || Object.values(S.cabinet || {}).find(c => c && c.name === n.name) || (S.reps || []).find(r => r.name === n.name) || (S.formers || []).find(f => f && f.name === n.name) || n.p || null; };
+    return S.members.find(m => m.name === n.name && (!p || m.party === p)) || Object.values(S.governors || {}).find(g => g && g.name === n.name) || Object.values(S.cabinet || {}).find(c => c && c.name === n.name) || (S.reps || []).find(r => r.name === n.name) || (S.formers || []).find(f => f && f.name === n.name) || (Object.values(S.mayors || {}).find(M => M && M.person && M.person.name === n.name) || {}).person || n.p || null; };
   for (const p of losers) {
     if (p === 'I' && !(T.major || T.p || T.incumbent)) continue;
     const lp = liveOf(p === 'I' ? T : noms[p], p === 'I' ? null : p);
@@ -374,14 +374,14 @@ function detailPanel() {
     const flips = gD || gR ? `${gD ? `<b style="color:${PARTY.D.color}">D +${gD}</b> ` : ''}${gR ? `<b style="color:${PARTY.R.color}">R +${gR}</b>` : ''} in flips` : k.length ? 'no seat has changed hands' : '';
     body = `<h3>${stName(c.code)} · House</h3><div class="nsub"><b>${s.n} seat${s.n > 1 ? 's' : ''}</b> · ${leanLabel(stLean(c.code))} · ${status}</div>${hdDots(L, isC)}
       <div class="nsub">${k.length < L.length ? `${k.length} of ${L.length} called · ` : ''}<b style="color:${PARTY.D.color}">D ${d}</b> · <b style="color:${PARTY.R.color}">R ${k.length - d}</b> · ${flips}${open ? ` · ${open} open seat${open > 1 ? 's' : ''}` : ''}</div>
-      ${candRow('Democrats (all districts)', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('Republicans (all districts)', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}
+      ${candRow('All districts', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('All districts', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}
       <div class="lh hd-lh">${L.length === 1 ? 'The at-large seat' : `Every district · ${L.length}`}</div><div class="res-scroll hd-list" data-keep="hd-${c.code}">${L.map(x => hdRowHTML(x, isC(x), reporting({ call: x.call }))).join('')}</div>`;
   } else {
     const s = c.s, ch = s.d - s.prevD;
     body = `<h3>${stName(c.code)} · House</h3><div class="nsub"><b>${s.n} seat${s.n > 1 ? 's' : ''}</b> · ${leanLabel(stLean(c.code))} · ${status}</div>
       ${called ? `<div class="seatrow">${('<i style="background:' + PARTY.D.color + '"></i>').repeat(s.d)}${('<i style="background:' + PARTY.R.color + '"></i>').repeat(s.r)}</div>
       <div class="nsub">D ${s.d} · R ${s.r} · ${ch === 0 ? 'no change' : `<b style="color:${ch > 0 ? PARTY.D.color : PARTY.R.color}">${ch > 0 ? 'D' : 'R'} +${Math.abs(ch)}</b>`}</div>` : '<div class="seatrow">' + '<i style="background:#3a4250"></i>'.repeat(s.n) + '</div>'}
-      ${candRow('Democrats (all districts)', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('Republicans (all districts)', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}`;
+      ${candRow('All districts', 'D', s.dVotes * rep, s.dPct, called && s.dPct > s.rPct)}${candRow('All districts', 'R', s.rVotes * rep, s.rPct, called && s.rPct > s.dPct)}`;
   }
   return nav + body;
 }
