@@ -19,3 +19,11 @@
 .ind-conv td.out{color:var(--dim);text-decoration:line-through}
 .ind-conv .nsub{margin-top:6px}
 @media (max-width:640px){.camp-tk.ind-tk{flex:1 1 100%}}
+/* parity: the Alliance on the national calendar and its convention */
+.ind-dels{display:inline-block;font-weight:800;color:var(--gold2);white-space:nowrap}
+.ind-dot{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.ind-moves{background:#1b1830;border:1px solid #a78bfa66;border-radius:8px;padding:8px 10px;margin:8px 0;font-size:13px}
+.ind-moves>small{color:var(--dim);margin-left:6px}
+.ind-moves .choices{margin-top:6px}
+.ind-moves .btn small{display:block;font-size:11px;color:var(--dim);font-weight:400}
+@media (max-width:640px){.ind-moves .choices .btn{flex:1 1 100%}.ind-conv td,.ind-conv th{padding:4px 3px}}

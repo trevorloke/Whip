@@ -49,3 +49,8 @@
 .prim-tags .btn.on{border-color:var(--gold);color:var(--gold2)}
 .prim-you{font-size:10px;letter-spacing:1px;background:var(--gold);color:#1a1405;padding:1px 6px;border-radius:4px}
 .cand2.prim-mine{border-width:2px}
+/* parity: the Alliance tab and a sitting independent President in its field */
+.ptabs .ind-tab{border-style:dashed}
+.ptabs .ind-tab.on{border-style:solid;background:color-mix(in srgb,#a78bfa 18%,transparent)}
+.prim-tag.ind-inc{background:#a78bfa;color:#140f24}
+.prim-rcol{overflow-x:auto}
