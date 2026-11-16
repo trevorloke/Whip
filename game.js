@@ -37,6 +37,10 @@ const FACTIONS = {
 const MODERATE = { D: 'Blue Dogs', R: 'GOP Moderates' };
 // the cross-pressured wings: Democrats from deep-red states, Republicans from deep-blue ones
 const CROSS = { D: 'Conservative Democrats', R: 'Progressive Republicans' };
+MODERATE.I = 'Independents'; // events.js / convention fallbacks find independent members, not nobody
+CROSS.I = null;
+const IND_LEAD_MIN = 6;      // caucus seats needed before a Gavel Bargain is legal (the first balance knob: 5)
+const IND_START_IPRES = 0.12; // the independent career: the chance the starting President is an independent
 
 /* ---------------- states ---------------- */
 // code, name, partisan lean (positive = Republican, approx.), local issues
@@ -186,16 +190,26 @@ let S = null;
 const HOOKS = { office: [], interlude: [], worldNews: [], results: [] };
 let ui = { sel: null, pitchOpen: false, lastQuote: '', lastDelta: null, view: 'chamber' };
 
-const other = p => p === 'D' ? 'R' : p === 'R' ? 'D' : IND() && p === 'I' ? floorParty() : 'D';
+/* ---------------- the parity switch and Senate control (CONTRACT §2, §3.2) ----------------
+   PARITY(): the runtime kill switch for every D/R-visible change of the independent-parity work.
+   window.FF_PARITY_OFF = 1 runs a D/R career exactly as before it (the I career may ignore it). */
+function PARITY() { return !(typeof window !== 'undefined' && window.FF_PARITY_OFF); }
+const other2 = p => p === 'D' ? 'R' : 'D'; // the strict two-party flip
+const other = p => p === 'D' ? 'R' : p === 'R' ? 'D' : p === 'I' ? (IND() ? oppParty() : PARITY() ? indOpp() : 'D') : 'D';
 function side(m) { return m.party === S.side ? 'you' : m.party === 'I' ? 'ind' : 'opp'; }
 function tagOf(m) { return `${m.party}-${m.state}`; }
 function sen(m) { return `Sen. ${m.name} (${tagOf(m)})`; }
 function lastName(m) { return m.name.split(' ').slice(1).join(' '); }
 function seats(p) { return S.members.filter(m => m.party === p).length; }
-function isMajority() { if (IND()) return false; return seats(S.side) > seats(other(S.side)); }
+const vpParty = () => S.president ? S.president.party : null;
+// p organizes the Senate on its own: 51 seats, or 50 plus its own Vice President (p ∈ D, R, I)
+function aloneOK(p) { const n = seats(p); return n >= 51 || (n === 50 && vpParty() === p); }
+// the old two-party majority test (more seats than the other major party)
+function majOld() { return seats(S.side) > seats(other2(S.side)); }
+function isMajority() { return IND() ? floorParty() === 'I' : PARITY() ? floorParty() === S.side : majOld(); }
 function vpYours() { return S.president.party === S.side; }
 /* ---------------- careers: D, R, or the independent caucus ('I') ----------------
-   Every helper returns exactly the old D/R value when S.side is 'D' or 'R'. */
+   Every helper returns exactly the old D/R value when S.side is 'D' or 'R' and PARITY() is off. */
 function IND() { return !!S && S.side === 'I'; }
 // the major party two-party arithmetic is written from: yours, or (independent career) the Democrats (D-positive)
 function frameP() { return IND() ? 'D' : S.side; }
@@ -205,22 +219,121 @@ function envSign(p) { return IND() ? (p === 'D' ? 1 : p === 'R' ? -1 : 0) : (p =
 function youSign(p) { return IND() ? (p === 'I' ? 1 : 0) : (p === S.side ? 1 : -1); }
 // S.mood where it feeds two-party arithmetic. In an independent career S.mood is the independents' mood, so 0
 function partyMood() { return IND() ? 0 : S.mood; }
-// who would organize the Senate if the caucus partnered with `partner` ('D' | 'R' | null): the bigger bloc, ties to the VP's party
-function floorPartyWith(partner) {
-  const n = p => seats(p) + (partner === p ? seats('I') : 0), d = n('D'), r = n('R');
+// who would organize the Senate on counts n = { D, R, I } if the independents partnered with `partner` ('D' | 'R' | null):
+// the bigger bloc, ties to the VP's party (else the partner, else 'D')
+function floorPartyWithN(n, vp, partner) {
+  const c = p => n[p] + (partner === p ? n.I : 0), d = c('D'), r = c('R');
   if (d !== r) return d > r ? 'D' : 'R';
-  const P = S.president && S.president.party; return P === 'D' || P === 'R' ? P : partner || 'D';
+  return vp === 'D' || vp === 'R' ? vp : partner || 'D';
 }
-// who runs the floor (schedules bills, writes the budget). D/R: the old "isMajority() ? S.side : other(S.side)"
-function floorParty() { return IND() ? floorPartyWith(S.cau && S.cau.partner) : (isMajority() ? S.side : other(S.side)); }
-// the caucus's partner choice decides who organizes
-function caucusDecides() { return IND() && floorPartyWith('D') !== floorPartyWith('R'); }
-// neither party can organize alone (51 seats, or 50 plus its own Vice President)
-function kingmakerNow() { const ok = p => seats(p) >= 51 || (seats(p) === 50 && S.president.party === p); return IND() && !ok('D') && !ok('R'); }
-// the Vice President's tiebreak goes your caucus's way. D/R: vpYours() (the old needText / spare / count term)
-function vpWithYou() { return IND() ? (killing() ? !vpBacks() : vpBacks()) : vpYours(); }
-// whose whip works against your aim on this bill: killing → the owner's whip; passing → the other major party's
-function rivalOf() { const o = sponsor(); return o === 'I' ? floorParty() : killing() ? o : other(o); }
+function floorPartyWith(partner) { return floorPartyWithN({ D: seats('D'), R: seats('R'), I: seats('I') }, vpParty(), partner); }
+// who the independents caucus with ('D' | 'R' | null). I career: your choice. D/R: the partner frozen for this Congress
+// (S.org.partner, written only by orgRefresh), else the NPC state (S.inds), else the fixed rule. Pure: no RNG, no writes.
+function indPartner() {
+  if (IND()) return (S.cau && S.cau.partner) || null;
+  if (!PARITY() || !seats('I')) return null;
+  return (S.org && S.org.partner) || (S.inds && S.inds.partner) || indsRulePartner();
+}
+// the fixed rule: the exParty most I senators came from; else the sign of Σ (w·R prior − w·D prior) over I senators
+// (< 0 → D); else the bigger major party; a tie → the VP's party if D/R, else 'D'. Reads m.exParty and m.w only.
+function indsRulePartner() {
+  const I = S.members.filter(m => m.party === 'I');
+  const ex = p => I.filter(m => m.exParty === p).length, xd = ex('D'), xr = ex('R');
+  if (xd !== xr) return xd > xr ? 'D' : 'R';
+  const dw = (w, pr) => TAGS.reduce((a, t) => a + ((w && w[t]) || 0) * (pr[t] || 0), 0);
+  const s = I.reduce((a, m) => a + dw(m.w, PARTY.R.prior) - dw(m.w, PARTY.D.prior), 0);
+  if (s < 0) return 'D';
+  if (s > 0) return 'R';
+  const d = seats('D'), r = seats('R');
+  if (d !== r) return d > r ? 'D' : 'R';
+  const vp = vpParty(); return vp === 'D' || vp === 'R' ? vp : 'D';
+}
+// the Gavel Bargain is in force (the independents lead with their partner as the junior member)
+function indLeads() { return IND() ? !!(S.cau && S.cau.lead) : !!(PARITY() && S.inds && S.inds.lead); }
+// THE rule on explicit counts. Pure. n = { D, R, I }; vp ∈ D, R, I, null. Returns { floor, how, coal }:
+//   how: 'alone' | 'coalition' (the partner leads) | 'bargain' (I leads by deal) | 'iplural' (I out-seats its partner)
+//        | 'plurality' (no partner; I the biggest bloc) | 'two-party' (the old floorPartyWith math decided it)
+function orgOutcomeN(n, vp, partner, lead) {
+  const ok = p => n[p] >= 51 || (n[p] === 50 && vp === p);
+  for (const p of ['D', 'R', 'I']) if (ok(p)) return { floor: p, how: 'alone', coal: null };
+  if (partner) {
+    const c = n[partner] + n.I;
+    const works = c >= 51 || (c === 50 && (vp === partner || vp === 'I'));
+    if (works && (lead || n.I > n[partner])) return { floor: 'I', how: lead ? 'bargain' : 'iplural', coal: { lead: 'I', with: partner } };
+    const f = floorPartyWithN(n, vp, partner);
+    return { floor: f, how: f === partner && works ? 'coalition' : 'two-party', coal: f === partner ? { lead: partner, with: 'I' } : null };
+  }
+  if ((IND() || PARITY()) && n.I > Math.max(n.D, n.R)) return { floor: 'I', how: 'plurality', coal: null };
+  return { floor: floorPartyWithN(n, vp, null), how: 'two-party', coal: null };
+}
+function orgOutcome(partner = indPartner(), lead = indLeads()) { return orgOutcomeN({ D: seats('D'), R: seats('R'), I: seats('I') }, vpParty(), partner, lead); }
+// who runs the floor (schedules bills, writes the budget): 'D' | 'R' | 'I'. D/R with PARITY off: the old two-party answer
+function floorParty() { return IND() || PARITY() ? orgOutcome().floor : (majOld() ? S.side : other2(S.side)); }
+// the floor's owner in text: "the Republican majority" / "the Independent-led coalition"
+function floorWho() { const f = floorParty(); return f === 'I' ? 'Independent-led coalition' : `${PARTY[f].name} majority`; }
+// you are the junior member of the governing coalition (never true when you lead)
+function inCoalition() { const o = orgOutcome(); return !!o.coal && o.floor !== S.side && (o.coal.with === S.side || (IND() && o.coal.with === 'I')); }
+// the major party opposing the independents' bloc (always D | R)
+function indOpp() { const p = indPartner(); return p ? other2(p) : seats('D') >= seats('R') ? 'D' : 'R'; }
+// "them": the main party the player faces (always D | R). I career: the floor party, or indOpp() when the independents run it
+function oppParty() { if (!IND()) return other2(S.side); const f = floorParty(); return f === 'I' ? indOpp() : f; }
+// the independents' choice changes who organizes, or a Gavel Bargain is on the table
+function indPivotal() { return orgOutcome('D', false).floor !== orgOutcome('R', false).floor || indLeadLegal('D') || indLeadLegal('R'); }
+// the caucus's partner choice decides who organizes (I career)
+function caucusDecides() { return IND() && orgOutcome('D', false).floor !== orgOutcome('R', false).floor; }
+// nobody can organize alone and the independents don't run the floor (I career)
+function kingmakerNow() { return IND() && !aloneOK('D') && !aloneOK('R') && !aloneOK('I') && floorParty() !== 'I'; }
+// a Gavel Bargain with partner p is legal: enough caucus seats, neither major party alone, and p + I organizes
+function indLeadLegal(p) {
+  const c = seats(p) + seats('I'), vp = vpParty();
+  return seats('I') >= IND_LEAD_MIN && !aloneOK(p) && !aloneOK(other2(p)) && (c >= 51 || (c === 50 && (vp === p || vp === 'I')));
+}
+// would p hand the gavel to the independents? Deterministic; >= 0 means yes. Every term is shown on the card (indLeadTerms).
+function indLeadScore(p, trustP, ledBefore) { return indLeadTerms(p, trustP, ledBefore).reduce((a, t) => a + t[1], 0); }
+// the terms of indLeadScore as [label, value] rows (zero terms included, so the card can show them all)
+function indLeadTerms(p, trustP, ledBefore) {
+  const s = seats(p), need = s <= 46 ? 3 : s <= 48 ? 2 : s === 49 ? 1 : 0, nI = seats('I'), vp = vpParty(), P = PARTY[p].short;
+  return [[`${nI} caucus seats`, nI - 7], [`trust with the ${P} ${fmt(trustP || 0)}`, 2 * (trustP || 0)], [`the ${P} are ${51 - s} seat${51 - s === 1 ? '' : 's'} from a majority`, need],
+    [vp === 'I' ? 'an independent Vice President' : vp === p ? `the ${P} hold the Vice Presidency` : 'the Vice President', (vp === 'I' ? 2 : 0) - (vp === p ? 2 : 0)],
+    [`the ${P} led last Congress`, -(S.org && S.org.prevFloor === p ? 1 : 0)], [`the ${P} just lost the Senate`, S.org && S.org.lostBy === p ? 1 : 0],
+    ['the independents have led before', ledBefore ? 1 : 0]];
+}
+// the Path to the Gavel (text helper for the caucus status, the Pulse, the verdict and the disabled lead cards)
+//   { seatsNeeded, legalWith: ['D'|'R'...], score: { D, R } | null, why }
+function indGavelPath() {
+  const nI = seats('I'), seatsNeeded = Math.max(0, IND_LEAD_MIN - nI), legalWith = ['D', 'R'].filter(indLeadLegal);
+  const tr = p => IND() ? ((S.cau && S.cau.trust && S.cau.trust[p]) || 0) : ((S.inds && S.inds.trust && S.inds.trust[p]) || 0);
+  const led = IND() ? !!(S.cau && S.cau.ilead) : !!(S.inds && S.inds.led);
+  const score = legalWith.length ? { D: indLeadLegal('D') ? indLeadScore('D', tr('D'), led) : null, R: indLeadLegal('R') ? indLeadScore('R', tr('R'), led) : null } : null;
+  const alone = ['D', 'R'].find(aloneOK);
+  const why = seatsNeeded ? `Needs ${IND_LEAD_MIN} caucus seats: ${IND() ? 'you have' : 'they have'} ${nI} (${seatsNeeded} more), and a major party plus the caucus must reach 51 (50 with the VP) while neither party can organize alone`
+    : alone ? `The ${PARTY[alone].short} can organize alone: no bargain while they hold ${seats(alone)} seats`
+    : !legalWith.length ? `${nI} caucus seats, but neither party plus the caucus reaches 51 (50 with the VP)`
+    : `On the table with ${legalWith.map(p => `the ${PARTY[p].short} (score ${fmt(score[p])})`).join(' and ')}`;
+  return { seatsNeeded, legalWith, score, why };
+}
+// the Vice President's tiebreak goes your caucus's way
+function vpWithYou() { return killing() ? !vpBacks() : vpBacks(); }
+// whose whip works against your aim on this bill: killing → the owner's whip; passing → the other major party's. Never 'I' in the I career
+function rivalOf() { const o = sponsor(); if (o === 'I') return IND() ? oppParty() : 'I'; return killing() ? o : other(o); }
+// the S.org cache: written ONLY here (and S.org.shownK by the front-page hooks); never in a D/R career with PARITY off, and in
+// a D/R career only from the first election on. opts.freeze (D/R): re-freeze the partner for this Congress from S.inds or the
+// fixed rule. opts.before: the floor before an election (countBallots: prevFloor, and lostBy = that party if it lost the floor).
+// Returns { changed, from, to, how }.
+function orgRefresh(opts = {}) {
+  const k = Math.floor(S.career.bills / 6);
+  if (!IND() && (!PARITY() || k < 1)) return { changed: false, from: null, to: null, how: null };
+  const old = S.org || null;
+  const partner = IND() ? ((S.cau && S.cau.partner) || null) : opts.freeze || !old ? (seats('I') ? (S.inds && S.inds.partner) || indsRulePartner() : null) : old.partner;
+  S.org = { floor: null, how: null, k, partner, prevFloor: old ? old.prevFloor : null, lostBy: old ? old.lostBy : null, shownK: old ? old.shownK : -1 };
+  const o = orgOutcome(), from = opts.before !== undefined ? opts.before : old ? old.floor : null;
+  if (opts.before !== undefined) { S.org.prevFloor = opts.before; S.org.lostBy = opts.before && opts.before !== o.floor ? opts.before : null; }
+  else if (old && (old.k !== k || old.floor !== o.floor)) S.org.prevFloor = old.floor;
+  S.org.floor = o.floor; S.org.how = o.how;
+  return { changed: !!from && from !== o.floor, from, to: o.floor, how: o.how };
+}
+// text: "D 46 · R 47 · I 7"
+function blocLine() { return `D ${seats('D')} · R ${seats('R')} · I ${seats('I')}`; }
 
 /* ---------------- calendar & elections ---------------- */
 function billYear(n) { return 2027 + Math.floor((n - 1) / 3); }
@@ -243,7 +356,7 @@ function newSenator(party, state, cls, id, forceFaction) {
   else if (adv < -4 && Math.random() < 0.6) faction = CROSS[party];
   else if (adv < 0 || (adv < 4 && Math.random() < 0.5)) faction = Math.random() < 0.3 ? CROSS[party] : MODERATE[party];
   else faction = pick(FACTIONS[party].filter(f => f[0] !== MODERATE[party] && f[0] !== CROSS[party]))[0];
-  const fx = FACTIONS[party].find(f => f[0] === faction)[1];
+  const fx = (FACTIONS[party].find(f => f[0] === faction) || FACTIONS[party][0] || [0, {}])[1];
   const w = {};
   for (const t of TAGS) w[t] = clamp(0.8 * (PARTY[party].prior[t] || 0) + (fx[t] || 0) + 0.5 * st.voter[t] + rnd(-0.6, 0.6) + (party === 'I' ? rnd(-0.8, 0.8) : 0), -2, 2);
   const traits = [];
@@ -321,6 +434,9 @@ function newCareer(sidePick) {
     rival: pick(RIVAL_FIRST) + ' ' + pick(LAST), members: [], log: [], history: [],
   };
   S.president = newPresident(sidePick === 'I' ? pick(['D', 'R']) : other(sidePick)); // the other side holds the White House (an independent career: either party)
+  if (sidePick === 'I' && Math.random() < IND_START_IPRES && typeof indPickLabel === 'function') { // sometimes an independent sits in the White House
+    const P = S.president; P.party = 'I'; P.label = indPickLabel(null, P.state); P.lean = indLabelInfo(P.label).lean; P.faction = 'Independents'; P.approval = ri(48, 54);
+  }
   S.prep = {}; S.warchest = 0; S.approps = 0; S.shutdown = 0;
   S.houseLeaders = makeHouseLeaders();
   if (sidePick === 'I') { const h = ri(212, 223); S.house = { D: h, R: 435 - h }; } else {
@@ -344,7 +460,12 @@ function baseSupport(m) {
   const loyal = T(m, 'loyal') ? 1.7 : 1, spon = sponsor();
   // the bill's own party lines up behind it, the other party against it
   if (m.party === spon) s += 16 * loyal;
-  else if (IND() ? spon !== 'I' && m.party === other(spon) : m.party === other(spon)) s -= 16 * loyal; // nobody whips against a caucus bill as a party
+  else if (spon === 'I' && (IND() || PARITY()) && floorParty() === 'I') { // an independent-led floor: the opposition whips against its bills, the partner leans in
+    const ip = indPartner();
+    if (m.party === indOpp()) s -= 10 * loyal;
+    else if (m.party === ip) s += (3 + 1.5 * (IND() ? (S.cau && S.cau.trust && S.cau.trust[ip]) || 0 : (S.inds && S.inds.trust && S.inds.trust[ip]) || 0)) * loyal;
+  }
+  else if ((IND() || PARITY()) ? spon !== 'I' && m.party === other(spon) : m.party === other(spon)) s -= 16 * loyal; // nobody whips against an independent bill as a party
   if (IND() && m.party === 'I' && spon !== 'I') s += 20 * aimSign(); // caucus discipline: your members lean your caucus's way
   // relationships and grudges are with you: they pull a senator toward your caucus's position
   s += m.rel * 6 * aimSign();
@@ -377,11 +498,20 @@ function isLockedYes(m) { return m.b.pledged || m.b.blackmailed; }
 function aimSign() { return S && S.bill && S.bill.aim === 'kill' ? -1 : 1; }
 function killing() { return aimSign() < 0; }
 // whose bill it is: the party that wants it to become law
-function sponsor() { const B = S.bill; if (IND()) return (B && B.owner) || floorParty(); if (B && B.aumf && S.president.party !== 'I') return S.president.party; return killing() ? other(S.side) : S.side; } // a war vote belongs to the President who asked for it
+function sponsor() { const B = S.bill; if (IND()) return (B && B.owner) || floorParty(); if (PARITY() && B && B.owner) return B.owner; if (B && B.aumf && S.president.party !== 'I') return S.president.party; return killing() ? other2(S.side) : S.side; } // a war vote belongs to the President who asked for it
 // the party whose agenda a bill belongs to (null for bipartisan deals, budgets, war votes, nominations)
-function billParty(name) { for (const p of ['D', 'R']) if (AGENDA[p].some(b => b[0] === name) || LANDMARKS[p].some(l => l[0] === name)) return p; return null; }
+// an independent bill (the caucus agenda, its landmarks, the label bills) belongs to 'I' only while the independents run the floor
+function billParty(name) {
+  for (const p of ['D', 'R']) if (AGENDA[p].some(b => b[0] === name) || LANDMARKS[p].some(l => l[0] === name)) return p;
+  if ((IND() || PARITY()) && billIsInd(name) && floorParty() === 'I') return 'I';
+  return null;
+}
+function billIsInd(name) {
+  return !!((AGENDA.I && AGENDA.I.some(b => b[0] === name)) || (LANDMARKS.I && LANDMARKS.I.some(l => l[0] === name))
+    || (typeof IND_LABEL_BILLS !== 'undefined' && Object.values(IND_LABEL_BILLS).some(a => (a || []).some(b => b[0] === name))));
+}
 // the Vice President breaks ties for the bill when the White House is the bill's own party
-function vpBacks() { if (IND()) { const p = S.president.party; return p === 'I' ? !killing() : p === sponsor(); } return killing() ? !vpYours() : vpYours(); }
+function vpBacks() { if (IND()) { const p = S.president.party; return p === 'I' ? !killing() : p === sponsor(); } if (PARITY() && (vpParty() === 'I' || sponsor() === 'I')) return presStance(S.bill) > 0; return killing() ? !vpYours() : vpYours(); }
 // yeas the bill needs to pass (if all 100 vote): supermajorities, cloture, or a simple majority
 function needNum() { const B = S.bill; return B.super || B.cloture || (vpBacks() ? 50 : 51); }
 function needText() {
@@ -407,11 +537,14 @@ function startBill() {
   const n = c.bills + 1, maj = isMajority();
   // the budget comes every Fall; everything else comes off the floor schedule (floor.js): forced votes first, then whoever controls the floor
   const it = n % 3 === 0
-    ? { tpl: [`FY${billYear(n) + 1} Budget`, maj ? 'The yearly budget, passed through reconciliation: no filibuster, a simple majority. You set its priorities. If it fails anywhere, the government shuts down.' : `The ${PARTY[other(S.side)].name} majority's yearly budget, passed through reconciliation: no filibuster, a simple majority. They set its priorities. If it fails anywhere, the government shuts down.`, { economy: 1, security: 1, welfare: 1, taxes: -1 }], budget: true, aim: maj ? 'pass' : 'kill', by: maj ? 'you' : 'them' }
+    ? { tpl: [`FY${billYear(n) + 1} Budget`, maj ? 'The yearly budget, passed through reconciliation: no filibuster, a simple majority. You set its priorities. If it fails anywhere, the government shuts down.' : `The ${floorWho()}'s yearly budget, passed through reconciliation: no filibuster, a simple majority. They set its priorities. If it fails anywhere, the government shuts down.`, { economy: 1, security: 1, welfare: 1, taxes: -1 }], budget: true, aim: maj ? 'pass' : 'kill', by: maj ? 'you' : 'them' }
     : docketTemplate(n);
   const tpl = it.tpl, sup = it.sup || 0, landmark = !!it.lm, nomination = !!it.nomination, budget = !!it.budget;
   const cloture = !sup && !budget && !nomination && !it.aumf && !it.wpr && !S.nuclear && billParty(tpl[0]) ? 60 : 0;
-  const owner = IND() && typeof cauOwner === 'function' ? cauOwner(it) : null; // an independent career: the party that wants it law
+  // the party that wants it law: an independent career asks caucus.js; a D/R career owns an independent bill (the snapshot
+  // the floor schedule took, or the independent White House's own bill) with 'I', and leaves every D/R bill to the old rule
+  const ownP = 'ownP' in it ? it.ownP : billParty(tpl[0]);
+  const owner = IND() ? (typeof cauOwner === 'function' ? cauOwner(it) : null) : PARITY() && (ownP === 'I' || (it.own === 'wh' && S.president.party === 'I')) ? 'I' : null;
   const as = it.aim === 'kill' ? -1 : 1, spon = owner || (as > 0 ? S.side : other(S.side));
   const amends = shuffle(AMENDMENTS.slice()).slice(0, has('parl') ? 6 : 4).map(a => ({ name: a[0], fx: a[1], used: false }));
   if (it.ride && TAG[it.ride]) amends.unshift({ name: `Your ${TAG[it.ride][1]} rider`, fx: { [it.ride]: 2 }, used: false, mine: true });
@@ -423,6 +556,8 @@ function startBill() {
   };
   const B = S.bill;
   if (IND()) { B.owner = owner; B.patron = null; if (typeof cauApBonus === 'function') B.apMax += cauApBonus(); if (typeof cauSetRival === 'function') cauSetRival(); }
+  else if (owner) { B.owner = owner; if (owner === 'I' && typeof orgBillStart === 'function') orgBillStart(B); } // org.js: the aim and the rival on an independent bill
+  if (!IND() && PARITY() && typeof orgApBonus === 'function') B.apMax += orgApBonus(); // the junior partner's gavels
   for (const m of S.members) m.b = { bonus: 0, mood: rnd(-12, 12), intel: false, pledged: false, blackmailed: false, absent: false, touches: 0, fuzzy: null, last: 0 };
   for (const m of S.members) if (T(m, 'leader')) { m.b.intel = true; m.knownTraits = true; }
   // self-calibrate: every bill starts a few votes short of your caucus's goal (for a kill, it would pass by a few if nothing happens)
@@ -441,14 +576,15 @@ function startBill() {
   S.prep = {};
   S.log = [];
   ui.sel = null; ui.pitchOpen = false; ui.lastQuote = '';
-  const them = PARTY[other(S.side)].name;
-  log(`${season(n)} ${billYear(n)}: the ${B.name} comes to the floor${B.by === 'them' && !budget ? `, scheduled by the ${them} majority` : ''}. ${IND() && B.owner !== 'I' ? '' : killing() ? `Your caucus wants it dead: you need ${needText()}.` : `You need ${needText()}.`}`, 'sys');
-  if (cloture && !IND()) log(killing() ? `It's ${them} partisan legislation, so it needs 60 votes for cloture: hold ${101 - cloture} nays and your filibuster kills it.` : `It's partisan legislation: the ${them} will filibuster, so you need 60 for cloture.`, 'sys');
+  const them = PARTY[other(S.side)].name, filib = spon === 'I' ? PARTY[indOpp()].name : them;
+  log(`${season(n)} ${billYear(n)}: the ${B.name} comes to the floor${B.by === 'them' && !budget ? `, scheduled by the ${floorWho()}` : ''}. ${IND() && B.owner !== 'I' ? '' : killing() ? `Your caucus wants it dead: you need ${needText()}.` : `You need ${needText()}.`}`, 'sys');
+  if (cloture && !IND()) log(killing() ? `It's ${PARTY[spon].name} partisan legislation, so it needs 60 votes for cloture: hold ${101 - cloture} nays and your filibuster kills it.` : `It's partisan legislation: the ${filib} will filibuster, so you need 60 for cloture.`, 'sys');
   if (landmark) log(`A LANDMARK bill. ${sup} votes required. ${killing() ? 'Kill it and the whole town notices.' : 'Double rewards.'}`, 'sys');
   if (shut) log('🚨 The government is shut down. No money for earmarks.', 'bad');
   if (approps) log('The budget passed, so appropriations are flowing: +$20M earmarks.', 'good');
   log(`${S.members.filter(isUp).length} senators are up for re-election in ${electionYear(nextElectionK())} and are watching how this plays back home.`, 'sys');
   if (budget) return openBudget();
+  if (IND() && B.owner === 'I' && floorParty() === 'I' && typeof cauCoalition === 'function') return cauCoalition(() => startDay(true)); // The Coalition Table (caucus.js)
   if (IND() && B.owner !== 'I' && typeof cauAsk === 'function') return cauAsk(() => startDay(true)); // The Bidding (caucus.js)
   startDay(true);
 }
@@ -457,16 +593,17 @@ function startBill() {
 // in the minority the majority writes it, and you kill it or sell your votes for one of your priorities
 function openBudget() {
   const B = S.bill, base = { ...B.fx }, maj = isMajority(), c = S.career;
-  const pri = p => (IND() && p === 'I' && typeof indLabelInfo === 'function' && S.cau) ? indLabelInfo(S.cau.label).issues : PARTY[p].prior; // your caucus's priorities: its banner's issues
+  // the independents' priorities: the banner's issues (your caucus's, or in a D/R career the independent chair's)
+  const iLab = IND() ? S.cau : S.inds, pri = p => (p === 'I' && typeof indLabelInfo === 'function' && iLab) ? indLabelInfo(iLab.label).issues : PARTY[p].prior;
   const rank = p => TAGS.slice().sort((a, b) => (pri(p)[b] || 0) - (pri(p)[a] || 0));
   let fund = [], cut = null, deal = false;
-  if (!maj) { const r = rank(other(S.side)); fund = r.slice(0, 2); cut = r[r.length - 1]; }
+  if (!maj) { const r = rank(floorParty()); fund = r.slice(0, 2); cut = r[r.length - 1]; }
   const mine = rank(S.side).find(t => !fund.includes(t) && t !== cut) || 'welfare';
   const apply = () => { B.fx = { ...base }; for (const t of fund) B.fx[t] = (B.fx[t] || 0) + 2; if (cut) B.fx[cut] = (B.fx[cut] || 0) - 2; if (deal) B.fx[mine] = (B.fx[mine] || 0) + 2; };
   const draw = () => {
     apply();
     const yes = S.members.filter(m => support(m) >= 8).length, mid = S.members.filter(m => Math.abs(support(m)) < 8).length, no = S.members.filter(m => support(m) <= -8).length;
-    const them = PARTY[other(S.side)];
+    const them = PARTY[maj ? other(S.side) : floorParty()];
     const grid = `<div class="budget">${TAGS.map(t => `<div class="brow"><span>${TAG[t][0]} ${TAG[t][1]}</span><span><button class="btn ${fund.includes(t) ? 'on' : ''}" data-fund="${t}" ${maj ? '' : 'disabled'}>Fund</button> <button class="btn ${cut === t ? 'on' : ''}" data-cut="${t}" ${maj ? '' : 'disabled'}>Cut</button></span></div>`).join('')}</div>`;
     showModal(maj ? `<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget</div><h2>Write the ${B.name}</h2>
       <p>Pick <b>two priorities to fund</b> and <b>one thing to cut</b>. Every choice changes who will vote for it. The Budget Committee's rough count updates as you go.</p>
@@ -474,7 +611,7 @@ function openBudget() {
       <p>Committee count: <b style="color:var(--yes)">${yes} likely yeas</b> · <b style="color:var(--mid)">${mid} on the fence</b> · you need <b>${needText()}</b><br>
       House odds <b>${Math.round(houseOdds() * 100)}%</b> · ${vetoOdds() ? `veto risk <b>${Math.round(vetoOdds() * 100)}%</b>` : `${presTitle()} will sign`}</p>
       <div class="choices"><button class="btn primary big" id="bgo" ${fund.length === 2 && cut ? '' : 'disabled'}>Send the budget to the floor</button></div>`
-      : `<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget · written by the ${them.name} majority</div><h2>Their ${B.name}</h2>
+      : `<div class="kicker">${season(B.n)} ${billYear(B.n)} · The yearly budget · written by the ${floorWho()}</div><h2>Their ${B.name}</h2>
       <p>The ${them.short} wrote it without you: <b>more for ${fund.map(t => TAG[t][1]).join(' and ')}, less for ${TAG[cut][1]}</b>. Reconciliation means no filibuster, so it takes a simple majority either way.</p>
       ${grid}<div class="fx" style="margin:10px 0">${fxChips(B.fx)}</div>
       <div class="fl-stance">${aimBadge(deal ? 'pass' : 'kill')}<div class="choices">
@@ -492,7 +629,7 @@ function openBudget() {
       apply(); B.applied.push(`Funds ${fund.map(t => TAG[t][1]).join(' and ')}; cuts ${TAG[cut][1]}`);
       if (maj) log(`You wrote the budget: more for ${fund.map(t => TAG[t][1]).join(' and ')}, less for ${TAG[cut][1]}.`, 'sys');
       else if (deal) { c.capital -= 1; B.applied.push(`${TAG[mine][1]} +2 (your price)`); B.aim = 'pass'; calibrate(B.short); log(`You sold your caucus's votes for more ${TAG[mine][1]}. Now you have to deliver them: you need ${needText()}.`, 'sys'); }
-      else { B.aim = 'kill'; calibrate(B.short); log(`Your caucus will kill the ${PARTY[other(S.side)].name} budget. You need ${needText()}. If it dies, the government shuts down.`, 'sys'); }
+      else { B.aim = 'kill'; calibrate(B.short); log(`Your caucus will kill the ${PARTY[floorParty()].name} budget. You need ${needText()}. If it dies, the government shuts down.`, 'sys'); }
       if (IND() && typeof cauBudgetDone === 'function') cauBudgetDone(deal); // the budget is its own bid: the patron is the floor party, or the other major
       hideModal(); startDay(true);
     };
@@ -769,11 +906,11 @@ const ACTIONS = {
     },
   },
   prescall: {
-    label: 'Call from the President', desc: () => `${presTitle()} (approval ${S.president.approval}%) personally asks for their vote. ${presCallMax()} per bill. Fellow ${S.president.faction} listen hardest.`, cost: () => 1,
-    ok: () => (IND() ? typeof cauPresCallOK === 'function' && cauPresCallOK() : S.president.party === S.side) && S.bill.presCalls < presCallMax() && (S.whRel || 0) > -3,
+    label: 'Call from the President', desc: () => `${presTitle()} (approval ${S.president.approval}%) personally asks for their vote. ${presCallMax()} per bill. Fellow ${S.president.faction} listen hardest.${iwhCalls() ? ' The independent White House picks its spots: it only calls when it agrees with you, at 60% strength.' : ''}`, cost: () => iwhCalls() ? 2 : 1,
+    ok: () => (IND() ? typeof cauPresCallOK === 'function' && cauPresCallOK() : iwhCalls() ? presStance(S.bill) === aimSign() : S.president.party === S.side) && S.bill.presCalls < presCallMax() && (S.whRel || 0) > -3,
     run(m) {
-      spend(1); S.bill.presCalls++;
-      const d = (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * Math.max(0.4, 1 - (S.undermine || 0) * 0.12) * diminish(m);
+      spend(iwhCalls() ? 2 : 1); S.bill.presCalls++;
+      const d = (iwhCalls() ? 0.6 : 1) * (20 + (S.president.approval - 50) * 0.5) * (T(m, 'vain') || T(m, 'ambitious') ? 1.3 : 1) * (m.faction === S.president.faction ? 1.4 : 1) * (side(m) === 'opp' ? 0.6 : 1) * Math.max(0.4, 1 - (S.undermine || 0) * 0.12) * diminish(m);
       m.b.touches++; const sd = applyDelta(m, d);
       ui.lastQuote = `“The President? Calling me? …Yes, ma'am. Yes, sir.” — Sen. ${m.name}`;
       log(`${presTitle()} called ${sen(m)} (${fmt(sd)}).`, 'good');
@@ -887,6 +1024,8 @@ function adoptAmend(a) {
   return true;
 }
 function presCallMax() { return has('whliaison') ? 2 : 1; }
+// a D/R career with an independent President: the White House calls for you only when it agrees with your aim (§3.4)
+function iwhCalls() { return !IND() && PARITY() && S.president.party === 'I'; }
 // the House, caucus by caucus
 function openHouse() {
   const B = S.bill;
@@ -900,7 +1039,7 @@ function openHouse() {
     const ho = houseOdds(), good = killing() ? 1 - ho : ho, spon = sponsor();
     showModal(`<div class="kicker">House of Representatives · ${S.house.D}D–${S.house.R}R · ${PARTY[houseMaj()].name} Speaker</div><h2>${killing() ? 'Lobby the House' : 'Whip the House'}</h2>
       ${killing() ? `<p>${aimBadge('kill')} If the ${B.name} gets out of the Senate, the House is your next chance to bury it. Line up the caucuses now.</p>` : ''}
-      <p>Expected yeas: <b>${Math.round(houseExpected())}</b> of 218 needed · House ${killing() ? 'passes it' : 'odds'} <b style="color:${good > 0.6 ? 'var(--yes)' : good > 0.35 ? 'var(--mid)' : 'var(--no)'}">${Math.round(ho * 100)}%</b>${houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan() ? ` · <span style="color:${killing() ? 'var(--yes)' : 'var(--no)'}">the ${PARTY[houseMaj()].name} Speaker may refuse to bring it up</span>` : ''}</p>
+      <p>Expected yeas: <b>${Math.round(houseExpected())}</b> of 218 needed · House ${killing() ? 'passes it' : 'odds'} <b style="color:${good > 0.6 ? 'var(--yes)' : good > 0.35 ? 'var(--mid)' : 'var(--no)'}">${Math.round(ho * 100)}%</b>${(spon === 'I' ? dotPrior(houseMaj(), B.fx) <= 0 && !isBipartisan() : houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan()) ? ` · <span style="color:${killing() ? 'var(--yes)' : 'var(--no)'}">the ${PARTY[houseMaj()].name} Speaker may refuse to bring it up</span>` : ''}</p>
       <p style="color:var(--dim)">Each caucus votes by its own lights. Working a caucus (twice at most) means calls to its chair and a few favors${killing() ? ', to vote it down' : ''}. You have ${B.ap} actions and ${S.career.capital} capital.</p>
       <b style="color:${PARTY[IND() ? 'D' : S.side].color}">${PARTY[IND() ? 'D' : S.side].name} caucuses</b><div class="races" style="max-height:none">${rows(IND() ? 'D' : S.side)}</div>
       <b style="color:${PARTY[IND() ? 'R' : other(S.side)].color}">${PARTY[IND() ? 'R' : other(S.side)].name} caucuses</b><div class="races" style="max-height:none">${rows(IND() ? 'R' : other(S.side))}</div>
@@ -1037,7 +1176,7 @@ function houseStage() {
   const yes = pass ? clamp(e + ri(-3, 6), 218, 400) : clamp(e + ri(-6, 3), 120, 217);
   sfx.gavel();
   if (!pass) {
-    const why = houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && Math.random() < 0.5 ? `The ${PARTY[other(spon)].name} Speaker refused to bring it to the floor.` : `The House votes it down, ${yes}–${435 - yes}.`;
+    const why = (spon === 'I' ? dotPrior(houseMaj(), B.fx) <= 0 && !isBipartisan() : houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0) && Math.random() < 0.5 ? `The ${PARTY[spon === 'I' ? houseMaj() : other(spon)].name} Speaker refused to bring it to the floor.` : `The House votes it down, ${yes}–${435 - yes}.`;
     return settle(k, `Passed the Senate, but died in the House. ${why}`, 'DEAD IN THE HOUSE', false, k);
   }
   const vo = vetoOdds();
@@ -1077,6 +1216,7 @@ function presStage() {
 // won = your caucus's position prevailed. partial = a kill that happened after the bill got out of the Senate
 function settle(won, detail, headline, isLaw, partial) {
   const B = S.bill, c = S.career, k = killing(), enacted = k ? !won : won;
+  const iFloorOwn = IND() && B.owner === 'I' && floorParty() === 'I', conf0 = c.confidence; // your own bill on your own floor (I career)
   c.bills++;
   const lines = [];
   if (won && k) {
@@ -1124,21 +1264,27 @@ function settle(won, detail, headline, isLaw, partial) {
     if (Math.random() < cr.challenge) { S.laws.push({ name: B.name, party: sponsor(), inBills: ri(2, 4), landmark: B.landmark }); lines.push(k ? '⚖ Your side has already sued. The Supreme Court will decide.' : '⚖ Lawsuits have already been filed. The Supreme Court will decide.'); }
   }
   if (B.budget) {
+    const shutI = !IND() && PARITY() && S.president.party === 'I' ? 0.6 : 1; // an independent White House shares the shutdown blame
     if (enacted) { S.approps = 3; if (!k) { c.capital += 2; lines.push('Budget enacted: +2 capital, +$20M earmarks for the next three bills'); } else lines.push('Their budget is law. At least appropriations flow: +$20M earmarks for the next three bills'); }
     else if (k) {
-      S.shutdown = 2; S.mood = clamp(S.mood - 0.5, -12, 12);
+      S.shutdown = 2; S.mood = clamp(S.mood - 0.5 * shutI, -12, 12);
       if (S.president.party !== S.side) S.president.approval -= 3;
       lines.push(`🚨 GOVERNMENT SHUTDOWN: you blocked their budget. Earmarks frozen for two bills; ${S.president.party !== S.side ? 'the White House takes most of the blame' : 'the majority takes most of the blame'}`);
     } else {
-      S.shutdown = 2; S.mood = clamp(S.mood - 2, -12, 12);
+      S.shutdown = 2; S.mood = clamp(S.mood - 2 * shutI, -12, 12);
       if (S.president.party === S.side) S.president.approval -= 4;
       if (['DEAD IN THE HOUSE', 'VETOED', 'VETO SUSTAINED'].includes(headline)) c.confidence--;
       lines.push('🚨 GOVERNMENT SHUTDOWN: −1 confidence, national mood −2, earmarks frozen for two bills');
     }
   }
+  if (iFloorOwn && !k) { // the independents run the floor: your own bills carry more weight either way
+    if (won) { c.capital += 2; addLegacy(3); lines.push('Your own bill on your own floor: +2 capital'); }
+    else if (B.super !== 67 && c.confidence === conf0) { c.confidence--; lines.push('Your own bill died on the floor you run: −1 confidence'); }
+  }
   // the President's approval moves with their party's agenda
   const P = S.president;
-  if (P.party === sponsor()) P.approval += enacted ? 1 + Math.round((B.opinion - 50) / 20) : -2;
+  if (P.party === 'I' && (IND() || PARITY())) { const st = presStance(B); P.approval += enacted ? (st > 0 ? 1 + Math.round((B.opinion - 50) / 20) : st < 0 ? -1 : 0) : st > 0 ? -1 : 0; } // an independent President's approval moves with their stance
+  else if (P.party === sponsor()) P.approval += enacted ? 1 + Math.round((B.opinion - 50) / 20) : -2;
   else P.approval += enacted ? -1 : 1;
   P.approval = clamp(Math.round(P.approval + (50 - P.approval) * 0.15) + ri(-2, 2), 18, 82);
   S.calledEarly = 0;
@@ -1175,6 +1321,7 @@ function settle(won, detail, headline, isLaw, partial) {
     else { S.president.approval -= 3; lines.push('The Senate refuses to authorize war. The President is humiliated (−3 approval).'); }
   }
   if (B.wpr && enacted && isLaw && S.war) { lines.push(`☮️ The troops are coming home from ${S.war.place}.`); S.war = null; }
+  if (!IND() && PARITY() && typeof orgBillEnd === 'function') orgBillEnd(); // org.js: the rival goes back to the other party's whip
   pulseTick();
   // won here means the bill went through (other modules read budget history this way); aim says whose side you were on
   S.history.push({ n: B.n, name: B.name, won: enacted, aim: B.aim });
@@ -1192,10 +1339,24 @@ function settle(won, detail, headline, isLaw, partial) {
 /* ---------------- the President, the House and the Court ---------------- */
 function newPresident(party) { return { name: fullName(), party, faction: pick(FACTIONS[party])[0], approval: ri(50, 56), terms: 1 }; }
 function presVec() {
-  const P = S.president, f = (FACTIONS[P.party].find(x => x[0] === P.faction) || [0, {}])[1], v = {};
+  const P = S.president;
+  // an independent President: a real label's issues; any other label (the heavyweight's 'Independent', old saves) blends the
+  // two major parties' priors by the President's lean (−1 left … +1 right)
+  if (P.party === 'I' && (IND() || PARITY()) && typeof indLabelInfo === 'function') {
+    const v = {};
+    if (typeof IND_LABELS !== 'undefined' && IND_LABELS[P.label]) { const is = indLabelInfo(P.label).issues; for (const t of TAGS) v[t] = is[t] || 0; return v; }
+    const lean = P.lean != null ? P.lean : indLabelInfo(P.label).lean != null ? indLabelInfo(P.label).lean : 0, w = (lean + 1) / 2;
+    for (const t of TAGS) v[t] = 0.7 * ((1 - w) * (PARTY.D.prior[t] || 0) + w * (PARTY.R.prior[t] || 0));
+    return v;
+  }
+  const f = (FACTIONS[P.party].find(x => x[0] === P.faction) || [0, {}])[1], v = {};
   for (const t of TAGS) v[t] = (PARTY[P.party].prior[t] || 0) + (f[t] || 0) * 0.6;
   return v;
 }
+// how well a bill fits the President (their issue vector, plus 0.5 for a bipartisan deal)
+function billFitPres(B = S.bill) { let d = 0; const v = presVec(); for (const t of TAGS) d += v[t] * (B.fx[t] || 0); return d + (isBipartisan() ? 0.5 : 0); }
+// −1 | 0 | +1: does the President want this bill to become law? Their own bill (the owner or sponsor is their party) is +1
+function presStance(B = S.bill) { if (!B) return 0; if ((B.owner || sponsor()) === S.president.party) return 1; const d = billFitPres(B); return d > 0.6 ? 1 : d < -0.6 ? -1 : 0; }
 function makeHouseLeaders() { const o = {}; for (const p of ['D', 'R']) for (const [f] of HOUSE_FAC[p]) o[f] = 'Rep. ' + fullName(); return o; }
 // the House, caucus by caucus, from the point of view of the bill's own party (yours, or theirs when you're killing it)
 function houseBlocs() {
@@ -1206,7 +1367,9 @@ function houseBlocs() {
       const seats = i === HOUSE_FAC[p].length - 1 ? left : Math.round(S.house[p] * share); left -= seats;
       let dot = 0; for (const t of TAGS) dot += (0.8 * (PARTY[p].prior[t] || 0) + (tilt[t] || 0)) * (B.fx[t] || 0);
       const work = B.hw[name] || 0;
-      const frac = p === spon
+      const frac = spon === 'I' && (IND() || PARITY()) // an independent bill: no House caucus whips as its sponsor; each votes its fit, the partner's leans in
+        ? clamp(0.5 + dot * 0.05 + (B.opinion - 50) / 300 + (p === indPartner() ? 0.12 : 0) + (isBipartisan() ? 0.15 : 0) + k * work * 0.04, 0.03, 0.95)
+        : p === spon
         ? clamp(0.955 + dot * 0.008 + (B.opinion - 50) / 500 + k * work * 0.03, 0.55, 0.997)
         : clamp(0.03 + Math.max(0, dot) * 0.06 + (B.opinion - 50) / 300 + (isBipartisan() ? 0.3 : 0) + k * work * 0.05, 0.01, 0.85);
       out.push({ p, name, seats, frac, yes: seats * frac, work, leader: S.houseLeaders[name] });
@@ -1223,7 +1386,7 @@ function buildCourt() {
 function courtCount(p) { return S.court.filter(j => j.party === p).length; }
 function courtLabel() { return `${courtCount('R')}R–${courtCount('D')}D${courtCount('I') ? `–${courtCount('I')}I` : ''}${S.court.length < 9 ? `, ${9 - S.court.length} vacant` : ''}`; }
 // a bipartisan deal: the AGENDA.both bills, and the majority's budget once you've sold them your votes
-function isBipartisan() { const B = S.bill; return AGENDA.both.some(b => b[0] === B.name) || (B.budget && B.by === 'them' && B.aim === 'pass') || (IND() && B.owner === 'I'); }
+function isBipartisan() { const B = S.bill; return AGENDA.both.some(b => b[0] === B.name) || (B.budget && B.by === 'them' && B.aim === 'pass') || ((IND() || PARITY()) && B.owner === 'I'); }
 function dotPrior(p, fx) { let s = 0; for (const t of TAGS) s += (PARTY[p].prior[t] || 0) * (fx[t] || 0); return s; }
 function houseMaj() { if (IND()) return S.house.D >= 218 ? 'D' : 'R'; return S.house[S.side] >= 218 ? S.side : other(S.side); }
 function houseExpected() { return houseBlocs().reduce((a, b) => a + b.yes, 0); }
@@ -1231,15 +1394,21 @@ function houseOdds() {
   const B = S.bill;
   let p = 1 / (1 + Math.exp(-(houseExpected() - 217.5) / 6));
   const spon = sponsor();
-  if (houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan()) p *= 0.55; // the other party's Speaker may bury it
+  if (spon === 'I' ? dotPrior(houseMaj(), B.fx) <= 0 && !isBipartisan() : houseMaj() !== spon && dotPrior(other(spon), B.fx) <= 0 && !isBipartisan()) p *= 0.55; // the other party's Speaker may bury it (an independent bill: a Speaker whose own party dislikes it)
   return clamp(p + (has('housewhip') ? 0.1 * aimSign() : 0), 0.02, 0.98);
 }
 function houseOverrideOdds() { return clamp(1 / (1 + Math.exp(-(houseExpected() + 20 - 290) / 12)) + S.bill.houseWork * 0.05 * aimSign(), 0.03, 0.9); }
 function vetoOdds() {
   const B = S.bill;
   if (B.nomination || B.aumf) return 0;
-  const spon = sponsor();
-  if (S.president.party === spon) return spon === S.side && typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
+  const spon = sponsor(), P = S.president;
+  if (P.party === spon) return spon === S.side && !IND() && typeof wingOwnVeto === 'function' ? wingOwnVeto() : 0;
+  // an independent President (or an independent bill): the veto follows the President's stance on the bill
+  if ((P.party === 'I' && (IND() || PARITY())) || (PARITY() && spon === 'I')) {
+    const st = presStance(B), d = billFitPres(B), bip = isBipartisan() ? 1 : 0;
+    const o = st > 0 ? 0.03 : st === 0 ? clamp(0.22 - bip * 0.2, 0.05, 0.5) : clamp(0.55 + 0.1 * Math.abs(d) - bip * 0.3 - (P.approval < 40 ? 0.1 : 0), 0.1, 0.9);
+    return o * (!IND() && P.party === 'I' && spon === S.side && S.whDealK === Math.floor(S.career.bills / 6) ? 0.7 : 1); // wing.js: a deal with the independent White House
+  }
   let d = 0; const v = presVec(); for (const t of TAGS) d += v[t] * (B.fx[t] || 0);
   if (S.president.party === 'I') return clamp(0.42 - d * 0.1 - (isBipartisan() ? 0.3 : 0) - (S.president.approval < 40 ? 0.1 : 0), 0.05, 0.9); // an independent White House is nobody's ally
   if (spon !== S.side) return clamp(0.8 - d * 0.1 - (isBipartisan() ? 0.35 : 0), 0.1, 0.97); // your President, their bill
@@ -1293,7 +1462,7 @@ function courtNews() {
       msgs.push(`🖋 ${presTitle()} nominates Judge ${S.nominee.name}. <b>Your next fight is the confirmation.</b>`);
     } else if (!isMajority()) {
       S.nominee = { name: fullName(), party: S.president.party };
-      msgs.push(IND() ? `🖋 ${presTitle()} nominates Judge ${S.nominee.name}, and the ${PARTY[other(S.side)].name} majority rushes the confirmation to the floor. <b>Both parties will bid for your caucus's votes.</b>` : `🖋 ${presTitle()} nominates Judge ${S.nominee.name}, and the ${PARTY[other(S.side)].name} majority will rush the confirmation to the floor. <b>Your caucus wants the nominee defeated:</b> no filibuster for judges, so you need 51 nays.`);
+      msgs.push(IND() ? `🖋 ${presTitle()} nominates Judge ${S.nominee.name}, and the ${floorWho()} rushes the confirmation to the floor. <b>Both parties will bid for your caucus's votes.</b>` : `🖋 ${presTitle()} nominates Judge ${S.nominee.name}, and the ${floorWho()} will rush the confirmation to the floor. <b>Your caucus wants the nominee defeated:</b> no filibuster for judges, so you need 51 nays.`);
     } else if (!S.vacancyBlocked) S.courtDecision = true;
   }
   return msgs;
@@ -1304,7 +1473,7 @@ function raceBase(m, retiring, P = m.party) {
   const st = ST[m.state];
   const adv = (P === 'R' ? st.lean : P === 'D' ? -st.lean : 8) * 0.55;
   const pm = (IND() ? 0 : (P === S.side ? S.mood : P === 'I' ? 0 : -S.mood)) * 0.5; // an independent career's mood lifts only independents (cauStr)
-  const thermostat = P === 'I' ? 0 : IND() ? -2 * (seats(P) - 49) : -0.9 * (seats(P) - 50); // big majorities attract backlash (with an independent caucus: any party within reach of running the Senate alone)
+  const thermostat = P === 'I' ? ((IND() || PARITY()) ? -(1.0 * Math.max(0, seats('I') - 6) + (floorParty() === 'I' ? 1.5 : 0)) : 0) : IND() ? -2 * (seats(P) - 49) : -0.9 * (seats(P) - 50); // big majorities attract backlash (with an independent caucus: any party within reach of running the Senate alone)
   return adv + pm + thermostat + (retiring ? 0 : 4 + m.rec * 0.7);
 }
 // the two major parties in a race: the holder's party (or, for an independent seat, the state's lean) vs the other
@@ -1334,11 +1503,22 @@ function projMargin(rc) {
   return mg + (has('pollmap') ? rc.noise : 0);
 }
 const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives', R: f => f === 'Freedom Caucus' ? 'Populists' : 'Freedom Caucus' };
-function holderAdv(m) { return (m.party === 'R' ? 1 : -1) * ST[m.state].lean; }
+function holderAdv(m) { if (m.party === 'I' && (IND() || PARITY())) return 0.4 * Math.abs(ST[m.state].lean); return (m.party === 'R' ? 1 : -1) * ST[m.state].lean; } // an independent seat sits in both kinds of state
+// an independent senator who is up draws a challenger in the Independent primary: senators who defied the caucus, whose
+// label is far from their state, or (I career) who are cold to you; a hostile independent President recruits challengers
+function indChallengeRoll(rc) {
+  const m = rc.m, stL = clamp(ST[m.state].lean / 15, -1, 1), L = typeof indLabelInfo === 'function' ? indLabelInfo(m.label) : { lean: 0, group: 'Independents' };
+  const hostileWH = IND() && S.president.party === 'I' && typeof whRel === 'function' && whRel() <= -4;
+  const chance = clamp((0.08 + 0.08 * (m.defy || 0) + (Math.abs(L.lean - stL) > 0.9 ? 0.08 : 0) + (IND() && (m.rel || 0) < 0 ? 0.08 : 0)) * (IND() && (m.rel || 0) >= 3 ? 0.6 : 1) + (hostileWH ? 0.12 : 0), 0.04, 0.5);
+  if (Math.random() < chance) {
+    const label = hostileWH && typeof IND_LABELS !== 'undefined' && IND_LABELS[S.president.label] ? S.president.label : typeof indPickLabel === 'function' ? indPickLabel(null, m.state, null, Math.sign(stL - L.lean) * 0.8) : 'Common Ground';
+    rc.primary = { name: fullName(), label, faction: typeof indLabelInfo === 'function' ? indLabelInfo(label).group : 'Independents', odds: clamp(0.18 + 0.06 * (m.defy || 0) + (IND() && (m.rel || 0) < 0 ? 0.08 : 0) + (hostileWH ? 0.06 : 0), 0.05, 0.6), backed: 0, ind: true, wh: hostileWH };
+  }
+}
 function electionPrep() {
   const k = S.career.bills / 6;
   const year = electionYear(k), cls = classUp(k), pres = isPresYear(k);
-  if (!pres) S.mood += IND() ? (S.president.party === 'I' ? -3 : 1.5) : (S.president.party === S.side ? -3 : 3); // midterms punish the White House party (and feed the independent mood)
+  if (!pres) S.mood += IND() ? (S.president.party === 'I' ? -3 : 1.5) : (S.president.party === S.side ? -3 : PARITY() && S.president.party === 'I' ? 1.5 : 3); // midterms punish the White House party (and feed the independent mood); an independent White House: both majors gain a little
   const races = S.members.filter(m => m.cls === cls).map(m => ({ m, retiring: m.party !== 'I' && (m.retireNudge || Math.random() < 0.1), cash: 0, noise: gauss() * RACE_SD, ind: null }));
   const promiseReport = judgePromises();
   // the national environment: most cycles are close, but about one in eight is a wave
@@ -1347,6 +1527,7 @@ function electionPrep() {
   S.election = { k, year, cls, pres, races, wave, waveSignal, platform: [], promiseReport, cash: 3 + Math.floor(S.career.capital / 3) + (has('treasurer') ? 2 : 0) + (has('pollmap2') ? 2 : 0) + (S.warchest || 0) };
   S.warchest = 0;
   const E = S.election;
+  if (!pres && !IND() && PARITY() && S.president.party === 'I') E.indPenalty = 3; // the independent White House's midterm: I candidates pay (races.js, caucus.js)
   // an independent career: the year's appetite for neither party (most years mild, about one in ten a surge or a slump), and what the forecasters see of it
   if (IND()) { E.indWave = Math.random() < 0.1 ? (Math.random() < 0.5 ? -1 : 1) * rnd(5, 8) : gauss() * 2; E.indSignal = E.indWave * 0.6 + gauss(); E.cauRecruits = 0; }
   // primary challenges: senators who bucked the party line, and moderates in safe seats, draw challengers from the flank
@@ -1357,6 +1538,18 @@ function electionPrep() {
     const chance = clamp((0.08 + 0.1 * (m.defy || 0) + (moderate && adv > 6 ? 0.2 : 0) + (T(m, 'shady') ? 0.05 : 0)) * (m.party === S.side && m.faction === S.myFaction ? 0.6 : 1) + (typeof wingPrimaryThreat === 'function' ? wingPrimaryThreat(m) : 0), 0, 0.75);
     if (Math.random() < chance) rc.primary = { name: fullName(), faction: FLANK[m.party](m.faction), odds: clamp(0.22 + 0.08 * (m.defy || 0) + (adv > 6 ? 0.1 : -0.08) + (moderate ? 0.08 : 0), 0.05, 0.8), backed: 0 };
   }
+  // the independents' pass (a separate loop after the party challenges, so no earlier draw moves): every independent senator
+  // gets a label (the fixed point), then each independent who is up may retire (half the party rate; your loyal caucus
+  // members never do) or draw a challenger in the Independent primary
+  if (IND() || PARITY()) {
+    if (typeof indLabel === 'function') S.members.filter(m => m.party === 'I').forEach(indLabel);
+    for (const rc of races) if (rc.m.party === 'I') {
+      const m = rc.m;
+      rc.retiring = !(IND() && (m.rel || 0) >= 3) && !!(m.retireNudge || Math.random() < 0.05);
+      if (!rc.retiring) indChallengeRoll(rc);
+    }
+  }
+  if (!IND() && PARITY()) { E.indWave = Math.random() < 0.08 ? (Math.random() < 0.5 ? -1 : 1) * rnd(4, 7) : gauss() * 1.5; E.indSignal = E.indWave * 0.6 + gauss(); }
   const primaries = races.filter(rc => rc.primary);
   const runPrimaries = () => {
     const out = [];
@@ -1419,7 +1612,7 @@ function electionPrep() {
       ${E.primaryNews && E.primaryNews.length ? `<div class="primnews"><b>Primary results</b>${E.primaryNews.map(t => `<p>${t}</p>`).join('')}</div>` : ''}
       ${!pres && typeof midTrailHTML === 'function' ? midTrailHTML() : ''}
       <div class="camp-top"><div><span class="cashpill">💰 ${E.cash}</span> campaign units left <small style="color:var(--dim)">· the first unit in a race is worth +${per} points for your side, and each extra unit in the same race a bit less. No limit.</small></div>
-        <div>${IND() ? `Projected caucus: <b style="color:${exp >= seats('I') ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b>` : `Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b>`}</div></div>
+        <div>${IND() ? `Projected caucus: <b style="color:${exp >= seats('I') ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b>${seats('I') ? ` <small style="color:var(--dim)">· Path to the Gavel: ${indGavelPath().why}</small>` : ''}` : trailProjHTML(exp)}</div></div>
       <div class="deploy"><button class="btn" data-auto="smart">🎯 Smart deploy<small>Each unit where it adds the most</small></button><button class="btn" data-auto="defend">🛡 Defend my seats<small>${IND() ? "Only your caucus's seats" : 'Only seats your party holds'}</small></button><button class="btn" data-auto="offense">⚔ Go on offense<small>Only seats you could flip</small></button><button class="btn ghost" data-auto="reset">↺ Take it all back</button></div>
       <div class="national">
         ${IND() ? '' : `<div class="race"><span>🏠 <b>House campaign committee</b><br><small style="color:var(--dim)">All 435 seats. The first unit ≈ +0.8 points nationally (a few House seats); more units, a bit less each.</small></span><span class="cashctl"><button class="btn" data-hc="-1" ${E.houseCash ? '' : 'disabled'}>−</button><span>${money(E.houseCash)}</span><button class="btn" data-hc="1" ${E.cash < 1 ? 'disabled' : ''}>+</button></span></div>`}
@@ -1459,7 +1652,16 @@ function electionPrep() {
     else draw();
   };
   // races.js runs the full Senate primaries (fields, vote totals, endorsements) when it is loaded
-  if (typeof senatePrimaries === 'function') senatePrimaries(E, afterPrimaries); else drawPrimaries();
+  if (typeof senatePrimaries === 'function') { if (IND() && typeof cauFiling === 'function') cauFiling(E, () => senatePrimaries(E, afterPrimaries)); else senatePrimaries(E, afterPrimaries); } // caucus.js: Filing Day first
+  else drawPrimaries();
+}
+// the trail's "Projected Senate" line. PARITY: coloured by the chance of organizing (the Pulse's three-bloc pCtrl, world.js)
+function trailProjHTML(exp) {
+  const old = `Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b>`;
+  if (!PARITY() || typeof pulseSenate !== 'function') return old;
+  const O = pulseSenate(), pc = O && typeof O.pCtrl === 'number' ? O.pCtrl : null;
+  if (pc == null) return old;
+  return `Projected Senate for the ${PARTY[S.side].short}: <b style="color:${pc >= 0.5 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b> <small style="color:var(--dim)">· ${seats('I') && indPartner() === S.side ? 'with the independents' : 'control'}: ${Math.round(pc * 100)}%</small>`;
 }
 // your party's chance of holding or taking a seat, as the campaign sees it
 function raceChance(rc) {
@@ -1509,7 +1711,8 @@ function raceRow(rc) {
 }
 function countBallots() {
   const E = S.election, c = S.career;
-  const before = { D: seats('D'), R: seats('R'), I: seats('I') };
+  const before = { D: seats('D'), R: seats('R'), I: seats('I') }, NEWI = IND() || PARITY();
+  if (NEWI) before.floor = floorParty(); // who ran the floor going in (the headlines, S.org.prevFloor and lostBy)
   const prevMembers = S.members.map(m => ({ state: m.state, cls: m.cls, party: m.party }));
   const races = [];
   for (const rc of E.races) {
@@ -1530,22 +1733,27 @@ function countBallots() {
     const w = cands[0], np = w.party, flip = np !== m.party;
     let winner = m;
     const l = cands[1];
-    if (flip || rc.retiring || rc.primaried) {
-      const nominee = !flip && rc.primaried ? rc.nominee : null, pre = np !== 'I' && rc.people && rc.people[np] && rc.people[np] !== m ? rc.people[np] : null; // races.js: the nominee the primaries picked
-      winner = newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : (typeof wingRecruitFaction === 'function' && wingRecruitFaction(np)) || (pre && pre.faction) || null);
+    const iPrim = NEWI && !!rc.iPrimaried; // races.js: the independent incumbent lost the Independent primary
+    if (flip || rc.retiring || rc.primaried || iPrim) {
+      const nominee = !flip && rc.primaried ? rc.nominee : null;
+      const pre = NEWI && np === 'I' ? (rc.people && rc.people.I && rc.people.I !== m ? rc.people.I : null) : np !== 'I' && rc.people && rc.people[np] && rc.people[np] !== m ? rc.people[np] : null; // races.js: the nominee the primaries picked
+      winner = NEWI && np === 'I' ? newSenator('I', m.state, m.cls, m.id, 'Independents') // an independent winner always sits with the independents
+        : newSenator(np, m.state, m.cls, m.id, nominee ? nominee.faction : (typeof wingRecruitFaction === 'function' && wingRecruitFaction(np)) || (pre && pre.faction) || null);
       if (nominee || pre || (np === 'I' && rc.ind)) winner.name = w.name;
       if (np === 'I' && rc.ind && rc.ind.cause) winner.cause = rc.ind.cause;
+      if (NEWI && np === 'I' && rc.ind && typeof IND_LABELS !== 'undefined' && IND_LABELS[rc.ind.label]) winner.label = rc.ind.label;
       if (pre) { for (const k of ['gender', 'born', 'background', 'hometown', 'seed']) if (pre[k] != null) winner[k] = pre[k]; winner.history = (pre.history || []).slice(-12); hist(winner, 'Elected to the U.S. Senate', E.year); }
       else senatorBackstory(winner, E.year);
       winner.history[winner.history.length - 1].t = `Elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${flip && !rc.retiring ? `, unseating Sen. ${m.name}` : ' (open seat)'}`;
       if (rc.primaried) hist(winner, `Won the ${PARTY[np].name} primary over Sen. ${m.name}`, E.year);
-      hist(m, rc.retiring ? 'Retired from the Senate' : rc.primaried ? `Lost the primary to ${rc.nominee.name}` : `Lost re-election to ${winner.name}`, E.year);
+      if (NEWI && np === 'I' && !(rc.ind && rc.ind.incumbent) && (rc.indPrim || (rc.ind && rc.ind.primaryWon))) hist(winner, 'Won the Independent primary, then the seat', E.year);
+      if (!iPrim) hist(m, rc.retiring ? 'Retired from the Senate' : rc.primaried ? `Lost the primary to ${rc.nominee.name}` : `Lost re-election to ${winner.name}`, E.year); // an Independent primary loss is already on the record (races.js)
       S.formers = S.formers || []; S.formers.push({ ...m, b: undefined }); if (pre) S.formers = S.formers.filter(f => f.name !== winner.name);
       S.members[m.id] = winner;
     } else hist(m, `Re-elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${rc.bruised ? ' after a tough primary' : ''}`, E.year);
     w.name = winner.name;
     races.push({ code: m.state, cls: m.cls, cands, wName: w.name, wParty: np, lName: l.name, lParty: l.party, wPct: w.pct, lPct: l.pct, wVotes: w.votes, lVotes: l.votes,
-      margin: w.pct - l.pct, flip, open: rc.retiring || rc.primaried, incumbent: rc.retiring || rc.primaried ? null : m.name, threeWay: IND() ? !!rc.ind && !rc.standDown : !!rc.ind, call: callTime(m.state, w.pct - l.pct) });
+      margin: w.pct - l.pct, flip, open: iPrim ? true : rc.retiring || rc.primaried, incumbent: rc.retiring || rc.primaried || iPrim ? null : m.name, threeWay: IND() ? !!rc.ind && !rc.standDown : !!rc.ind, call: callTime(m.state, w.pct - l.pct) });
   }
   for (const m of S.members) m.defy = 0;
   for (const m of S.members) m.rec = 0;
@@ -1561,6 +1769,7 @@ function countBallots() {
   const pres = E.pres ? runPres() : null;
   if (pres && typeof localSweep === 'function') localSweep();   // a mayor who just became President or VP leaves City Hall tonight
   if (S.formers && S.formers.length > 120) S.formers.splice(0, S.formers.length - 120);   // the oldest formers fade from memory (save size)
+  if (NEWI) orgRefresh({ freeze: true, before: before.floor }); // who organizes the new Senate (S.org: prevFloor, lostBy, the frozen partner)
   const after = { D: seats('D'), R: seats('R'), I: seats('I') };
   const net = after[S.side] - before[S.side];
   let conf;
@@ -1570,7 +1779,7 @@ function countBallots() {
   else if (net <= -3) { c.confidence--; conf = `Your party lost ${-net} Senate seats: −1 confidence.`; }
   else conf = `Net Senate change for your party: ${fmt(net)}.`;
   }
-  const wasMaj = before[S.side] > before[other(S.side)], nowMaj = isMajority();
+  const wasMaj = NEWI ? before.floor === S.side : before[S.side] > before[other(S.side)], nowMaj = isMajority();
   if (wasMaj && !nowMaj) conf += ' <b style="color:var(--no)">You have lost the Senate majority.</b> You no longer control the calendar, and every bill starts further behind.';
   if (!wasMaj && nowMaj) conf += ' <b style="color:var(--yes)">You have WON the Senate majority!</b>';
   let presLine = pres ? `<p style="font-size:16px"><b style="color:${PARTY[S.president.party].color}">President:</b> ${pres.what} (${pres.evD} D–${pres.evR} R${pres.evI ? `–${pres.evI} I` : ''} in the Electoral College.) ${IND() ? (S.president.party === 'I' ? 'Your ticket holds the White House: the Vice President breaks ties for your caucus.' : `The ${PARTY[S.president.party].name} Vice President breaks ties.`) : S.president.party === S.side ? 'Your Vice President breaks ties, and the President is on your side.' : 'Their VP now breaks ties, and expect vetoes.'}</p>` : '';
@@ -1592,6 +1801,11 @@ function countBallots() {
   if (evW >= 400) hl = `LANDSLIDE: ${hl}`;
   else if (net >= 5 || hNet >= 25) hl = `${PARTY[S.side].short.toUpperCase()} WAVE: ${hl}`;
   else if (net <= -5 || hNet <= -25) hl = `WIPEOUT: ${hl}`;
+  if (!IND() && PARITY()) { // the independents in the headline: the gavel to or from them, or a Senate they decided
+    const f = floorParty();
+    if (before.floor !== f && (before.floor === 'I' || f === 'I')) hl = f === 'I' ? 'AN INDEPENDENT-LED SENATE' : `THE GAVEL GOES BACK TO THE ${PARTY[f].short.toUpperCase()}`;
+    else if (seats('I') && orgOutcome('D', false).floor !== orgOutcome('R', false).floor) hl = `INDEPENDENTS HOLD THE BALANCE: ${hl}`;
+  }
   if (IND() && typeof cauElectionHeadline === 'function') hl = cauElectionHeadline(before, after, pres);
   const summary = () => {
     showModal(`${frontPage({ headline: hl, sub: `${pres ? pres.what.replace(/<[^>]+>/g, '') + ' ' : ''}Senate ${seats('D')}–${seats('R')}${seats('I') ? '–' + seats('I') : ''}; House ${S.house.D}–${S.house.R}.`, body: [`Election night ${E.year} is in the books. ${flips.length ? flips.length + ' Senate seats changed hands.' : 'Not a single Senate seat changed hands.'}`, conf.replace(/<[^>]+>/g, '')], mood: won ? 'dawn' : 'storm', date: `November ${E.year} · Special edition` })}
@@ -1611,6 +1825,8 @@ function countBallots() {
   if (typeof archiveElection === 'function') archiveElection(nightData);
   openNight(nightData, summary);
 }
+// "majority" / "minority"; with PARITY a D/R career can also be the junior partner, or face an independent-led floor
+function senStatusWord() { if (!PARITY() || IND()) return isMajority() ? 'majority' : 'minority'; return `${isMajority() ? 'majority' : inCoalition() ? 'junior partner' : 'minority'}${floorParty() === 'I' ? ' · Independents run the floor' : ''}`; }
 function balanceBar() {
   const d = seats('D'), r = seats('R'), i = seats('I');
   return `<div class="balance"><div style="width:${d}%;background:${PARTY.D.color}">D ${d}</div><div style="width:${i}%;background:${PARTY.I.color}">${i || ''}</div><div style="width:${r}%;background:${PARTY.R.color}">R ${r}</div></div>`;
@@ -1655,9 +1871,9 @@ function officeView() {
     const left = 6 - (c.bills % 6);
     showModal(`<div class="kicker">${IND() ? 'The Caucus Room' : "The Whip's Office"} · after bill #${c.bills}</div><h2>${rank()} <small style="font-size:14px;color:var(--gold2)">· legacy ${c.legacy || 0}</small></h2>${S.promises && S.promises.length ? promiseStrip().replace('class="promises"', 'class="promises inoffice"') : ''}
       <p>Capital: <b style="color:var(--gold2)">${c.capital}</b> · Confidence: ${'♥'.repeat(Math.max(0, c.confidence))}${'♡'.repeat(Math.max(0, 5 - c.confidence))} · Record ${c.wins}–${c.losses} · Streak ${c.streak}<br>
-      ${IND() && typeof cauSenateStatus === 'function' ? cauSenateStatus() : `${PARTY[S.side].short} Senate ${isMajority() ? 'majority' : 'minority'}`} · ${presTitle()} (${S.president.party}, ${S.president.approval}%) · House ${S.house.D}D–${S.house.R}R · Court ${courtLabel()} · Next election: ${electionYear(nextElectionK())} (${left} bill${left > 1 ? 's' : ''} away) · Mood ${fmt(S.mood)}</p>
+      ${IND() && typeof cauSenateStatus === 'function' ? cauSenateStatus() : `${PARTY[S.side].short} Senate ${senStatusWord()}`} · ${presTitle()} (${S.president.party}, ${S.president.approval}%) · House ${S.house.D}D–${S.house.R}R · Court ${courtLabel()} · Next election: ${electionYear(nextElectionK())} (${left} bill${left > 1 ? 's' : ''} away) · Mood ${fmt(S.mood)}</p>
       ${news.length ? `<hr>${news.map(t => `<p style="margin:6px 0">${t}</p>`).join('')}` : ''}
-      ${S.courtDecision ? `<hr><b>Supreme Court vacancy</b><p style="color:var(--dim);margin:4px 0">${presTitle()} (${PARTY[S.president.party].name}) has sent a nominee. Your majority decides whether there's a vote.</p><div class="shop"><button class="btn" id="block"><span>Block the nominee<small>No hearings. The seat stays open until the next President. National mood −1, your caucus loves it (+1 relationship).</small></span></button><button class="btn" id="allow"><span>Hold hearings and confirm<small>The other side gets the seat. National mood +1 for statesmanship.</small></span></button></div>` : ''}
+      ${S.courtDecision ? `<hr><b>Supreme Court vacancy</b><p style="color:var(--dim);margin:4px 0">${presTitle()} (${PARTY[S.president.party].name}) has sent a nominee. ${IND() ? 'Your caucus runs the Senate: it decides whether there\'s a vote.' : 'Your majority decides whether there\'s a vote.'}</p><div class="shop"><button class="btn" id="block"><span>Block the nominee<small>No hearings. The seat stays open until the next President. National mood −1, your caucus loves it (+1 relationship).</small></span></button><button class="btn" id="allow"><span>Hold hearings and confirm<small>The other side gets the seat. National mood +1 for statesmanship.</small></span></button></div>` : ''}
       ${ious.length ? `<hr><b>Debts to repay</b><p style="color:var(--dim);margin:4px 0">Honor a favor for ${repay} capital (+1 relationship). Leave it and they'll hold a grudge, and their faction will cool on you.</p><div class="shop">${ious.map(m => `<button class="btn" data-pay="${m.id}" ${c.capital < repay ? 'disabled' : ''}><span>${sen(m)} <small>${m.faction}</small></span><span class="cost">${repay} capital</span></button>`).join('')}</div>` : ''}
       ${grudges.length ? `<hr><b>Mend fences</b><div class="shop">${grudges.map(m => `<button class="btn" data-mend="${m.id}" ${c.capital < 2 ? 'disabled' : ''}><span>Make peace with ${sen(m)}</span><span class="cost">2 capital</span></button>`).join('')}</div>` : ''}
       <hr><b>Hire staff</b><div class="shop">${S.offers.filter(p => !isTrait(p)).map(perkBtn).join('') || '<p style="color:var(--dim)">No one left to hire.</p>'}</div>
@@ -1718,8 +1934,27 @@ function load() {
     if (!d || !d.president || !d.governors) return false;
     S = { ...d, log: [] }; delete S.docketOffer; // the old docket's offers; the floor schedule rebuilds itself (floor.js)
     S.houseLeaders = S.houseLeaders || {}; for (const p of ['D', 'R']) for (const [f] of HOUSE_FAC[p]) if (!S.houseLeaders[f]) S.houseLeaders[f] = 'Rep. ' + fullName();
+    loadParity();
     layoutSeats(); startBill(); return true;
   } catch (e) { return false; }
+}
+// the independent-parity migrations (old saves): caucus defaults, an independent President's label and lean, a saved rival
+function loadParity() {
+  if (IND() && S.cau) {
+    const C = S.cau;
+    if (C.lead == null) C.lead = false;
+    if (C.leadK == null) C.leadK = -1;
+    if (C.pact === undefined) C.pact = null;
+    if (C.pact && C.pact.owed == null) C.pact.owed = 0;
+    if (C.ilead == null) C.ilead = 0;
+    if (!Array.isArray(C.filed)) C.filed = [];
+  }
+  const P = S.president;
+  if (P && P.party === 'I' && (IND() || PARITY()) && typeof indPickLabel === 'function') { // indPickLabel draws: never with the switch off
+    if (!P.label) P.label = indPickLabel(null, P.state || 'VT');
+    if (P.lean == null) P.lean = indLabelInfo(P.label).lean;
+  }
+  if (!IND() && S.inds && S.inds.savedRival) { const r = S.inds.savedRival; S.rival = r.rival || r.name || S.rival; if (r.style !== undefined || r.rivalStyle !== undefined) S.rivalStyle = r.rivalStyle !== undefined ? r.rivalStyle : r.style; S.inds.savedRival = null; }
 }
 function getRecords() { try { return JSON.parse(localStorage.getItem('floorfight.us.records')) || {}; } catch (e) { return {}; } }
 function saveRecords() {
@@ -1821,7 +2056,7 @@ function render() {
     <div class="stat"><span class="k">President · approval</span><span class="v" style="font-size:13px;color:${PARTY[S.president.party].color}">${lastName(S.president)} (${S.president.party} · ${S.president.faction}) ${S.president.approval}%</span></div>
     <div class="stat"><span class="k">House · Court</span><span class="v" style="font-size:13px"><span style="color:${PARTY.D.color}">${S.house.D}</span>–<span style="color:${PARTY.R.color}">${S.house.R}</span> · ${courtLabel()}</span></div>
     <span class="spacer"></span>
-    <div class="stat"><span class="k">${IND() && typeof cauStatusShort === 'function' ? cauStatusShort() : `${PARTY[S.side].short} ${isMajority() ? 'majority' : 'minority'}`} · ${c.wins}–${c.losses} · streak ${c.streak}</span><span class="v rank">${rank()}</span></div>`;
+    <div class="stat"><span class="k">${IND() && typeof cauStatusShort === 'function' ? cauStatusShort() : `${PARTY[S.side].short} ${senStatusWord()}`} · ${c.wins}–${c.losses} · streak ${c.streak}</span><span class="v rank">${rank()}</span></div>`;
 
   $('#bill').innerHTML = `<div style="font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase">Bill #${B.n} · Opposing whip: Sen. ${S.rival}, the <span title="${RIVAL_STYLES[rivalStyle()][1]}" style="border-bottom:1px dotted">${RIVAL_STYLES[rivalStyle()][0]}</span>${IND() && typeof cauBillLine === 'function' ? cauBillLine() : ''} · Next election ${electionYear(nextElectionK())}${isPresYear(nextElectionK()) ? ' · a presidential year' : ' · midterms'}</div>
     <h2>${B.name}${B.landmark ? '<span class="landmark">LANDMARK</span>' : ''}${aimBadge(B.aim)}</h2><div class="blurb">${B.blurb}${floorByline()}</div>
