@@ -46,8 +46,10 @@ function presSetup() {
   const ref = inc === 'I' ? other(S.side) : inc;
   const nom = p => N[p] || { name: p === inc && running ? P.name : (S._fallbackNames = S._fallbackNames || { D: nightFallbackName(), R: nightFallbackName() })[p], p: p === inc && running ? P : null, state: p === inc && running ? P.state : null, faction: p === inc && running ? P.faction : pick(FACTIONS[p])[0], charisma: 1, vp: null };
   const noms = { D: nom('D'), R: nom('R') };
-  // the third candidate: indie.js's nominee, or an independent President seeking a second term
-  if (inc === 'I' && running) noms.I = { label: 'Independent', lean: 0, ...(third || {}), name: P.name, p: P, state: P.state, home: (third && third.home) || P.state, faction: P.faction, major: true, incumbent: true, strength: clamp((third ? third.strength : 16) + (P.approval - 45) * 0.6, 6, 42) };
+  // the third candidate: indie.js's nominee, or an independent President seeking a second term. On the parity path (a new-path
+  // nominee, engine 'prim', or no Alliance record at all) the President runs as a top-two candidate whose strength presSetup owns
+  const newI = presNewI();
+  if (inc === 'I' && running) noms.I = newI ? presIncI(P, third) : { label: 'Independent', lean: 0, ...(third || {}), name: P.name, p: P, state: P.state, home: (third && third.home) || P.state, faction: P.faction, major: true, incumbent: true, strength: clamp((third ? third.strength : 16) + (P.approval - 45) * 0.6, 6, 42) };
   else if (third) noms.I = third;
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
@@ -58,8 +60,24 @@ function presSetup() {
   // an independent career has no ticket in the two-party race: only the (D-positive) wave forecasters see and a cabinet-offer endorsement move it
   base += IND() ? envSign(ref) * (E.waveSignal || 0) + envSign(ref) * (typeof cauPresEnvD === 'function' ? cauPresEnvD() : 0) : (ref === S.side ? 1 : -1) * ((E.debate || 0) + cashEff(E.presCash || 0, PRES_CASH) + (E.waveSignal || 0) + (typeof campaignEffects === 'function' ? campaignEffects() : 0) - PRES_EDGE);
   if (S.war && S.war.party === inc && !indWH) base += (S.war.support - 50) / 12;
+  // an unpopular independent President drags the party it governed with (the one its lean sits closer to); a popular one lifts it
+  if (indWH && newI) base += (ref === 'D' ? 1 : -1) * presTiltD(P);
   return { inc, ref, running, noms, base };
 }
+// the parity path for an independent White House (CONTRACT §5.7): every career but a D/R one with the switch off, and only for a
+// new-path Alliance nominee (engine 'prim') or none at all, so an old-path nominee keeps the old formula end to end
+const PRES_INC_I_BASE = 32;   // the contract's base is 30 (≤ 34); 32 puts re-election at 50% approval inside the 30–50% band
+function presNewI() { const N = S.nominees || {}; return S.president.party === 'I' && (IND() || PARITY()) && (!N.I || N.I.engine === 'prim'); }
+// a running independent President, as a top-two candidate: PRES_INC_I_BASE at 50% approval, 0.8 a point, the White House streak, the war,
+// and the primary's and the convention's marks (N.I.adj). presThirdShare then takes the share from both majors by state lean
+function presIncI(P, T) {
+  const streak = S.whStreak || 1, war = S.war && S.war.party === 'I' ? (S.war.support - 50) / 12 : 0;
+  const label = (T && T.label) || P.label || 'Independent', lean = T && T.lean != null ? +T.lean : P.lean != null ? +P.lean : typeof indLabelInfo === 'function' ? indLabelInfo(label).lean : 0;
+  const strength = +clamp(PRES_INC_I_BASE + (P.approval - 50) * 0.8 - 1.5 * (streak - 1) + war + (+(T && T.adj) || 0), 15, 48).toFixed(1);
+  return { ...(T || {}), label, lean, name: P.name, p: P, state: P.state, home: (T && T.home) || P.state, faction: P.faction, major: true, incumbent: true, top2: true, strength };
+}
+// D-positive points the independent President's record moves the two-party race: −(50 − approval)/10 toward the side its lean is on
+function presTiltD(P) { const lean = P.lean != null ? +P.lean : typeof indLabelInfo === 'function' ? indLabelInfo(P.label).lean : 0; return -(50 - P.approval) / 10 * -Math.sign(lean); }
 const presEnvD = s => s.ref === 'D' ? s.base : -s.base;
 function stateMarginD(c, envD, noms) {
   let dm = -(stLean(c) + (PRES_LEAN_ADJ[c] || 0)) * 1.5 + envD; // the state table is compressed: spread it so a +8 national margin is ~350 EV, not 412
@@ -77,7 +95,7 @@ function presProjection() {
 // the third name on the ballot. Prefer indie.js's S.nominees.I (or an independent President); else the fall campaign's surge
 // candidate; else, only when no independent field was run at all (old saves), the old 30% random minor candidate
 function presThird(s) {
-  if (s.noms.I) { const T = s.noms.I; return { ...T, strength: clamp(IND() && typeof cauThirdNat === 'function' ? (+T.strength || 3) + cauThirdNat(T) : +T.strength || 3, 0.5, 45), lean: clamp(+T.lean || 0, -1, 1), home: T.home || T.state || (T.p && T.p.state) || null }; }
+  if (s.noms.I) { const T = s.noms.I; return { ...T, strength: clamp(IND() && typeof cauThirdNat === 'function' ? (+T.strength || 3) + cauThirdNat(T) : +T.strength || 3, 0.5, T.top2 ? 48 : 45), lean: clamp(+T.lean || 0, -1, 1), home: T.home || T.state || (T.p && T.p.state) || null }; }
   const N = S.nominees || {}, tp = S.election && S.election.camp && S.election.camp.thirdParty;
   if (tp) return { name: tp.name || fullName(), label: 'Independent', strength: clamp((tp.share || 5) * rnd(0.6, 0.95), 1, 12), lean: 0, fixed: true };
   if (!('I' in N) && Math.random() < 0.3) return { name: fullName(), label: 'Independent', strength: rnd(2, 9), lean: 0, fixed: true };
@@ -119,6 +137,8 @@ function runPres() {
     popD += states[c].dVotes; popR += states[c].rVotes; popI += states[c].iVotes;
   }
   const year = S.election ? S.election.year : currentYear(), r1 = v => Math.round(v * 10) / 10, EVS = { D: evD, R: evR, I: evI };
+  const NEWI = IND() || PARITY();
+  if (NEWI) S.lastIndPct = r1(popI / Math.max(1, popD + popR + popI) * 100);   // the independents' national share (indie.js indPower reads it)
   // nobody at 270: the House chooses, one vote per state delegation (runHouse has already seated the new delegations).
   // The delegations are all Democratic or Republican, so a third candidate's electors only deny a majority. Evenly split delegations
   // abstain; the side with more delegations prevails, and a dead-even House keeps the White House party (or the bigger elector count)
@@ -167,7 +187,8 @@ function runPres() {
   const tidy = () => { const taken = x => x && (x.name === S.president.name || (S.vp && x.name === S.vp.name)); S.reps = (S.reps || []).filter(r => !taken(r)); S.formers = (S.formers || []).filter(f => !taken(f)); };
   const NW = winner === 'I' ? T : noms[winner];
   if (winner === inc && running) {
-    P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President${evTxt}`, year); what = `${presTitle()} wins a second term.`;
+    P.terms++; P.approval = clamp(P.approval + 4, 22, 72); hist(P, `Re-elected President${evTxt}`, year);
+    what = NEWI && winner === 'I' ? `${presTitle()} wins a second term without either party, carrying ${iw.length} state${iw.length === 1 ? '' : 's'}: the independent White House stands.` : `${presTitle()} wins a second term.`;
     const NV = NW.vp;
     if (NV && NV.name && !(S.vp && S.vp.name === NV.name)) {   // the convention dumped the Vice President for a new running mate
       const old = S.vp; seatVP(NW);
@@ -184,8 +205,11 @@ function runPres() {
     const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === person.name);
     if (govCode) { governorSucceeded(govCode, 'was elected President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
     hist(person, `Elected President of the United States${winner === 'I' ? ' as an independent' : ''}${evTxt}`, year);
-    S.president = { ...person, name: person.name, party: winner, faction: winner === 'I' ? FACTIONS.I[0][0] : NW.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1, ...(winner === 'I' && T.label ? { label: T.label } : {}) };
+    // an independent President always carries a label (an IND_LABELS key or 'Independent') and a lean (parity path)
+    const iLab = winner === 'I' && NEWI ? (typeof IND_LABELS !== 'undefined' && IND_LABELS[T.label] ? T.label : 'Independent') : null;
+    S.president = { ...person, name: person.name, party: winner, faction: winner === 'I' ? FACTIONS.I[0][0] : NW.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1, ...(iLab ? { label: iLab, lean: T.lean != null ? +T.lean : indLabelInfo(iLab).lean } : winner === 'I' && T.label ? { label: T.label } : {}) };
     if (NW.vp && NW.vp.name) seatVP(NW);
+    else if (iLab && typeof indPerson === 'function') { S.vp = indPerson(iLab, 'gov').p; S.vp.faction = FACTIONS.I[0][0]; hist(S.vp, 'Elected Vice President', year); }
     else { S.vp = newPerson(winner, pick(STATES)[0]); S.vp.faction = FACTIONS[winner][0][0]; hist(S.vp, 'Elected Vice President', year); }
     tidy();
     S.pendingCabinet = true;
@@ -201,7 +225,7 @@ function runPres() {
   if (electors) what = `<b>No majority: ${evStr} in the Electoral College.</b> The independent electors cast their ${evI} votes for ${names[electors]}, and the Electoral College has a winner after all. ` + what;
   S.nominees = null; S._fallbackNames = null;
   if (extra.length) what += ' ' + extra.join(' ');
-  const third = T ? { label: T.label || 'Independent', major: !!T.major, lean: T.lean || 0, color: T.color || null } : null;
+  const third = T ? { label: T.label || 'Independent', major: !!T.major, lean: T.lean || 0, color: T.color || null, ...(NEWI && T.engine === 'prim' ? { prim: true } : {}) } : null;
   return { states, evD, evR, evI, popD, popR, popI, names, winner, loser, inc, running, what, year, prev: prev ? { year: prev.year, states: prev.states } : null, homes, vps, offices, houseVote, third, ...(electors ? { electors } : {}) };
 }
 
@@ -533,13 +557,14 @@ function resPresNotes(P, code, called) {
 }
 // the White House line under the electoral-vote bar: the stakes while the count runs, the outcome once it is final
 function resPresFoot(P) {
-  const inc = PARTY[P.inc].short, kept = P.winner === P.inc;
+  const inc = P.inc === 'I' && (IND() || PARITY()) ? 'Independents' : PARTY[P.inc].short, kept = P.winner === P.inc;
   if (NIGHT.t < 1) return `${inc} hold the White House · ${P.running ? `${P.names[P.inc]} seeks a second term` : 'open race'}${P.names.I && P.third && P.third.major ? ` · a serious ${P.third.label === 'Independent' ? 'independent' : P.third.label} challenge` : ''}`;
   return `${inc} ${kept ? 'hold' : 'lose'} the White House · ${P.running ? `${P.names[P.inc]} ${kept ? 'wins' : 'is denied'} a second term` : `open race · ${P.names[P.winner]} (${P.winner}) ${kept ? 'keeps it for the ' + inc : 'takes it'}`}${P.houseVote ? ' · decided in the House' : ''}`;
 }
 // before → after seat counts, the net for your party and a projection once a side clinches
 // (clinched = ahead by more than the seats still out, which is also how the game counts a majority when independents hold the balance)
 function resSeatFoot(before, now, need, what) {
+  if (what === 'the Senate' && before && before.floor && (IND() || PARITY())) return resSenFoot(before, now);
   const b = before || { D: 0, R: 0, I: 0 }, side = IND() && !('I' in now) ? frameP() : S.side, held = (b.D || 0) > (b.R || 0) ? 'D' : (b.R || 0) > (b.D || 0) ? 'R' : null;
   const cnt = o => `D ${o.D || 0} · R ${o.R || 0}${o.I ? ` · I ${o.I}` : ''}`;
   let txt = `Before: ${cnt(b)}`;
@@ -547,6 +572,31 @@ function resSeatFoot(before, now, need, what) {
   const proj = now.D >= need || now.D > now.R + now.und ? 'D' : now.R >= need || now.R > now.D + now.und ? 'R' : null;
   if (proj) txt += ` <span class="res-proj" style="color:${PARTY[proj].color}">✓ ${PARTY[proj].short} ${held === proj ? 'hold' : held ? 'take' : 'win'} ${what}</span>`;
   else if (!now.und) txt += ` <span class="res-proj" style="color:var(--dim)">deadlocked</span>`;
+  return txt;
+}
+// the Senate on the parity path: three blocs, and control by the rule the game plays by (orgOutcomeN: who organizes, with whom).
+// held = who ran the floor going in (countBallots' before.floor). A bloc is projected once every way the uncalled seats can still
+// fall leaves it organizing; the final line reads the live orgOutcome() (the new Vice President and the frozen partner included)
+function resSenOutcome(n) { return orgOutcomeN({ D: n.D || 0, R: n.R || 0, I: n.I || 0 }, vpParty(), indPartner(), indLeads()); }
+function resSenProj(now) {
+  const u = now.und || 0;
+  if (!u) return orgOutcome();
+  let first = null;
+  for (let d = 0; d <= u; d++) for (let r = 0; r <= u - d; r++) {
+    const o = resSenOutcome({ D: (now.D || 0) + d, R: (now.R || 0) + r, I: (now.I || 0) + u - d - r });
+    if (!first) first = o; else if (o.floor !== first.floor) return null;
+  }
+  return first;
+}
+const RES_HOW = { alone: '', coalition: ' with the independents', bargain: ': an independent Majority Leader', iplural: ': out-seating their partner', plurality: ': the biggest bloc', 'two-party': '' };
+function resSenFoot(before, now) {
+  const b = before, side = IND() ? 'I' : S.side, held = b.floor;
+  const cnt = o => `D ${o.D || 0} · R ${o.R || 0}${o.I || b.I ? ` · I ${o.I || 0}` : ''}`;
+  let txt = `Before: ${cnt(b)}`;
+  if (!now.und) { const net = (now[side] || 0) - (b[side] || 0); txt += ` → after: ${cnt(now)} · <b style="color:${net > 0 ? 'var(--yes)' : net < 0 ? 'var(--no)' : 'var(--dim)'}">${PARTY[side].short} ${net > 0 ? '+' : net < 0 ? '−' : '±'}${Math.abs(net)}</b>`; }
+  const o = resSenProj(now);
+  if (o) { const f = o.floor, nm = f === 'I' ? 'Independents' : PARTY[f].short; txt += ` <span class="res-proj" style="color:${PARTY[f].color}">✓ ${nm} ${held === f ? 'hold' : 'take'} the Senate${RES_HOW[o.how] || ''}</span>`; }
+  else txt += ` <span class="res-proj" style="color:var(--dim)">${now.und ? 'control undecided' : 'deadlocked'}</span>`;
   return txt;
 }
 // the big board: PROJECTION once a ticket's called electoral votes reach 270, drama while it stays close
@@ -557,7 +607,7 @@ function resBannerHTML(T) {
     if (!N.fanfared) { N.fanfared = true; sfx.fanfare(); }
     return `<div class="res-banner" style="--pc:${PARTY[w].color}"><div class="res-blabel">★ Projection · ${clockText(pj ? pj.t : N.t)}${pj ? ` · ${stName(pj.code)} puts it over the top` : ''}</div>
       <div class="res-bhead">${P.names[w].toUpperCase()} ${re ? 'RE-ELECTED' : 'ELECTED'} PRESIDENT</div>
-      <div class="res-bsub">${w === 'I' ? `${P.third && P.third.label && P.third.label !== 'Independent' ? `${P.third.label} candidate` : 'Independent'} · <b>${P.inc === 'I' ? 'the White House stays outside the two parties' : 'the first President from outside the two parties in living memory'}</b>` : PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${rest.map(p => t[p] || 0).join(' and ')}`}${w === 'I' ? '' : w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
+      <div class="res-bsub">${w === 'I' ? `${P.third && P.third.label && P.third.label !== 'Independent' ? `${P.third.label} ${re && (IND() || PARITY()) ? 'President' : 'candidate'}` : 'Independent'} · <b>${re && (IND() || PARITY()) ? 'the independent President wins a second term, beating both parties again' : P.inc === 'I' ? 'the White House stays outside the two parties' : 'the first President from outside the two parties in living memory'}</b>` : PARTY[w].name}${P.offices && P.offices[w] ? ` · ${P.offices[w]}` : ''} · ${t[w]} electoral votes${t.und ? ` with ${t.und} still out` : ` to ${rest.map(p => t[p] || 0).join(' and ')}`}${w === 'I' ? '' : w !== P.inc ? ' · <b>the White House changes hands</b>' : re ? '' : ` · the ${PARTY[w].short} keep the White House`}</div></div>`;
   }
   const left = Object.entries(P.states).filter(([, s]) => N.t < s.call).sort((a, b) => b[1].ev - a[1].ev), ord = resOrder(t, P), lead = ord[0], trail = ord[1];
   if (N.t >= 1 || !left.length) {
@@ -663,7 +713,8 @@ function resNightSnake(T) {
     for (const m of N.prevMembers) if (!up.has(m.state + ':' + m.cls)) cells.push({ p: m.party, m: 99, code: m.state, title: `${stName(m.state)} (${m.party}) · not up this year` });
     for (const r of N.races) cells.push(isCalled(r) ? { p: r.wParty, m: r.margin, flip: r.flip, code: r.code, title: `${stName(r.code)}: ${r.wName} (${r.wParty}) +${r.margin.toFixed(1)}${r.flip ? ' · FLIP' : ''}` } : { p: null, m: 0, code: r.code, title: `${stName(r.code)}: not yet called` });
     const t = T.senate;
-    return resSnakeHTML(cells, 51, 100, `${dot('D')}D ${t.D}</span>${t.I ? ` · ${dot('I')}I ${t.I}</span>` : ''} · ${t.und ? `${t.und} seat${t.und === 1 ? '' : 's'} uncalled` : 'all 100 seats accounted for'} · ${dot('R')}R ${t.R}</span> · 51 for control · seats sorted by margin, flips outlined in gold`);
+    const ctl = N.before && N.before.floor && (IND() || PARITY()) ? (o => o ? ` · ${o.floor === 'I' ? 'the independents' : `the ${PARTY[o.floor].short}`} organize${RES_HOW[o.how] || ''}` : ' · 51 (50 with the VP) organizes alone; the independents can tip it')(resSenProj(t)) : ' · 51 for control';
+    return resSnakeHTML(cells, 51, 100, `${dot('D')}D ${t.D}</span>${t.I ? ` · ${dot('I')}I ${t.I}</span>` : ''} · ${t.und ? `${t.und} seat${t.und === 1 ? '' : 's'} uncalled` : 'all 100 seats accounted for'} · ${dot('R')}R ${t.R}</span>${ctl} · seats sorted by margin, flips outlined in gold`);
   }
   if (tab === 'house' && N.house.districts) {
     for (const L of Object.values(N.house.districts)) for (const x of L) cells.push(N.t >= x.call ? { p: x.w, m: Math.abs(x.m), code: x.id.slice(0, 2), flip: x.flip, title: `${x.id}: ${x.w === 'D' ? x.dName : x.rName} (${x.w}) +${Math.abs(x.m).toFixed(1)}${x.flip ? ' · FLIP' : ''}` } : { p: null, m: 0, code: x.id.slice(0, 2), title: `${x.id}: not yet called` });

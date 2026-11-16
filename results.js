@@ -35,6 +35,8 @@ function resBuildRecord(nd) {
     if (r.cands && r.cands[2]) o.c3 = [r.cands[2].party, r.cands[2].name, r1(r.cands[2].pct)];
     return o;
   }) };
+  // parity: who organizes the new Senate (S.org, refreshed by countBallots), how, and who ran it going in
+  if ((IND() || PARITY()) && S.org && S.org.floor) Object.assign(senate, { floor: S.org.floor, how: S.org.how || null, prev: nd.before && nd.before.floor ? nd.before.floor : S.org.prevFloor || null });
   const H = nd.house || {}, hp = (H.popD || 0) + (H.popR || 0);
   const house = { before: H.before || null, after: { D: S.house.D, R: S.house.R }, byState: Object.fromEntries(Object.entries(H.states || {}).map(([c, s]) => [c, [s.d, s.n, s.prevD, r1(s.dPct), r1(s.rPct)]])), pop: hp ? [r1(H.popD / hp * 98.4), r1(H.popR / hp * 98.4)] : null };
   if (H.districts) house.dist = Object.fromEntries(Object.entries(H.districts).map(([c, L]) => [c, L.map(x => { const a = [x.w, r1(x.m), (x.flip ? 1 : 0) + (x.open ? 2 : 0), x.prev == null ? null : r1(x.prev), r1(x.lean), x.w === 'D' ? x.dName : x.rName]; if (x.flip) a.push(x.w === 'D' ? x.rName : x.dName); return a; })]));
@@ -43,6 +45,7 @@ function resBuildRecord(nd) {
     govBefore: nd.govBefore ? resCountBy(nd.govBefore) : null, govAfter: resCountBy(Object.fromEntries(Object.entries(S.governors || {}).map(([c, g]) => [c, g.party]))),
     campaign: S.lastCampaign && S.lastCampaign.year === nd.year ? S.lastCampaign : null, conventions: S.conventions && S.conventions.year === nd.year ? S.conventions : null,
     midterm: S.lastMidterm && S.lastMidterm.year === nd.year ? S.lastMidterm : null,
+    ...((IND() || PARITY()) && P && P.third && P.third.prim && P.names.I ? { iprim: { name: P.names.I, label: P.third.label || 'Independent' } } : {}),
     ...(IND() ? { career: 'I', cau: { before: nd.before ? nd.before.I : null, after: seats('I'), partner: S.cau.partner, balance: kingmakerNow(), electors: (nd.pres && nd.pres.electors) || null, camp: S.lastCauCampaign && S.lastCauCampaign.year === nd.year ? S.lastCauCampaign : null } } : {}) };
 }
 function archiveElection(nd) {
@@ -96,6 +99,11 @@ function resPresBells(P) {
 const resPresClosest = (P, n = 10) => Object.keys(P.states).sort((a, b) => resPresWM(P, a) - resPresWM(P, b)).slice(0, n);
 const resSwingOf = (P, c) => P.prev && P.prev.states && P.prev.states[c] != null ? resPresM(P, c) - P.prev.states[c] : null;
 const resMaj = o => (o.D || 0) > (o.R || 0) ? 'D' : (o.R || 0) > (o.D || 0) ? 'R' : null;
+// who led the Senate after a record's election: the organizer the game recorded (parity), else the two-party count
+const RES_HOW_TXT = { alone: 'on its own', coalition: 'with the independents', bargain: 'by the Gavel Bargain', iplural: 'out-seating its partner', plurality: 'as the biggest bloc', 'two-party': '' };
+const resLed = Sn => Sn.floor || resMaj(Sn.after || {});
+const resWasLed = Sn => Sn.floor ? Sn.prev || resMaj(Sn.before || {}) : resMaj(Sn.before || {});
+function resLedTxt(Sn) { const f = resLed(Sn); if (!f) return 'deadlocked'; const h = Sn.floor && Sn.how !== 'alone' ? RES_HOW_TXT[Sn.how] || '' : ''; return `${f === 'I' ? 'Independents' : PARTY[f].short}${h ? ` (${h})` : ''}`; }
 const resThirdName = P => `${P.names.I}${P.third && P.third.label && P.third.label !== 'Independent' ? ` (${P.third.label})` : ' (I)'}`;
 // the headline of a record, for the explorer and the Almanac
 function resHeadline(R) {
@@ -106,8 +114,10 @@ function resHeadline(R) {
     if (w === 'I') return `Independent ${P.names.I} wins the White House, ${resEvTxt(P)}`;
     return `${P.names[w]} ${big >= 400 ? 'wins in a landslide' : re ? 're-elected' : 'elected President'}, ${resEvTxt(P)}`;
   }
-  const b = R.senate.before || {}, a = R.senate.after, was = resMaj(b), now = resMaj(a);
+  const b = R.senate.before || {}, a = R.senate.after, was = resWasLed(R.senate), now = resLed(R.senate);
   if (!R.senate.races.length && !(a.D || a.R)) return `${R.year}: no detailed results on record`;
+  if (R.senate.floor === 'I') return `${was === 'I' ? 'Independents keep the gavel' : 'An Independent-led Senate'}, ${a.D}–${a.R}–${a.I || 0}`;
+  if (R.senate.floor && R.senate.how === 'coalition') return `${PARTY[now].short} ${was === now ? 'hold' : 'take'} the Senate with the independents, ${a.D}–${a.R}–${a.I || 0}`;
   return now ? `${PARTY[now].short} ${was === now ? 'hold' : 'take'} the Senate, ${a.D}–${a.R}${a.I ? `–${a.I}` : ''}` : `Senate deadlocked ${a.D}–${a.R}`;
 }
 // a full 538-vote count that nobody won outright (the House chose), and how the state delegations voted
@@ -269,12 +279,12 @@ function resXSenate(R, X) {
   const Sn = R.senate, races = Sn.races, flips = races.filter(r => r.flip), three = races.filter(r => r.threeWay), b = Sn.before || {}, a = Sn.after;
   const by = Object.fromEntries(races.map(r => [r.code, r]));
   const map = usMap({ cls: 'res-map', fill: c => { const r = by[c]; if (!r) return null; const s = shade(r.wParty, r.margin); return { c: s.fill, op: s.op }; }, sub: c => by[c] ? (by[c].flip ? 'FLIP' : by[c].open ? 'open' : '') : '', ring: c => X.sel === c ? '#fff' : by[c] && by[c].flip ? '#f6d27a' : null, attr: c => by[c] ? `data-code="${c}"` : '', title: c => by[c] ? `${stName(c)}: ${by[c].wName} (${by[c].wParty}) +${by[c].margin.toFixed(1)}${by[c].flip ? ' · FLIP' : ''}` : `${stName(c)}: no Senate race` });
-  const net = (a[R.side] || 0) - (b[R.side] || 0), was = resMaj(b), now = resMaj(a);
+  const net = (a[R.side] || 0) - (b[R.side] || 0), was = resWasLed(Sn), now = resLed(Sn);
   const st = c => ({ v: stName(c), h: `<b>${c}</b> ${stName(c)}` }), num = (v, h) => ({ v, h: h == null ? String(v) : h });
   const pc = (r, p) => { const v = r.wParty === p ? r.wPct : r.lParty === p ? r.lPct : r.c3 && r.c3[0] === p ? r.c3[2] : null; return v == null ? null : num(v, `<span style="color:${PARTY[p].color}">${v.toFixed(1)}</span>`); };
   const cols = [{ k: 'state', l: 'State' }, { k: 'cls', l: 'Class', num: 1 }, { k: 'winner', l: 'Winner' }, { k: 'd', l: 'D %', num: 1 }, { k: 'r', l: 'R %', num: 1 }].concat(three.length ? [{ k: 'i', l: 'I %', num: 1 }] : []).concat([{ k: 'margin', l: 'Margin', num: 1 }, { k: 'seat', l: 'Seat', num: 1 }]);
   const rows = races.map(r => ({ code: r.code, c: { state: st(r.code), cls: r.cls != null ? num(r.cls) : null, winner: { v: r.wName, h: resNm(r.wName, r.wParty) }, d: pc(r, 'D'), r: pc(r, 'R'), i: pc(r, 'I'), margin: num(r.margin, resMarginTag(r.wParty, r.margin)), seat: num(r.flip ? 2 : r.open ? 1 : 0, r.flip ? '<span class="call flip">FLIP</span>' : `<span style="color:var(--dim)">${r.open ? 'open · hold' : 'hold'}</span>`) } }));
-  const left = `${resCard('', `<div class="res-h">${now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'HOLD' : 'TAKE'} THE SENATE` : 'A SENATE DEADLOCK'}</div><div class="res-dek">${races.length} seats up · ${flips.length} flipped · ${Sn.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${Sn.before ? (R.cau ? ` · Independents ${resSigned(a.I - (b.I || 0), 0)}` : ` · ${PARTY[R.side].short} ${resSigned(net, 0)}`) : ''}</div>${map}<div class="nsub">Seats up this year · gold ring and FLIP: seats that changed hands · click a state</div>`)}
+  const left = `${resCard('', `<div class="res-h">${now === 'I' ? (was === 'I' ? 'INDEPENDENTS KEEP THE GAVEL' : 'AN INDEPENDENT-LED SENATE') : now ? `${PARTY[now].short.toUpperCase()} ${was === now ? 'HOLD' : 'TAKE'} THE SENATE` : 'A SENATE DEADLOCK'}</div><div class="res-dek">${Sn.floor ? `Senate led by <b>${resLedTxt(Sn)}</b> · ` : ''}${races.length} seats up · ${flips.length} flipped · ${Sn.before ? `${resCnt(b)} → ` : ''}<b>${resCnt(a)}</b>${Sn.before ? (R.cau ? ` · Independents ${resSigned(a.I - (b.I || 0), 0)}` : ` · ${PARTY[R.side].short} ${resSigned(net, 0)}`) : ''}</div>${map}<div class="nsub">Seats up this year · gold ring and FLIP: seats that changed hands · click a state</div>`)}
     ${resCard('Balance of power', resSeatSnake(b, a, races.map(r => ({ p: r.wParty, m: r.margin, flip: r.flip, code: r.code, title: `${stName(r.code)}: ${r.wName} (${r.wParty}) +${r.margin.toFixed(1)}` })), 51, 100, `<span style="color:${PARTY.D.color};font-weight:800">D ${a.D}</span>${a.I ? ` · <span style="color:${PARTY.I.color};font-weight:800">I ${a.I}</span>` : ''} · <span style="color:${PARTY.R.color};font-weight:800">R ${a.R}</span> · 51 for control · seats decided this year sorted by margin, flips outlined in gold`))}
     ${resCard(`Every race · ${races.length}`, `<div class="res-scroll">${resTableHTML(cols, rows, X.sort, X.sel, { k: 'margin', d: 1 })}</div>`)}`;
   const right = `${R.cau ? resCauCard(R) : ''}${resSelDetail(R, X.sel)}${resCard(`Seats that flipped · ${flips.length}`, flips.length ? `<div class="res-list">${flips.sort((x, y) => x.margin - y.margin).map(r => resRow(r.code, `<span><b>${r.code}</b> ${stName(r.code)} · ${resNm(r.wName, r.wParty)} ${r.open ? 'takes the open seat' : `unseats ${r.lName}`}</span>`, resMarginTag(r.wParty, r.margin), X.sel === r.code)).join('')}</div>` : '<div class="nsub">Not a single seat changed hands.</div>')}
@@ -490,6 +500,13 @@ function resCauLedger() {
 }
 
 /* ---------------- the Almanac ---------------- */
+// the Standings' Senate line (D/R careers, parity): three blocs and who organizes, by the game's own rule
+function resStandSenate() {
+  const o = orgOutcome(), f = o.floor, mine = PARTY[S.side].short;
+  const who = f === 'I' ? `An Independent-led coalition runs the Senate${o.coal ? ` with the ${PARTY[o.coal.with].short}` : ''}` : `The ${PARTY[f].short} organize the Senate${o.how === 'coalition' ? ' with the independents' : ''}`;
+  const you = isMajority() ? `your ${mine} hold the gavel` : inCoalition() ? `your ${mine} are the junior partner` : `your ${mine} are in the minority`;
+  return `${blocLine()} · ${who}: ${you}`;
+}
 let RESA = { tab: 'elections' };
 function resThumb(R) {
   const P = R.pres, sen = Object.fromEntries(R.senate.races.map(r => [r.code, r])), by = R.house.byState || {};
@@ -502,20 +519,20 @@ function resAlmanac(back) {
   let body = '';
   if (tab === 'elections') {
     body = A.length ? `<div class="res-alm">${A.map((R, i) => `<div class="res-almrow">${resThumb(R)}<div><h4>${R.year} · ${R.pres ? 'Presidential election' : 'Midterms'}</h4><p><b>${resHeadline(R)}</b></p>
-      <p>Senate ${resCnt(R.senate.before)} → <b>${resCnt(R.senate.after)}</b> · ${R.senate.races.filter(r => r.flip).length} flip${R.senate.races.filter(r => r.flip).length === 1 ? '' : 's'} · House ${R.house.before ? `${R.house.before.D}–${R.house.before.R} → ` : ''}<b>${R.house.after.D}–${R.house.after.R}</b>${R.gov && R.gov.length ? ` · ${R.gov.length} governors' races, ${R.gov.filter(g => g.flip).length} flipped` : ''}</p>
-      <p>${R.pres ? `White House: <b style="color:${PARTY[R.pres.winner].color}">${R.pres.names[R.pres.winner]}</b> (${R.pres.winner}) · popular vote ${pct(R.pres.popD / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} D – ${pct(R.pres.popR / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} R` : `President ${R.president.name} (${R.president.party}) ${R.president.party === resMaj(R.senate.after) ? 'kept' : 'faced'} ${R.president.party === resMaj(R.senate.after) ? 'a friendly Senate' : 'an opposition Senate'}`}${R.wave != null ? ` · wave ${R.wave >= 0 ? PARTY[R.side || frameP()].short : PARTY[other(R.side || frameP())].short} +${Math.abs(R.wave).toFixed(1)}` : ''}${R.cau ? ` · <b style="color:${PARTY.I.color}">Independents ${R.cau.before != null ? `${R.cau.before} → ` : ''}${R.cau.after}</b>${R.cau.balance ? ' · held the balance' : ''}` : ''}</p></div>
+      <p>Senate ${resCnt(R.senate.before)} → <b>${resCnt(R.senate.after)}</b>${R.senate.floor ? ` · <span class="res-led">Senate led by <b style="color:${PARTY[R.senate.floor].color}">${resLedTxt(R.senate)}</b></span>` : ''} · ${R.senate.races.filter(r => r.flip).length} flip${R.senate.races.filter(r => r.flip).length === 1 ? '' : 's'} · House ${R.house.before ? `${R.house.before.D}–${R.house.before.R} → ` : ''}<b>${R.house.after.D}–${R.house.after.R}</b>${R.gov && R.gov.length ? ` · ${R.gov.length} governors' races, ${R.gov.filter(g => g.flip).length} flipped` : ''}</p>
+      <p>${R.pres ? `White House: <b style="color:${PARTY[R.pres.winner].color}">${R.pres.names[R.pres.winner]}</b> (${R.pres.winner}) · popular vote ${pct(R.pres.popD / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} D – ${pct(R.pres.popR / (R.pres.popD + R.pres.popR + (R.pres.popI || 0)) * 100)} R` : `President ${R.president.name} (${R.president.party}) ${R.president.party === resMaj(R.senate.after) ? 'kept' : 'faced'} ${R.president.party === resMaj(R.senate.after) ? 'a friendly Senate' : 'an opposition Senate'}`}${R.wave != null ? ` · wave ${R.wave >= 0 ? PARTY[R.side || frameP()].short : PARTY[other(R.side || frameP())].short} +${Math.abs(R.wave).toFixed(1)}` : ''}${R.cau ? ` · <b style="color:${PARTY.I.color}">Independents ${R.cau.before != null ? `${R.cau.before} → ` : ''}${R.cau.after}</b>${R.cau.balance ? ' · held the balance' : ''}` : ''}${R.iprim ? ` · Alliance primary: <b style="color:${PARTY.I.color}">${R.iprim.name}</b> (${R.iprim.label})` : ''}</p></div>
       <button class="btn primary" data-res="${S.archive.length - 1 - i}">Open →</button></div>`).join('')}</div>` : `<div class="res-empty">The record book is empty. The first election comes in November 2028, after bill #6, and every result from then on is kept here: the map, every race, the swings and the story of the night.</div>`;
   } else if (tab === 'presidents') {
-    const wins = (S.archive || []).filter(R => R.pres).map(R => ({ year: R.year, name: R.pres.names[R.pres.winner], party: R.pres.winner, ev: resEvTxt(R.pres), re: R.pres.winner === R.pres.inc && R.pres.running, split: resPvWinner(R.pres) !== R.pres.winner }));
+    const wins = (S.archive || []).filter(R => R.pres).map(R => ({ year: R.year, name: R.pres.names[R.pres.winner], party: R.pres.winner, ev: resEvTxt(R.pres), re: R.pres.winner === R.pres.inc && R.pres.running, split: resPvWinner(R.pres) !== R.pres.winner, led: R.senate && R.senate.floor ? resLedTxt(resNorm(R).senate) : null }));
     body = `<div class="res-presrow">${portrait(P)}<div><b style="color:${PARTY[P.party].color}">President ${P.name}</b> <small>(${P.party} · ${P.faction})</small><br><small>Term ${P.terms} · approval ${P.approval}%${S.vp ? ` · Vice President ${S.vp.name}` : ''}</small></div><span class="res-years">in office</span></div>
       ${(P.history || []).filter(h => /President/.test(h.t)).slice(-4).map(h => `<p style="margin:4px 0 0;font-size:12px;color:var(--dim)"><b style="color:var(--gold2)">${h.y}</b> ${h.t}</p>`).join('')}
       <hr><b>Presidential elections on record</b>
-      ${wins.length ? wins.slice().reverse().map(w => `<div class="res-presrow"><div><b style="color:${PARTY[w.party].color}">${w.name}</b> <small>(${PARTY[w.party].name})</small><br><small>${w.re ? 'Re-elected' : 'Elected'} ${w.ev} in the Electoral College${w.split ? ' · <span style="color:var(--gold2)">lost the popular vote</span>' : ''}</small></div><span class="res-years">${w.year}</span></div>`).join('') : '<p style="color:var(--dim)">No presidential election has been held yet in your career. The first comes in 2028.</p>'}`;
+      ${wins.length ? wins.slice().reverse().map(w => `<div class="res-presrow"><div><b style="color:${PARTY[w.party].color}">${w.name}</b> <small>(${PARTY[w.party].name})</small><br><small>${w.re ? 'Re-elected' : 'Elected'} ${w.ev} in the Electoral College${w.split ? ' · <span style="color:var(--gold2)">lost the popular vote</span>' : ''}${w.led ? ` · Senate led by ${w.led}` : ''}</small></div><span class="res-years">${w.year}</span></div>`).join('') : '<p style="color:var(--dim)">No presidential election has been held yet in your career. The first comes in 2028.</p>'}`;
   } else {
     const g = resCountBy(Object.fromEntries(Object.entries(S.governors || {}).map(([c, x]) => [c, x.party])));
     const hm = houseMaj();
     body = `<div class="res-stand">
-      <div class="res-card"><div class="lh">The Senate</div>${balanceBar()}<p>${IND() && typeof cauSenateStatus === 'function' ? cauSenateStatus() : isMajority() ? `Your ${PARTY[S.side].short} hold the majority` : seats(S.side) === seats(other(S.side)) ? `A ${seats('D')}–${seats('R')} tie; the ${PARTY[other(S.side)].short} organize the chamber` : `The ${PARTY[other(S.side)].short} hold the majority`} · ${seats('I')} independent${seats('I') === 1 ? '' : 's'} · next election ${electionYear(nextElectionK())} (Class ${classUp(nextElectionK())})</p></div>
+      <div class="res-card"><div class="lh">The Senate</div>${balanceBar()}<p>${IND() && typeof cauSenateStatus === 'function' ? cauSenateStatus() : PARITY() ? resStandSenate() : isMajority() ? `Your ${PARTY[S.side].short} hold the majority` : seats(S.side) === seats(other(S.side)) ? `A ${seats('D')}–${seats('R')} tie; the ${PARTY[other(S.side)].short} organize the chamber` : `The ${PARTY[other(S.side)].short} hold the majority`} · ${seats('I')} independent${seats('I') === 1 ? '' : 's'} · next election ${electionYear(nextElectionK())} (Class ${classUp(nextElectionK())})</p></div>
       <div class="res-card"><div class="lh">The House</div><div class="balance"><div style="width:${S.house.D / 435 * 100}%;background:${PARTY.D.color}">D ${S.house.D}</div><div style="width:${S.house.R / 435 * 100}%;background:${PARTY.R.color}">R ${S.house.R}</div></div><p>${PARTY[hm].short} majority · Speaker's margin ${Math.abs(S.house.D - S.house.R)} seats</p></div>
       <div class="res-card"><div class="lh">Governors</div><div class="balance"><div style="width:${g.D * 2}%;background:${PARTY.D.color}">D ${g.D}</div>${g.I ? `<div style="width:${g.I * 2}%;background:${PARTY.I.color}">${g.I}</div>` : ''}<div style="width:${g.R * 2}%;background:${PARTY.R.color}">R ${g.R}</div></div><p>${g.D > g.R ? 'Democrats' : g.R > g.D ? 'Republicans' : 'Neither party'} hold${g.D === g.R ? '' : ''} most of the nation's mansions</p></div>
       <div class="res-card"><div class="lh">The Supreme Court</div><p style="font-size:16px;color:var(--ink)"><b>${courtLabel()}</b></p><p>${S.court.length} justices seated · ${courtCount('R') > courtCount('D') ? 'a Republican-appointed majority' : courtCount('D') > courtCount('R') ? 'a Democratic-appointed majority' : 'evenly split'}</p></div>
