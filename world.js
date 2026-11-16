@@ -26,8 +26,55 @@ const CABINET_POSTS = [
 const EO_LIST = {
   D: [['Climate Emergency Order', 'environment'], ['Student Loan Relief Order', 'welfare'], ['Gun Safety Order', 'urban'], ['Worker Protection Order', 'economy'], ['Drug Pricing Order', 'welfare'], ['Clean Power Order', 'environment'], ['Housing Access Order', 'urban'], ['AI Safeguards Order', 'tech']],
   R: [['Border Emergency Order', 'security'], ['Deregulation Order', 'economy'], ['Energy Dominance Order', 'economy'], ['Federal Hiring Freeze', 'taxes'], ['School Choice Order', 'taxes'], ['Tariff Order', 'economy'], ['Law and Order Directive', 'security'], ['Farm Freedom Order', 'rural']],
+  // an independent President's orders (moved here from night.js; the same entries, in the same order)
+  I: [['Government Ethics Order', 'taxes'], ['Infrastructure Fast-Track Order', 'economy'], ['Rural Broadband Order', 'rural'], ['Veterans First Order', 'security'], ['Drug Price Transparency Order', 'welfare'], ['Open Data Order', 'tech'], ['Conservation Order', 'environment'], ['Housing Permits Order', 'urban']],
 };
 const CRISES = [['the Strait of Kessa', 'a naval standoff in a vital shipping lane'], ['Valoria', 'an invasion of a treaty ally'], ['Mardova', 'a terrorist safe haven plotting attacks'], ['the Karst Highlands', 'an insurgency threatening a friendly government'], ['the Ostrava Basin', 'a rogue state racing for a nuclear weapon'], ['the Tamar Isles', 'a blockade starving an island ally'], ['the Sarn Desert', 'militias seizing oil fields'], ['the Velk Peninsula', 'a coup that toppled an ally']];
+
+/* ---------------- the independent White House (CONTRACT §5.6) ---------------- */
+// an independent President runs on the new rules: always in the independent career, in a D/R career only with the parity switch on
+function whIWH() { return !!S.president && S.president.party === 'I' && (IND() || PARITY()); }
+// who the President is to you, in text (events, midterm, campaign, wing). cap: capitalize the first letter
+function whWho(cap) {
+  const P = S.president, s = P.party === S.side && !IND() ? 'your party\'s President' : IND() && P.party === 'I' ? 'your caucus\'s President' : P.party === 'I' ? 'the independent President' : 'their President';
+  return cap ? s.charAt(0).toUpperCase() + s.slice(1) : s;
+}
+// an independent President's label for display ('Common Ground'), or the faction for a party President
+function whLabel(P = S.president) { return P.party === 'I' && P.label ? P.label : P.faction; }
+// the unity cabinet: each post goes to an independent (40%), the party the President leans toward (35%) or the other party (25%);
+// a centrist (|lean| ≤ 0.2) splits the two parties 30/30. One draw per post.
+function whUnityParty() {
+  const lean = S.president.lean != null ? S.president.lean : 0, r = Math.random(), tilt = lean < -0.2 ? 'D' : lean > 0.2 ? 'R' : null;
+  if (r < 0.4) return 'I';
+  if (!tilt) return r < 0.7 ? 'D' : 'R';
+  return r < 0.75 ? tilt : other2(tilt);
+}
+// a unity-cabinet pick: party members come from the party's moderate and crossover wings; independents carry the President's label
+function whUnityPick(allowSitting) {
+  const P = S.president, p = whUnityParty(), facs = p === 'I' ? ['Independents'] : [MODERATE[p], CROSS[p]].filter(Boolean);
+  const lab = typeof IND_LABELS !== 'undefined' && IND_LABELS[P.label] ? P.label : null;
+  const ok = x => x.party === p && facs.includes(x.faction) && (p !== 'I' || !lab || x.label === lab), r = Math.random();
+  if (allowSitting && r < 0.2) { const m = pick(S.members.filter(m => ok(m) && !T(m, 'leader'))); if (m) return { ...m, from: 'senator', fromId: m.id, competence: ri(2, 5), controversy: Math.random() * 0.6 }; }
+  if (allowSitting && r < 0.32) { const code = pick(Object.keys(S.governors).filter(c => ok(S.governors[c]))); if (code) return { ...S.governors[code], from: 'governor', fromState: code, competence: ri(2, 5), controversy: Math.random() * 0.6 }; }
+  if (r < 0.5 && S.formers && S.formers.length) { const f = pick(S.formers.filter(ok)); if (f) return { ...f, from: 'former', competence: ri(2, 5), controversy: Math.random() * 0.7 }; }
+  const x = newPerson(p, pick(STATES)[0], { age: ri(45, 72) });
+  x.faction = pick(facs);
+  if (p === 'I') x.label = lab || (typeof indPickLabel === 'function' ? indPickLabel(null, x.state, null, P.lean || 0) : 'Common Ground');
+  hist(x, `Worked as ${x.background}`, currentYear() - ri(10, 25));
+  hist(x, pick([p === 'I' ? 'Ran a nonpartisan good-government foundation' : `Broke with the ${PARTY[p].short} on a signature vote`, 'Ran a Fortune 500 company', 'Led a major think tank', `Served in the ${ST[x.state].name} cabinet`, 'Served as an ambassador']), currentYear() - ri(3, 9));
+  return { ...x, from: 'outsider', competence: ri(1, 5), controversy: Math.random() };
+}
+// the cabinet's party mix, and the line that describes it ("a unity cabinet: 4 independents, 5 Democrats, 3 Republicans")
+function whCabinetMix(list = Object.values(S.cabinet || {})) { const c = list.filter(Boolean), n = p => c.filter(x => x.party === p).length; return { I: n('I'), D: n('D'), R: n('R') }; }
+function whUnityLine(list) { const m = whCabinetMix(list), pl = (k, w) => `${k} ${w}${k === 1 ? '' : 's'}`; return `a unity cabinet: ${pl(m.I, 'independent')}, ${pl(m.D, 'Democrat')}, ${pl(m.R, 'Republican')}`; }
+// an independent President's executive order: weighted by the President's issues (a Libertarian signs different orders from a
+// Green), one Math.random() (the draw count of pick)
+function whEoPick(list) {
+  const v = presVec(), w = list.map(e => Math.max(0.2, 1 + (v[e[1]] || 0))), tot = w.reduce((a, x) => a + x, 0);
+  let r = Math.random() * tot;
+  for (let i = 0; i < list.length; i++) { r -= w[i]; if (r <= 0) return list[i]; }
+  return list[list.length - 1];
+}
 
 /* ---------------- setup for a new career ---------------- */
 function buildWorld() {
@@ -55,9 +102,11 @@ function buildWorld() {
   Object.assign(P, newPerson(P.party, pick(STATES)[0], { age: ri(52, 72) }), { name: P.name, party: P.party, faction: P.faction, approval: P.approval, terms: P.terms });
   hist(P, `Elected Governor of ${ST[P.state].name}`, 2016); hist(P, `Elected President of the United States`, 2024);
   S.vp = newPerson(P.party, pick(STATES)[0], { age: ri(48, 68) }); S.vp.faction = pick(FACTIONS[P.party])[0];
+  if (P.party === 'I' && P.label) { S.vp.label = P.label; S.vp.lean = P.lean; } // an independent ticket shares a label
   hist(S.vp, `Elected to the U.S. Senate`, 2014); hist(S.vp, 'Elected Vice President', 2024);
   S.cabinet = {};
   for (const [post, title] of CABINET_POSTS) { const c = cabinetPick(P.party, false); hist(c, `Confirmed as ${title}, ${ri(51, 68)}–${ri(30, 48)}`, 2025); S.cabinet[post] = c; }
+  if (whIWH()) hist(P, `Named ${whUnityLine()}`, 2025);
   S.pulse = []; S.salience = { economy: 3, welfare: 2, security: 2, taxes: 1, environment: 1, urban: 1, rural: 1, tech: 1 };
   S.war = null; S.eos = []; S.docket = null; S.nominees = null;
   if (typeof localEnsure === 'function') localEnsure(); // mayors and state legislatures (local.js)
@@ -65,6 +114,7 @@ function buildWorld() {
 
 /* ---------------- people helpers ---------------- */
 function cabinetPick(party, allowSitting = true) {
+  if (party === 'I' && whIWH()) return whUnityPick(allowSitting); // an independent President builds a unity cabinet
   const r = Math.random();
   if (allowSitting && r < 0.2) { const m = pick(S.members.filter(m => m.party === party && !T(m, 'leader'))); if (m) return { ...m, from: 'senator', fromId: m.id, competence: ri(2, 5), controversy: Math.random() * 0.6 }; }
   if (allowSitting && r < 0.32) { const code = pick(Object.keys(S.governors).filter(c => S.governors[c].party === party)); if (code) return { ...S.governors[code], from: 'governor', fromState: code, competence: ri(2, 5), controversy: Math.random() * 0.6 }; }
@@ -108,7 +158,16 @@ function governorsMap() {
 
 /* ---------------- the Pulse: coverage of the national mood ---------------- */
 // the generic ballot: your party's share. In an independent career, the Democrats' share (an independent President is neutral)
-function genericBallot() { return clamp(IND() ? 50 + envSign(S.president.party) * (S.president.approval - 50) * 0.15 : 50 + S.mood * 0.9 + (S.president.party === S.side ? (S.president.approval - 50) * 0.15 : -(S.president.approval - 50) * 0.15), 30, 70); }
+// (a D/R career with an independent White House: the approval term is 0, as envSign('I'); the President's standing feeds the
+// independents instead, through S.indMoodDR)
+function genericBallot() { return clamp(IND() ? 50 + envSign(S.president.party) * (S.president.approval - 50) * 0.15 : 50 + S.mood * 0.9 + (whIWH() ? 0 : S.president.party === S.side ? (S.president.approval - 50) * 0.15 : -(S.president.approval - 50) * 0.15), 30, 70); }
+// D/R careers (PARITY): the independent White House's pull on independent candidates, (approval − 50)/25; written only while the
+// President is an independent, and removed when the White House changes hands (races.js adds it to I candidate strength)
+function whIndMood() {
+  if (IND() || !PARITY()) return;
+  if (S.president.party === 'I') S.indMoodDR = +((S.president.approval - 50) / 25).toFixed(2);
+  else if ('indMoodDR' in S) delete S.indMoodDR;
+}
 function rightTrack() { return clamp(Math.round(38 + (S.president.approval - 50) * 0.7 + (S.war && S.war.support < 45 ? -6 : 0) + (S.shutdown ? -8 : 0)), 12, 75); }
 function pulseTick() {
   S.pulse = S.pulse || [];
@@ -121,6 +180,7 @@ function pulseTick() {
   if (S.bill) for (const [t, v] of Object.entries(S.bill.fx)) S.salience[t] = (S.salience[t] || 1) + Math.abs(v) * 0.6;
   if (S.war) S.salience.security += 2;
   if (S.shutdown) S.salience.economy += 2;
+  whIndMood();
 }
 function lineChart(series, opts = {}) {
   const W = 560, H = 170, pad = 28, n = Math.max(2, series[0].pts.length);
@@ -208,7 +268,10 @@ function pulseRaceHTML() {
   const year = electionYear(nextElectionK());
   if (!pulseNominees()) {
     const P = S.president;
-    return `<div class="presbox"><b>🇺🇸 The race for the White House · ${year}</b><p style="margin:6px 0">Presidential primaries open in the spring. ${P.terms < 2 ? `${presTitle()} is expected to seek a second term; the ${PARTY[other(P.party)].short} are auditioning challengers in Iowa diners.` : `${presTitle()} is term-limited: both nominations are wide open, and half the Senate has been spotted in New Hampshire.`}</p></div>`;
+    const iwh = whIWH(); // an independent White House: the President runs in the independents' own primary, and both parties hunt for a challenger
+    return `<div class="presbox"><b>🇺🇸 The race for the White House · ${year}</b><p style="margin:6px 0">Presidential primaries open in the spring. ${iwh
+      ? (P.terms < 2 ? `${presTitle()}, ${whWho()}, is expected to seek a second term and must win the independents' own primary first; the ${PARTY.D.short} and the ${PARTY.R.short} are both auditioning challengers in Iowa diners.` : `${presTitle()}, ${whWho()}, is term-limited: all three nominations are wide open, and half the Senate has been spotted in New Hampshire.`)
+      : P.terms < 2 ? `${presTitle()} is expected to seek a second term; the ${PARTY[other(P.party)].short} are auditioning challengers in Iowa diners.` : `${presTitle()} is term-limited: both nominations are wide open, and half the Senate has been spotted in New Hampshire.`}</p></div>`;
   }
   const m = pulseMargin(), P = pulseProj(m), me = frameP(), N = S.nominees, chip = x => { const col = x.m >= 0 ? PARTY[me].color : PARTY[other(me)].color; return `<span class="bchip" style="border-color:${col}">${x.c} <small style="color:var(--dim)">${x.ev}</small> <b style="color:${col}">${x.m >= 0 ? '+' : '−'}${Math.abs(x.m).toFixed(1)}</b></span>`; };
   const map = usMap({
@@ -227,10 +290,66 @@ function pulseRaceHTML() {
 }
 
 /* ---------------- the Pulse: the Senate outlook ---------------- */
-function pulseSenate() {
+// races (optional, PARITY or the independent career): this election's live race records (the trail passes S.election.races, whose
+// isUp() already points at the next class); without it, the next class's seats as neutral records
+function pulseSenate(races) {
+  if (races && (IND() || PARITY())) return pulseSenate3(races);
   // right after an election S.election (last cycle's wave, promises, midterm campaign) lingers until the next bill: the outlook is for the next cycle, so leave it out
   const E = S.election; S.election = null;
-  try { return pulseSenateCalc(); } finally { S.election = E; }
+  try { return IND() || PARITY() ? pulseSenate3() : pulseSenateCalc(); } finally { S.election = E; }
+}
+// one race's chances for the three blocs { D, R, I } (sums to 1). A live race record (rc) carries its own third candidate;
+// a neutral record keeps today's rule (an independent incumbent stays in the race and keeps the seat ~55% of the time)
+function pulseRace3(rc) {
+  const A = majorParty(rc), B = other2(A);
+  if (IND()) { // the caucus's chance, then the two-party split of the rest
+    const pI = clamp(raceChance(rc) || 0, 0, 1), pA = clamp(normCdf(projMargin(rc) / RACE_SD), 0.01, 0.99);
+    return { [A]: (1 - pI) * pA, [B]: (1 - pI) * (1 - pA), I: pI };
+  }
+  const me = S.side, them = other2(me), p = raceChance(rc), shareI = rc.ind ? (rc.m.party === 'I' ? 0.55 : 0.15) : 0, pThem = Math.max(0, 1 - shareI - p);
+  return { [me]: p, [them]: pThem, I: Math.max(0, 1 - p - pThem) };
+}
+// the three-bloc outlook (CONTRACT §5.6): the joint distribution of (D, R, I) seat wins over the races, each outcome evaluated by
+// orgOutcomeN with today's partner, bargain and Vice President. pCtrl: S.side organizes; pInd: the independents do.
+function pulseSenate3(races) {
+  const me = S.side, them = IND() ? 'R' : other2(me), live = !!races;
+  const recs = live ? races : S.members.filter(isUp).map(m => ({ m, retiring: false, cash: 0, noise: 0, primaried: false, bruised: false, ind: m.party === 'I' ? { name: m.name, incumbent: true, str: 36 } : null, nominee: null, electability: 0 }));
+  const ids = new Set(recs.map(rc => rc.m.id)), off = S.members.filter(m => !ids.has(m.id)), N0 = { D: 0, R: 0, I: 0 };
+  for (const m of off) N0[m.party] = (N0[m.party] || 0) + 1;
+  const rows = recs.map(rc => { const q = pulseRace3(rc); return { m: rc.m, q, p: IND() ? q.I : q[me], pThem: IND() ? q.D + q.R : q[them] }; });
+  const n = rows.length;
+  // dist[a][b]: the chance of a D wins and b R wins (the rest go to the independents)
+  let dist = [[1]];
+  rows.forEach((r, k) => {
+    const nd = Array.from({ length: k + 2 }, (_, a) => new Array(k + 2 - a).fill(0));
+    for (let a = 0; a <= k; a++) for (let b = 0; a + b <= k; b++) { const q = dist[a][b]; if (!q) continue; nd[a + 1][b] += q * r.q.D; nd[a][b + 1] += q * r.q.R; nd[a][b] += q * r.q.I; }
+    dist = nd;
+  });
+  const vp = vpParty(), partner = indPartner(), lead = indLeads(), pFloor = { D: 0, R: 0, I: 0 };
+  let pWith = 0, pMaj = 0, pTie = 0;
+  for (let a = 0; a <= n; a++) for (let b = 0; a + b <= n; b++) {
+    const q = dist[a][b]; if (!q) continue;
+    const c = { D: N0.D + a, R: N0.R + b, I: N0.I + n - a - b }, o = orgOutcomeN(c, vp, partner, lead);
+    pFloor[o.floor] += q; if (o.floor === me && o.coal) pWith += q;
+    if (!IND()) { const d = c[me] - c[them]; if (d > 0) pMaj += q; else if (!d) pTie += q; }
+  }
+  const sum = k => rows.reduce((a, r) => a + r.q[k], 0), ex = { D: N0.D + sum('D'), R: N0.R + sum('R'), I: N0.I + sum('I') };
+  const mineUp = recs.filter(rc => rc.m.party === me).length, indUp = recs.filter(rc => rc.m.party === 'I').length;
+  return { rows, three: true, live, N0, notUp: N0[me] || 0, exp: ex[me], expThem: ex[them], expI: ex.I, ex, pMaj, pTie, pres: isPresYear(nextElectionK()), pCtrl: pFloor[me] || 0, pInd: pFloor.I, pFloor, pWith,
+    mineUp, indUp, close: rows.slice().sort((a, b) => Math.abs(a.p - 0.5) - Math.abs(b.p - 0.5)).slice(0, 5),
+    gains: rows.filter(r => r.m.party !== me).sort((a, b) => b.p - a.p).slice(0, 3).filter(r => r.p >= 0.15), risks: rows.filter(r => r.m.party === me).sort((a, b) => a.p - b.p).slice(0, 3).filter(r => r.p <= 0.85) };
+}
+// how the Senate is organized now, in words: "the Republicans, alone" / "the Democrats, with the independents" / …
+function pulseOrgText(o = orgOutcome()) {
+  const nm = p => p === 'I' ? 'the independents' : `the ${PARTY[p].short}`, f = nm(o.floor);
+  const how = { alone: 'on their own seats', coalition: 'with the independents as junior partners', bargain: `by the Gavel Bargain, with ${o.coal ? nm(o.coal.with) : 'a partner'} as junior partners`,
+    iplural: `as the bigger half of a coalition with ${o.coal ? nm(o.coal.with) : 'a partner'}`, plurality: 'as the biggest bloc', 'two-party': 'with more seats than the other party (or the Vice President\'s tiebreak)' }[o.how] || '';
+  return `${f.charAt(0).toUpperCase() + f.slice(1)}, ${how}`;
+}
+// the three-bloc bar: D · I · R seats now
+function pulseBlocBar() {
+  const seg = (p, n) => n ? `<div style="flex:${n};background:${PARTY[p].color};padding:4px 6px;white-space:nowrap;overflow:hidden;text-align:center">${p} ${n}</div>` : '';
+  return `<div class="pulse-bloc" style="display:flex;border-radius:6px;overflow:hidden;font-size:12px;font-weight:800;color:#fff;margin:6px 0" title="${blocLine()}">${seg('D', seats('D'))}${seg('I', seats('I'))}${seg('R', seats('R'))}</div>`;
 }
 function pulseSenateCalc() {
   const me = S.side, them = other(me), ups = S.members.filter(isUp);
@@ -252,6 +371,7 @@ function pulseSenateCalc() {
 }
 function pulseSenateRow(r) { return `<div class="salrow"><span><b style="color:${PARTY[r.m.party].color}">${r.m.state}</b> ${r.m.name} <small style="color:var(--dim)">(${r.m.party})</small></span><span class="mbar" style="width:30%"><i style="width:${Math.round(r.p * 100)}%;background:${chanceColor(r.p)}"></i></span><b style="min-width:34px;text-align:right">${Math.round(r.p * 100)}%</b></div>`; }
 function pulseSenateHTML(O) {
+  if (O && O.three && !IND()) return pulseSenateHTML3(O);
   const me = S.side, them = other(me), year = electionYear(nextElectionK()), seatsNow = seats(me), e = Math.round(O.exp), et = Math.round(O.expThem), ei = 100 - e - et;
   const col = e > et ? 'var(--yes)' : e === et ? 'var(--gold2)' : 'var(--no)', theirsUp = O.rows.length - O.mineUp - O.indUp;
   const tieVP = O.pres ? 'whoever wins the White House breaks the tied votes' : `${vpYours() ? 'your' : 'their'} Vice President${S.vp ? ` (${lastName(S.vp)})` : ''} still breaks tied votes`;
@@ -266,13 +386,36 @@ function pulseSenateHTML(O) {
       <div><b style="font-size:13px">Most likely to flip</b>${O.gains.length ? `<small style="display:block;color:var(--yes)">Pickups for you</small>${O.gains.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim)">No real pickup chances yet.</small>'}${O.risks.length ? `<small style="display:block;color:var(--no);margin-top:4px">Your seats in danger</small>${O.risks.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim);margin-top:4px">None of your seats look shaky.</small>'}</div>
     </div><small style="color:var(--dim)">Before retirements, primaries and campaign money. The closer the election, the less those move.</small></div>`;
 }
+// the three-bloc Senate outlook (D/R careers, PARITY): who organizes now, the chance of organizing after the election
+function pulseSenateHTML3(O) {
+  const me = S.side, them = other2(me), year = electionYear(nextElectionK()), seatsNow = seats(me), e = Math.round(O.exp), et = Math.round(O.expThem), ei = Math.round(O.expI);
+  const col = O.pCtrl >= 0.5 ? 'var(--yes)' : O.pCtrl >= 0.35 ? 'var(--gold2)' : 'var(--no)', theirsUp = O.rows.length - O.mineUp - O.indUp;
+  const withI = seats('I') && indPartner() === me, pc = Math.round(O.pCtrl * 100), pi = Math.round(O.pInd * 100), coal = inCoalition();
+  const tieVP = O.pres ? 'whoever wins the White House breaks the tied votes' : `${whWho()}'s Vice President${S.vp ? ` (${lastName(S.vp)})` : ''} still breaks tied votes`;
+  const goal = isMajority() ? 'keep' : coal ? 'take back' : 'take';
+  const read = O.pCtrl >= 0.85 ? `The ${PARTY[me].short} are heavy favorites to ${goal} the Senate.` : O.pCtrl >= 0.6 ? `The ${PARTY[me].short} are favored to ${goal} the gavel, but a bad fall could cost them.` : O.pCtrl >= 0.4 ? 'The Senate is a toss-up: control runs through the closest five races below' + (seats('I') ? ' and the independents\' choice.' : '.') : O.pCtrl >= 0.15 ? `The ${PARTY[them].short} are favored. Your path to the gavel needs an upset or two${seats('I') && !withI ? ', or the independents' : ''}.` : `The math is brutal: the ${PARTY[me].short} would need a wave to ${isMajority() ? 'hold' : 'win'} the Senate.`;
+  const coalLine = coal ? ' For now you sit in the governing coalition as the junior partner: the floor is not yours, but the coalition owes you slots.' : '';
+  const path = typeof indGavelPath === 'function' && seats('I') ? indGavelPath() : null;
+  return `<div class="presbox"><b>🏛 The Senate outlook · ${year}</b> <small style="color:var(--dim)">· ${O.rows.length} seats up: ${O.mineUp} yours, ${theirsUp} theirs${O.indUp ? `, ${O.indUp} independent` : ''}</small>
+    ${pulseBlocBar()}
+    <p style="margin:2px 0 6px;font-size:13px">Organizes the Senate now: <b>${pulseOrgText()}</b> <small style="color:var(--dim)">(${blocLine()})</small>.${coalLine}${path && path.legalWith.length ? ` <small style="color:var(--gold2)">The independents could bargain for the gavel: ${path.why}.</small>` : ''}</p>
+    <div class="pulsecards">
+      <div class="pc"><small>Projected ${PARTY[me].name} seats</small><b style="color:${e > et ? 'var(--yes)' : e === et ? 'var(--gold2)' : 'var(--no)'}">~${e}</b> <small>vs ~${et} ${PARTY[them].short}${ei > 0 ? ` and ~${ei} independent${ei > 1 ? 's' : ''}` : ''} · now ${seatsNow}, ${O.notUp} not up</small></div>
+      <div class="pc"><small>Chance of control</small><b style="color:${col}">${pc}%</b> <small>${withI ? `with the independents: ${pc}% · ` : ''}organizing the Senate, alone or with a partner${pi >= 1 ? ` · an Independent-led Senate: ${pi}%` : ''}. On a tie ${tieVP}.</small></div>
+    </div><p style="margin:4px 0 8px">${read}</p>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:12px">
+      <div><b style="font-size:13px">The five closest races</b> <small style="color:var(--dim)">· your chance</small>${O.close.map(pulseSenateRow).join('')}</div>
+      <div><b style="font-size:13px">Most likely to flip</b>${O.gains.length ? `<small style="display:block;color:var(--yes)">Pickups for you</small>${O.gains.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim)">No real pickup chances yet.</small>'}${O.risks.length ? `<small style="display:block;color:var(--no);margin-top:4px">Your seats in danger</small>${O.risks.map(pulseSenateRow).join('')}` : '<small style="display:block;color:var(--dim);margin-top:4px">None of your seats look shaky.</small>'}</div>
+    </div><small style="color:var(--dim)">Before retirements, primaries and campaign money. The closer the election, the less those move.</small></div>`;
+}
 function openPulse(back) {
   const P = S.president, gb = genericBallot(), rt = rightTrack(), pts = S.pulse || [];
   const sal = Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]), maxS = Math.max(...sal.map(x => x[1]), 1);
   const presYr = isPresYear(nextElectionK()), race = presYr && pulseNominees(), O = IND() ? null : pulseSenate();
   const hm = race ? pulseMargin() : 0, hs = pulseShares(hm), N = S.nominees, me = frameP(), dp = hs.me.toFixed(0) === hs.them.toFixed(0) && Math.abs(hm) >= 0.05 ? 1 : 0; // a lead never rounds into a tie
   const chyrons = [
-    IND() ? (typeof cauPulseChyron === 'function' ? cauPulseChyron() : '') : `SENATE OUTLOOK: ~${Math.round(O.exp)} SEATS FOR THE ${PARTY[me].short.toUpperCase()} — ${Math.round(O.pCtrl * 100)}% CHANCE OF CONTROL`,
+    IND() ? (typeof cauPulseChyron === 'function' ? cauPulseChyron() : '') : `SENATE OUTLOOK: ~${Math.round(O.exp)} SEATS FOR THE ${PARTY[me].short.toUpperCase()} — ${Math.round(O.pCtrl * 100)}% CHANCE OF CONTROL${O.three && seats('I') && indPartner() === me ? ' WITH THE INDEPENDENTS' : ''}`,
+    !IND() && O.three && floorParty() === 'I' ? `AN INDEPENDENT-LED SENATE: ${blocLine().toUpperCase()}` : '',
     race ? `WHITE HOUSE: ${lastName(N[me]).toUpperCase()} ${hs.me.toFixed(dp)}, ${lastName(N[other(me)]).toUpperCase()} ${hs.them.toFixed(dp)} — ${pulseProj(hm).evMine} ELECTORAL VOTES FOR ${lastName(N[me]).toUpperCase()}` : presYr ? `THE ${electionYear(nextElectionK())} FIELD TAKES SHAPE: PRIMARIES OPEN IN THE SPRING` : '',
     P.approval >= 52 ? `${presTitle().toUpperCase()} RIDING HIGH AT ${P.approval}%` : P.approval <= 42 ? `${presTitle().toUpperCase()} SINKS TO ${P.approval}% — LOWEST YET` : `${presTitle().toUpperCase()} STUCK AT ${P.approval}%`,
     S.war ? `WAR IN ${S.war.place.toUpperCase()}: ${S.war.support}% SUPPORT, MONTH ${S.war.months}` : (gbm => gbm ? `GENERIC BALLOT: ${PARTY[frameP()].short.toUpperCase()} ${gbm > 0 ? 'LEAD' : 'TRAIL'} BY ${Math.abs(gbm)} POINT${Math.abs(gbm) === 1 ? '' : 'S'}` : 'GENERIC BALLOT: DEAD EVEN')(+gb.toFixed(0) - +(100 - gb).toFixed(0)),
@@ -314,13 +457,16 @@ function worldNews() {
   }
   // executive orders
   if (Math.random() < 0.35) {
-    const [name, tag] = pick(EO_LIST[P.party].filter(e => !S.eos.some(x => x.name === e[0] && x.party === P.party)) || EO_LIST[P.party]) || pick(EO_LIST[P.party]);
+    const iwh = whIWH(), unused = EO_LIST[P.party].filter(e => !S.eos.some(x => x.name === e[0] && x.party === P.party));
+    const [name, tag] = iwh ? whEoPick(unused.length ? unused : EO_LIST.I) : pick(EO_LIST[P.party].filter(e => !S.eos.some(x => x.name === e[0] && x.party === P.party)) || EO_LIST[P.party]) || pick(EO_LIST[P.party]);
     S.eos.push({ name, tag, party: P.party, year: currentYear() });
     S.salience[tag] = (S.salience[tag] || 1) + 2;
     if (Math.random() < 0.5) P.approval += 1;
-    if (!IND()) { if (P.party === S.side) S.mood += 0.3; else S.mood -= 0.3; }
+    // an independent White House belongs to neither party: your base reacts to the order's issue, not to whose President signed it
+    const fit = iwh && !IND() ? Math.sign(PARTY[S.side].prior[tag] || 0) : 0;
+    if (!IND()) { if (iwh) S.mood += 0.3 * fit; else if (P.party === S.side) S.mood += 0.3; else S.mood -= 0.3; }
     if (Math.random() < 0.4) S.laws.push({ name: `${presTitle()}'s ${name}`, party: P.party, inBills: ri(1, 3), eo: true });
-    out.push(`🖋️ ${presTitle()} signs the <b>${name}</b> (${TAG[tag][1]}).${IND() || P.party === S.side ? '' : ' Your base is furious.'}`);
+    out.push(`🖋️ ${presTitle()} signs the <b>${name}</b> (${TAG[tag][1]}).${IND() || P.party === S.side ? '' : iwh ? (fit > 0 ? ' Your base likes this one.' : fit < 0 ? ' Your base is furious.' : '') : ' Your base is furious.'}`);
   }
   // cabinet turnover
   if (Math.random() < 0.06) {
@@ -335,12 +481,13 @@ function worldNews() {
     const up = Math.random() < 0.5, d = ri(5, 10);
     const [h, why] = up ? pick([['a booming jobs report', 'The economy roars'], ['a hostage rescue', 'A daring rescue abroad'], ['a stirring address to the nation', 'A speech for the ages'], ['a historic peace deal', 'Peace breaks out']]) : pick([['a stock market crash', 'Markets plunge'], ['a botched disaster response', 'A hurricane response goes wrong'], ['a White House scandal', 'Scandal engulfs the West Wing'], ['soaring gas prices', 'Prices at the pump spike']]);
     P.approval = clamp(P.approval + (up ? d : -d), 18, 82);
-    S.mood = clamp(S.mood + (P.party === S.side ? 1 : -1) * (up ? d : -d) * 0.35, -15, 15);
+    S.mood = clamp(S.mood + (!IND() && whIWH() ? 0 : P.party === S.side ? 1 : -1) * (up ? d : -d) * 0.35, -15, 15); // an independent White House: neither party owns the moment
     out.push(`${up ? '📈' : '📉'} <b>${why}.</b> After ${h}, ${presTitle()}'s approval ${up ? 'jumps' : 'drops'} ${d} points.`);
   }
   // governors come and go
   if (Math.random() < 0.05) { const code = pick(Object.keys(S.governors)), g = S.governors[code]; if (g) { hist(g, 'Resigned as governor'); S.formers.push(g); governorSucceeded(code, 'resigned'); out.push(`🏛️ Gov. ${g.name} of ${ST[code].name} resigns; the lieutenant governor takes over.`); } }
   for (const f of HOOKS.worldNews) out.push(...(f() || []));
+  whIndMood();
   return out;
 }
 
@@ -384,7 +531,8 @@ function warRevolt(W) {
   const P = S.president, yours = P.party === S.side;
   if (warIsWPR(S.docket) || S.pendingAUMF || (S.nominee && P.party === S.side && S.court.length < 9) || Math.random() >= 0.5) return [];
   const doves = p => S.members.filter(m => m.party === p && !T(m, 'leader')).sort((a, b) => ((a.w && a.w.security) || 0) - ((b.w && b.w.security) || 0));
-  const inside = doves(P.party)[0], across = doves(other(P.party))[0];
+  // an independent White House has no party in the Senate to revolt: the doves come from both majors, half the bloc each
+  const iwh = whIWH(), inside = iwh ? doves('D')[0] : doves(P.party)[0], across = iwh ? doves('R')[0] : doves(other(P.party))[0];
   if (!inside || !across) return [];
   const n = ri(8, 15), who = `${sen(inside)} and ${sen(across)}`;
   if (S.docket) return [`🏛 <b>Congress is restless.</b> ${who} are whipping a War Powers Resolution on ${W.place}. Your pick, the ${S.docket.name}, holds the floor for now; the next opening may not be yours.`];
@@ -393,6 +541,7 @@ function warRevolt(W) {
   W.revolts = (W.revolts || 0) + 1;
   const when = (S.career.bills + 1) % 3 === 0 ? 'It comes to the floor right after the budget.' : 'It comes to the floor next.';
   hist(inside, `Led a bipartisan revolt to force a War Powers vote on ${W.place}`); hist(across, `Co-sponsored the War Powers Resolution on ${W.place}`);
+  if (iwh) return [`🏛 <b>Congress revolts against ${whWho()}:</b> ${who} lead a bloc of ${Math.ceil(n / 2)} Democrats and ${Math.floor(n / 2)} Republicans that forces a War Powers vote on ${W.place} onto the docket. Month ${W.months}, ${W.support}% support. ${when} ${yours ? 'Your caucus can stand with the President or with the Senate.' : 'Pass it, beat the veto if it comes, and the troops come home.'}`];
   return [yours
     ? `🏛 <b>Congress revolts, and it starts inside your own caucus:</b> ${sen(inside)} and ${n} other ${PARTY[P.party].name} senators join ${sen(across)} to force a War Powers vote on ${W.place} onto the docket. Month ${W.months}, ${W.support}% support. ${when} ${presTitle()} would rather sign a way out than lose a veto fight to their own party: pass it and the troops come home.`
     : `🏛 <b>Congress revolts:</b> a bipartisan bloc led by ${who}, with ${n} of ${presTitle()}'s own party behind them, forces a War Powers vote on ${W.place} onto the docket. Month ${W.months}, ${W.support}% support. ${when} Pass it, beat the veto if it comes, and the troops come home.`];
@@ -413,18 +562,31 @@ function cabinetConfirmations(posts, done) {
   const P = S.president;
   const taken = new Set(Object.entries(S.cabinet || {}).filter(([k, c]) => c && !posts.includes(k)).map(([, c]) => c.name));
   const noms = posts.map(post => { let p = cabinetPick(P.party); for (let i = 0; i < 8 && taken.has(p.name); i++) p = cabinetPick(P.party); taken.add(p.name); return { post, title: CABINET_POSTS.find(c => c[0] === post)[1], icon: CABINET_POSTS.find(c => c[0] === post)[2], p, work: 0 }; });
+  // an independent President's unity slate: each nominee's own party (and the independents) back them; an independent nominee
+  // needs crossover votes from both parties. D/R career: your party's nominees are yours, independents swing, theirs are theirs.
+  const unity = whIWH(), whose = n => !unity || IND() ? (P.party === S.side ? 'cw' : 'co') : n.p.party === S.side ? 'cw' : n.p.party === 'I' ? 'swing' : 'co';
   const proj = n => {
+    if (unity) {
+      const np = n.p.party, base = np === 'I' ? seats('I') + Math.round(0.45 * (seats('D') + seats('R'))) : seats(np) + seats('I');
+      const cross = Math.round((1 - n.p.controversy) * 14 + (n.p.from === 'senator' || n.p.from === 'former' ? 6 : 0) + (n.p.competence - 3) * 2);
+      const lean = !IND() && np === S.side ? 1 : IND() && S.cau && np === S.cau.partner ? 2 : 0; // your members lean yes; the caucus's partner whips its own
+      return clamp(base - Math.round(n.p.controversy * 4) + cross + lean + n.work, 30, 99);
+    }
     const mine = S.members.filter(m => m.party === P.party).length, ind = S.members.filter(m => m.party === 'I').length;
     const cross = Math.round((1 - n.p.controversy) * 14 + (n.p.from === 'senator' || n.p.from === 'former' ? 6 : 0) + (n.p.competence - 3) * 2);
     return clamp(mine - Math.round(n.p.controversy * 4) + Math.round(ind * 0.5) + cross + n.work, 30, 99);
   };
-  const need = () => S.president.party === S.side ? (vpYours() ? 50 : 51) : 51;
+  const need = () => unity ? (vpParty() === 'I' ? 50 : 51) : S.president.party === S.side ? (vpYours() ? 50 : 51) : 51;
+  const btn = (k, i) => k === 'cw' ? `<button class="btn" data-cw="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Whip for<small>1 cap</small></button>` : `<button class="btn" data-co="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Oppose<small>1 cap</small></button>`;
   const draw = () => {
     const yours = P.party === S.side;
+    const intro = unity && !IND() ? `${presTitle()} (${PARTY[P.party].name}, ${whLabel(P)}) has sent ${noms.length} nominee${noms.length > 1 ? 's' : ''} to the Senate: ${whUnityLine(noms.map(n => n.p))}. Whip for your party's picks, fight theirs; the independents are up for grabs.`
+      : unity ? `${presTitle()} has sent ${noms.length} nominee${noms.length > 1 ? 's' : ''} to the Senate: ${whUnityLine(noms.map(n => n.p))}. Whip your caucus and the persuadable to confirm them; each party's whip leans on its own.`
+      : `${presTitle()} (${PARTY[P.party].name}) has sent ${noms.length} nominee${noms.length > 1 ? 's' : ''} to the Senate. ${yours ? 'Whip your caucus and the persuadable to confirm them.' : 'You can lead the opposition against the weakest picks.'}`;
     showModal(`<div class="kicker">Advice and consent</div><h2>Cabinet Confirmations</h2>
-      <p>${presTitle()} (${PARTY[P.party].name}) has sent ${noms.length} nominee${noms.length > 1 ? 's' : ''} to the Senate. ${yours ? 'Whip your caucus and the persuadable to confirm them.' : 'You can lead the opposition against the weakest picks.'} You have <b style="color:var(--gold2)">${S.career.capital}</b> capital.</p>
-      <div class="races" style="max-height:none">${noms.map((n, i) => `<div class="race nom"><span class="nomp">${portrait(n.p)}</span><span style="flex:1"><b>${n.icon} ${n.title}</b><br><a href="#" data-prof="${i}">${n.p.name}</a> <small style="color:var(--dim)">(${n.p.faction || PARTY[n.p.party].name}) · ${{ senator: 'sitting senator', governor: 'sitting governor', former: 'former official', outsider: 'outsider' }[n.p.from]} · competence ${'★'.repeat(n.p.competence)}${'☆'.repeat(5 - n.p.competence)}${n.p.controversy > 0.65 ? ' · <span style="color:var(--no)">controversial</span>' : ''}</small><br><small>Projected: <b style="color:${proj(n) >= need() ? 'var(--yes)' : 'var(--no)'}">~${proj(n)} yeas</b> (needs ${need()})</small></span>
-        <span class="cashctl">${yours ? `<button class="btn" data-cw="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Whip for<small>1 cap</small></button>` : `<button class="btn" data-co="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Oppose<small>1 cap</small></button>`}</span></div>`).join('')}</div>
+      <p>${intro} You have <b style="color:var(--gold2)">${S.career.capital}</b> capital.</p>
+      <div class="races" style="max-height:none">${noms.map((n, i) => `<div class="race nom"><span class="nomp">${portrait(n.p)}</span><span style="flex:1"><b>${n.icon} ${n.title}</b><br><a href="#" data-prof="${i}">${n.p.name}</a> <small style="color:var(--dim)">(${unity ? `<b style="color:${PARTY[n.p.party].color}">${n.p.party}</b> · ` : ''}${n.p.faction || PARTY[n.p.party].name}) · ${{ senator: 'sitting senator', governor: 'sitting governor', former: 'former official', outsider: 'outsider' }[n.p.from]} · competence ${'★'.repeat(n.p.competence)}${'☆'.repeat(5 - n.p.competence)}${n.p.controversy > 0.65 ? ' · <span style="color:var(--no)">controversial</span>' : ''}</small><br><small>Projected: <b style="color:${proj(n) >= need() ? 'var(--yes)' : 'var(--no)'}">~${proj(n)} yeas</b> (needs ${need()})</small></span>
+        <span class="cashctl">${unity ? (whose(n) === 'swing' ? btn('cw', i) + btn('co', i) : btn(whose(n), i)) : yours ? `<button class="btn" data-cw="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Whip for<small>1 cap</small></button>` : `<button class="btn" data-co="${i}" ${S.career.capital < 1 ? 'disabled' : ''}>Oppose<small>1 cap</small></button>`}</span></div>`).join('')}</div>
       <div class="choices"><button class="btn primary big" id="cvote">Hold the votes</button></div>`);
     const card = $('#modal-card');
     card.querySelectorAll('[data-cw]').forEach(b => b.onclick = () => { if (S.career.capital < 1) return; S.career.capital--; noms[+b.dataset.cw].work += 4; sfx.click(); draw(); });
@@ -439,16 +601,17 @@ function cabinetConfirmations(posts, done) {
           if (n.p.from === 'senator') { const m = S.members[n.p.fromId]; const nm = { ...m }; delete nm.b; S.cabinet[n.post] = { ...n.p, ...nm, history: n.p.history, competence: n.p.competence, controversy: n.p.controversy }; lines.push(`✅ ${n.title}: <b>${n.p.name}</b> confirmed ${y}–${100 - y}. ${vacateSeat(m, `joined the cabinet as ${n.title}`)}`); continue; }
           if (n.p.from === 'governor') { governorSucceeded(n.p.fromState, `joined the cabinet as ${n.title}`); }
           S.cabinet[n.post] = n.p; lines.push(`✅ ${n.title}: <b>${n.p.name}</b> confirmed ${y}–${100 - y}.`);
-          if (P.party === S.side) addLegacy(3);
+          if (unity && !IND() ? n.p.party === S.side : P.party === S.side) addLegacy(3);
         } else {
           hist(n.p, `Nomination as ${n.title} rejected by the Senate, ${y}–${100 - y}`);
           P.approval -= 2;
           const alt = cabinetPick(P.party, false); alt.controversy = 0.1; hist(alt, `Confirmed as ${n.title} after the first nominee was rejected`); S.cabinet[n.post] = alt;
           lines.push(`❌ ${n.title}: <b>${n.p.name}</b> rejected ${y}–${100 - y}. The President sends a safer pick, ${alt.name}, who is confirmed.`);
-          if (P.party !== S.side) { S.mood += 0.5; addLegacy(3); }
+          if (unity && !IND() ? n.p.party === other2(S.side) : P.party !== S.side) { S.mood += 0.5; addLegacy(3); }
         }
       }
       sfx.gavel();
+      if (unity) lines.push(`<small style="color:var(--dim)">${presTitle()}'s cabinet is now ${whUnityLine()}.</small>`);
       showModal(`<div class="kicker">Advice and consent</div><h2>The Votes</h2>${lines.map(l => `<p>${l}</p>`).join('')}<div class="choices"><button class="btn primary big" id="cdone">Continue</button></div>`);
       $('#cdone').onclick = done;
     };
@@ -535,14 +698,15 @@ function execHTML() {
   const lastTheirs = (S.eos || []).slice().reverse().find(e => e.party !== S.side && !e.sued);
   const nextPrimaryIn = (() => { for (let k = 1; k <= 8; k++) { const n = S.career.bills + k; if (n % 6 === 4 && billYear(n) % 4 === 0) return k; } return 99; })();
   const underUsed = S.underUsed === S.career.bills;
-  const undermine = yours && !IND() ? `<details class="cdet under"><summary>🗡️ Undermine the President${S.undermine ? ` · undermined ${S.undermine}×` : ''}${S.challenger ? ' · challenger recruited' : ''}</summary>
-      <p style="font-size:12px;color:var(--dim)">${presTitle()} leads your party, but you don't have to follow. Undermining drags down their approval (and your party's mood with it) and weakens them in a primary. It also starts a feud: the President stops making calls for you, backs challengers against your wing, can veto your bills and will hit back between bills (see <b>You and the President</b> below). One move between bills.</p>
+  // your own President (an independent one, in the independent career, too) can be undermined and challenged in the primaries
+  const undermine = yours ? `<details class="cdet under"><summary>🗡️ Undermine the President${S.undermine ? ` · undermined ${S.undermine}×` : ''}${S.challenger ? ' · challenger recruited' : ''}</summary>
+      <p style="font-size:12px;color:var(--dim)">${IND() ? `${presTitle()} is ${whWho()}, and the independents' primary is where a President can be stopped. Undermining drags down their approval (and the independents' mood with it) and weakens them in that primary.` : `${presTitle()} leads your party, but you don't have to follow. Undermining drags down their approval (and your party's mood with it) and weakens them in a primary.`} It also starts a feud: the President stops making calls for you, backs challengers against your wing, can veto your bills and will hit back between bills (see <b>You and the President</b> below). One move between bills.</p>
       <div class="shop">
-        <button class="btn" data-und="leak" ${underUsed || S.career.capital < 1 ? 'disabled' : ''}><span>Leak damaging stories<small>Approval −3 to −6, your party's mood −0.4.</small></span><span class="cost">1 cap</span></button>
-        <button class="btn" data-und="slow" ${underUsed || S.career.capital < 2 ? 'disabled' : ''}><span>Slow-walk the President's agenda<small>Approval −4. The President's own faction resents you (relationship −1).</small></span><span class="cost">2 cap</span></button>
-        ${P.terms < 2 ? `<button class="btn" data-und="recruit" ${underUsed || S.challenger || S.career.capital < 3 || nextPrimaryIn > 6 ? 'disabled' : ''}><span>Recruit a primary challenger<small>${S.challenger ? 'Done: the President will face a primary.' : nextPrimaryIn > 6 ? 'Only in the run-up to primary season (within six bills).' : `The President will face a real primary in ${nextPrimaryIn} bill${nextPrimaryIn > 1 ? 's' : ''}. If they lose, the White House changes hands within your party.`}</small></span><span class="cost">3 cap</span></button>` : ''}
+        <button class="btn" data-und="leak" ${underUsed || S.career.capital < 1 ? 'disabled' : ''}><span>Leak damaging stories<small>Approval −3 to −6, ${IND() ? 'the independents\'' : 'your party\'s'} mood −0.4.</small></span><span class="cost">1 cap</span></button>
+        <button class="btn" data-und="slow" ${underUsed || S.career.capital < 2 ? 'disabled' : ''}><span>Slow-walk the President's agenda<small>Approval −4. ${IND() ? 'Your caucus resents the fight' : 'The President\'s own faction resents you'} (relationship −1).</small></span><span class="cost">2 cap</span></button>
+        ${P.terms < 2 ? `<button class="btn" data-und="recruit" ${underUsed || S.challenger || S.career.capital < 3 || nextPrimaryIn > 6 ? 'disabled' : ''}><span>Recruit a primary challenger<small>${S.challenger ? 'Done: the President will face a primary.' : nextPrimaryIn > 6 ? 'Only in the run-up to primary season (within six bills).' : `The President will face a real primary in ${nextPrimaryIn} bill${nextPrimaryIn > 1 ? 's' : ''}. If they lose, the White House changes hands within ${IND() ? 'the independent movement' : 'your party'}.`}</small></span><span class="cost">3 cap</span></button>` : ''}
       </div></details>` : '';
-  return `<hr><b>🏛️ The White House</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}, ${P.faction}) at ${P.approval}%${S.war ? ` · ⚔ at war in ${S.war.place} (${S.war.support}% support)` : ''}</small>
+  return `<hr><b>🏛️ The White House</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}, ${whIWH() ? whLabel(P) : P.faction}) at ${P.approval}%${S.war ? ` · ⚔ at war in ${S.war.place} (${S.war.support}% support)` : ''}</small>
     ${yours ? `<p style="margin:6px 0 4px;color:var(--dim);font-size:12px">Ask the President for an executive order (2 capital, once between bills). It moves the mood on its issue, but the courts may challenge it, and it doesn't keep a campaign promise: only laws do.</p>
       ${undermine}
       <div class="shop sinks">${EO_LIST[P.party].map((e, i) => `<button class="btn" data-eo="${i}" ${used || S.career.capital < 2 ? 'disabled' : ''}><span>${TAG[e[1]][0]} ${e[0]}<small>${TAG[e[1]][1]}</small></span><span class="cost">2 cap</span></button>`).join('')}</div>`
@@ -564,9 +728,9 @@ function bindExec(draw) {
     if (S.career.capital < cost || S.underUsed === S.career.bills) return;
     S.career.capital -= cost; S.underUsed = S.career.bills; S.undermine = (S.undermine || 0) + 1;
     if (typeof wingHit === 'function') wingHit(k === 'recruit' ? -3 : -2);
-    if (k === 'leak') { const d = ri(3, 6); P.approval = clamp(P.approval - d, 18, 82); S.mood -= 0.4; hist(P, 'Battered by leaks from inside their own party'); toast(`The leaks land: ${presTitle()} −${d}.`); }
-    if (k === 'slow') { P.approval = clamp(P.approval - 4, 18, 82); for (const m of S.members) if (m.party === P.party && m.faction === P.faction) m.rel -= 1; hist(P, 'Agenda stalled by their own party in the Senate'); toast('The President\'s agenda grinds to a halt.'); }
-    if (k === 'recruit') { S.challenger = true; hist(P, 'Drew a primary challenger recruited by Senate leadership'); toast('A challenger is ready to take on the President.'); }
+    if (k === 'leak') { const d = ri(3, 6); P.approval = clamp(P.approval - d, 18, 82); S.mood -= 0.4; hist(P, IND() ? 'Battered by leaks from the independent caucus' : 'Battered by leaks from inside their own party'); toast(`The leaks land: ${presTitle()} −${d}.`); }
+    if (k === 'slow') { P.approval = clamp(P.approval - 4, 18, 82); for (const m of S.members) if (m.party === P.party && m.faction === P.faction) m.rel -= 1; hist(P, IND() ? 'Agenda stalled by the independent caucus in the Senate' : 'Agenda stalled by their own party in the Senate'); toast('The President\'s agenda grinds to a halt.'); }
+    if (k === 'recruit') { S.challenger = true; hist(P, IND() ? 'Drew a primary challenger recruited by the independent caucus' : 'Drew a primary challenger recruited by Senate leadership'); toast('A challenger is ready to take on the President.'); }
     sfx.gavel(); draw();
   });
   card.querySelectorAll('[data-sue]').forEach(b => b.onclick = () => {
@@ -576,13 +740,13 @@ function bindExec(draw) {
   });
 }
 function openAdmin(back) {
-  const P = S.president, rows = CABINET_POSTS.map(([post, title, icon]) => { const c = S.cabinet[post]; return c ? `<div class="race"><span class="nomp">${portrait(c)}</span><span style="flex:1"><b>${icon} ${title}</b><br><a href="#" data-cab="${post}">${c.name}</a> <small style="color:var(--dim)">· competence ${'★'.repeat(c.competence || 3)}${'☆'.repeat(5 - (c.competence || 3))}</small></span></div>` : `<div class="race"><span>${icon} ${title}: <i>vacant</i></span></div>`; }).join('');
+  const P = S.president, iwh = whIWH(), rows = CABINET_POSTS.map(([post, title, icon]) => { const c = S.cabinet[post]; return c ? `<div class="race"><span class="nomp">${portrait(c)}</span><span style="flex:1"><b>${icon} ${title}</b><br><a href="#" data-cab="${post}">${c.name}</a>${iwh ? ` <small style="color:${PARTY[c.party].color};font-weight:800">${c.party}</small>` : ''} <small style="color:var(--dim)">· competence ${'★'.repeat(c.competence || 3)}${'☆'.repeat(5 - (c.competence || 3))}</small></span></div>` : `<div class="race"><span>${icon} ${title}: <i>vacant</i></span></div>`; }).join('');
   const eos = (S.eos || []).slice(-6).reverse();
   showModal(`<div class="kicker">The Administration</div><h2>${presTitle()}</h2>
-    <div class="race"><span class="nomp">${portrait(P)}</span><span style="flex:1"><b style="color:${PARTY[P.party].color}">President ${P.name}</b> <small>(${P.party} · ${P.faction})</small><br><small>Approval ${P.approval}% · term ${P.terms}</small> · <a href="#" id="profP">profile</a></span></div>
-    ${S.vp ? `<div class="race"><span class="nomp">${portrait(S.vp)}</span><span style="flex:1"><b>Vice President ${S.vp.name}</b><br><small>Breaks ties in the Senate${vpYours() ? ' for you' : ' against you'}</small> · <a href="#" id="profV">profile</a></span></div>` : ''}
+    <div class="race"><span class="nomp">${portrait(P)}</span><span style="flex:1"><b style="color:${PARTY[P.party].color}">President ${P.name}</b> <small>(${P.party} · ${iwh ? whLabel(P) : P.faction})</small><br><small>Approval ${P.approval}% · term ${P.terms}</small> · <a href="#" id="profP">profile</a></span></div>
+    ${S.vp ? `<div class="race"><span class="nomp">${portrait(S.vp)}</span><span style="flex:1"><b>Vice President ${S.vp.name}</b><br><small>Breaks ties in the Senate${iwh && !IND() ? ' by the President\'s stance on each bill' : vpYours() ? ' for you' : ' against you'}</small> · <a href="#" id="profV">profile</a></span></div>` : ''}
     ${warCardHTML()}
-    <hr><b>The Cabinet</b><div class="races" style="max-height:none">${rows}</div>
+    <hr><b>The Cabinet</b>${iwh ? ` <small style="color:var(--dim)">· ${whUnityLine()}</small>` : ''}<div class="races" style="max-height:none">${rows}</div>
     ${eos.length ? `<hr><b>Recent executive orders</b>${eos.map(e => `<p style="margin:4px 0">🖋️ ${e.name} <small style="color:var(--dim)">(${e.party}, ${e.year}${e.sued ? ', challenged in court' : ''})</small></p>`).join('')}` : ''}
     <div class="choices"><button class="btn primary adv" id="adback">Back</button></div>`);
   const me = () => openAdmin(back);

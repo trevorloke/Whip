@@ -47,7 +47,16 @@ const midCap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const midStrip = s => String(s || '').replace(/<[^>]+>/g, '');
 const midRaces = () => (S.election && S.election.races) || [];
 const midRc = code => midRaces().find(rc => rc.m.state === code) || null;
-const midNeed = () => vpYours() ? 50 : 51;
+// the seats your party needs for control. PARITY: the smallest count (45…55) at which orgOutcomeN, with today's independents,
+// partner, bargain and Vice President, hands your party the floor (the independents can lower it, or raise it)
+const midNeed = () => {
+  if (!PARITY()) return vpYours() ? 50 : 51;
+  const me = S.side, them = other2(me), nI = seats('I'), vp = vpParty(), partner = indPartner(), lead = indLeads();
+  for (let x = 45; x <= 55; x++) if (orgOutcomeN({ [me]: x, [them]: 100 - nI - x, I: nI }, vp, partner, lead).floor === me) return x;
+  return 56;
+};
+// "need 49 for control (with the independents' 3)": the need, and the independents who make it possible
+const midNeedText = () => `need ${midNeed()} for control${PARITY() && seats('I') && indPartner() === S.side && midNeed() < 51 ? ` (with the independents' ${seats('I')})` : ''}`;
 const midCity = c => MID_CITY[c] || stName(c);
 function midTopSal(n) { return Object.entries(S.salience || {}).sort((a, b) => b[1] - a[1]).slice(0, n).map(x => x[0]); }
 function midAdj(code, pts) { const M = midM(); if (!M || !code) return; M.races[code] = +((M.races[code] || 0) + pts).toFixed(3); }
@@ -82,14 +91,17 @@ function midSeatChart(polls, side, opts = {}) {
   const x = i => pl + (n < 2 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (n - 1)), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb), col = PARTY[side].color;
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart mid-chart">`;
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="#2a3242"/><text x="${pl - 5}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}</text>`;
-  svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(51)}" y2="${y(51)}" stroke="#e3b54a" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${y(51) + 4}" font-size="${fs}" fill="#e3b54a" font-weight="700">51 · control</text>`;
+  svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(51)}" y2="${y(51)}" stroke="#e3b54a" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${y(51) + 4}" font-size="${fs}" fill="#e3b54a" font-weight="700">51 · ${PARITY() && need !== 51 && !(need === 50 && vpYours()) ? 'alone' : 'control'}</text>`;
   const lab51 = y(51) + 4, lab50 = Math.max(y(50) + 4, lab51 + fs + 1); // on a tall seat axis the two lines sit close: keep their labels apart
-  if (need === 50) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${lab50}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
+  // PARITY: the independents can move the line for control off 50/51
+  const odd = PARITY() && need !== 51 && !(need === 50 && vpYours()), labN = odd ? (need < 51 ? Math.max(y(need) + 4, lab51 + fs + 1) : Math.min(y(need) + 4, lab51 - fs - 1)) : null;
+  if (odd) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(need)}" y2="${y(need)}" stroke="#a78bfa" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${labN}" font-size="${fs}" fill="#a78bfa" font-weight="700">${need} · control</text>`;
+  if (need === 50 && !odd) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${lab50}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
   pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/>`; if (narrow && n > 3 && (n - 1 - i) % 2) return; svg += `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${n > 1 && i === 0 ? 'start' : n > 1 && i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${String(p.short || p.lbl || '').slice(0, 12)}</text>`; });
   svg += `<polyline fill="none" stroke="${col}" stroke-width="2.6" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(+p.seats)}`).join(' ')}"/>`;
   pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(+p.seats)}" r="${i === n - 1 ? 4.5 : 2.8}" fill="${col}"><title>${p.lbl}: ${(+p.seats).toFixed(1)} seats projected${p.gb != null ? `, generic ballot ${(+p.gb).toFixed(1)}%` : ''}</title></circle>`; });
   // the value label must not sit on the "51 · control" or "50 + VP" labels: move it above or below both
-  const last = vals[n - 1], labs = need === 50 ? [lab51, lab50] : [lab51];
+  const last = vals[n - 1], labs = need === 50 && !odd ? [lab51, lab50] : odd ? [lab51, labN] : [lab51];
   let ly = y(last) + 4;
   if (labs.some(b => Math.abs(ly - b) < 12)) ly = last >= 51 || ly < Math.min(...labs) ? Math.min(...labs) - 12 : Math.max(...labs) + 13;
   return svg + `<text x="${W - pr + 6}" y="${ly}" font-size="${narrow ? 13 : 12}" fill="${col}" font-weight="800">~${last.toFixed(1)}</text></svg>`;
@@ -130,9 +142,9 @@ function midCloseHTML() {
 function midStakesHTML() {
   const E = S.election, P = S.president, mine = S.side, upMine = E.races.filter(rc => rc.m.party === mine).length, gb = midGB();
   const stat = (lbl, val, sub, col) => `<div class="mid-stat"><small>${lbl}</small><b${col ? ` style="color:${col}"` : ''}>${val}</b><i>${sub}</i></div>`;
-  return `<div class="mid-stakes">${stat(`${PARTY[mine].short} hold`, seats(mine), isMajority() ? 'the majority' : `need ${midNeed()} for control`, PARTY[mine].color)}
+  return `<div class="mid-stakes">${stat(`${PARTY[mine].short} hold`, seats(mine), isMajority() ? 'the majority' : PARITY() ? midNeedText() : `need ${midNeed()} for control`, PARTY[mine].color)}
     ${stat('Seats up', E.races.length, `${upMine} yours · ${E.races.length - upMine} theirs`)}
-    ${stat(presTitle(), `${P.approval}%`, `${PARTY[P.party].short.slice(0, -1) || P.party} · ${P.party === mine ? 'your White House' : 'their White House'}`, PARTY[P.party].color)}
+    ${stat(presTitle(), `${P.approval}%`, `${PARTY[P.party].short.slice(0, -1) || P.party} · ${PARITY() && P.party === 'I' ? whWho() : P.party === mine ? 'your White House' : 'their White House'}`, PARTY[P.party].color)}
     ${stat('Generic ballot', `${gb.toFixed(1)}%`, `${PARTY[mine].short} share, House`, gb >= 50 ? 'var(--yes)' : 'var(--no)')}
     ${stat('Forecast wave', midNum(E.waveSignal), E.waveSignal >= 0 ? 'for your party' : 'against your party', E.waveSignal >= 0 ? 'var(--yes)' : 'var(--no)')}</div>`;
 }
@@ -263,7 +275,7 @@ function midStratStanding(key) {
 function midStratDetail(key) {
   const pl = midStratPlan(key, S.side), P = S.president, up = Object.entries(pl.races).filter(([, v]) => v >= 1.5).map(([c]) => c), dn = Object.entries(pl.races).filter(([, v]) => v < 0).length;
   if (key === 'defend' || key === 'offense') return `+1.5 in ${up.length} race${up.length === 1 ? '' : 's'}${up.length ? ` (${up.slice(0, 8).join(', ')}${up.length > 8 ? '…' : ''})` : ''}; −0.5 in ${dn} other${dn === 1 ? '' : 's'}.`;
-  if (key === 'nationalize') return `${presTitle()} is ${P.party === S.side ? 'yours' : 'theirs'} at ${P.approval}%: <b style="color:${pl.national > 0 ? 'var(--yes)' : 'var(--no)'}">${midNum(pl.national)} in every race, ${midNum(pl.house)} for the House</b>. It works with your own President at 52% or better, or theirs at 45% or worse.`;
+  if (key === 'nationalize') return `${presTitle()} is ${PARITY() && P.party === 'I' ? whWho() : P.party === S.side ? 'yours' : 'theirs'} at ${P.approval}%: <b style="color:${pl.national > 0 ? 'var(--yes)' : 'var(--no)'}">${midNum(pl.national)} in every race, ${midNum(pl.house)} for the House</b>. It works with your own President at 52% or better, or theirs at 45% or worse.`;
   return `The forecast wave is ${midNum(S.election.waveSignal)} for your party: localizing is worth <b style="color:${pl.national > 0 ? 'var(--yes)' : pl.national < 0 ? 'var(--no)' : 'var(--dim)'}">${midNum(pl.national)} in every race</b>${pl.national < -0.2 ? ' — you would be throwing away a wave that is breaking your way' : pl.national > 0.2 ? ' — half the headwind, gone' : ''}.`;
 }
 function midRound1() {
@@ -271,7 +283,7 @@ function midRound1() {
   const draw = () => {
     const E = S.election, P = S.president, hot = midTopSal(2), mine = S.side, whMine = P.party === mine;
     const upMine = E.races.filter(rc => rc.m.party === mine).length;
-    const intro = `It's Labor Day, ${midYear()}: nine weeks to the midterms. No one is running for President this year, which means the country will vote on one anyway: ${presTitle()} sits at ${P.approval}%, and the party in the White House ${whMine ? 'is yours — history says you lose seats' : 'is theirs — history says they lose seats'}. You are defending ${upMine} of the ${E.races.length} seats up. Pick the message every one of your candidates will repeat, and how the party plays the map.`;
+    const intro = `It's Labor Day, ${midYear()}: nine weeks to the midterms. No one is running for President this year, which means the country will vote on one anyway: ${presTitle()} sits at ${P.approval}%, ${PARITY() && P.party === 'I' ? `and the White House belongs to neither party: ${whWho()} drags down independents everywhere, and history says both parties gain` : `and the party in the White House ${whMine ? 'is yours — history says you lose seats' : 'is theirs — history says they lose seats'}`}. You are defending ${upMine} of the ${E.races.length} seats up. Pick the message every one of your candidates will repeat, and how the party plays the map.`;
     const msgOpt = t => { const pl = midMsgRaces(t), best = Object.entries(pl).sort((a, b) => b[1] - a[1]).filter(([, v]) => v > 0.2).slice(0, 4).map(([c]) => c), worst = Object.entries(pl).filter(([, v]) => v < -0.2).map(([c]) => c); return `${MID_MSG[t]}${hot.includes(t) ? ' <b style="color:var(--gold2)">🔥 top issue: +0.8 in every race</b>' : ''}${best.length ? ` Plays best in ${best.join(', ')}.` : ''}${worst.length ? ` Hurts in ${worst.slice(0, 4).join(', ')}.` : ''}`; };
     const msgHTML = M.ui.msg ? midPickHTML(`${TAG[M.ui.msg][0]} ${TAG[M.ui.msg][1]}`, 'msg', msgOpt(M.ui.msg))
       : `<div class="camp-opts">${TAGS.map(t => `<button class="btn" data-choice="msg:${t}"><span>${TAG[t][0]} ${TAG[t][1]}<small>${msgOpt(t)}</small></span></button>`).join('')}</div>`;
@@ -521,10 +533,10 @@ const MID_EVENTS = [
       ] };
   } },
   { id: 'economy', w: () => 1, make: x => {
-    const e = typeof S.econ === 'number' ? S.econ : gauss(), good = e > 0.4 || (e > -0.4 && Math.random() < 0.5), jobs = good ? ri(220, 410) : -ri(40, 160), forWh = good ? 1 : -1, forMe = x.whMine ? forWh : -forWh, base = +(0.6 * forMe).toFixed(1);
+    const e = typeof S.econ === 'number' ? S.econ : gauss(), good = e > 0.4 || (e > -0.4 && Math.random() < 0.5), jobs = good ? ri(220, 410) : -ri(40, 160), forWh = good ? 1 : -1, forMe = x.whMine ? forWh : -forWh, iw = PARITY() && x.P.party === 'I', base = iw ? 0 : +(0.6 * forMe).toFixed(1); // an independent White House: neither party owns the economy
     return { h: good ? `JOBS REPORT BLOWS PAST FORECASTS: +${jobs},000` : `ECONOMY SHEDS ${-jobs},000 JOBS IN SEPTEMBER`, d: good ? `Unemployment ticks down; ${x.pres}'s team claims credit before the markets open.` : `The first negative report in ${ri(2, 4)} years lands three weeks before the vote.`, mood: forMe > 0 ? 'dawn' : 'storm',
       auto: fx => fx.n(base),
-      body: [good ? `Employers added ${jobs},000 jobs, ${ri(80, 160)},000 more than economists expected. Wages are up ${rnd(3.5, 5.2).toFixed(1)}% on the year.` : `Payrolls fell by ${-jobs},000; factory and trucking jobs led the decline. The ${pick(['Dow', 'S&P'])} dropped ${rnd(2, 4).toFixed(1)}% by lunch.`, `The White House is ${x.whMine ? 'yours' : 'theirs'}, so voters give ${good ? 'credit' : 'blame'} ${forMe > 0 ? 'your way' : 'to your side'}: ${midNum(base)} everywhere (already counted).`],
+      body: [good ? `Employers added ${jobs},000 jobs, ${ri(80, 160)},000 more than economists expected. Wages are up ${rnd(3.5, 5.2).toFixed(1)}% on the year.` : `Payrolls fell by ${-jobs},000; factory and trucking jobs led the decline. The ${pick(['Dow', 'S&P'])} dropped ${rnd(2, 4).toFixed(1)}% by lunch.`, iw ? `The White House belongs to neither party, so the ${good ? 'credit' : 'blame'} lands on ${whWho()}: no change in your races until you make something of it.` : `The White House is ${x.whMine ? 'yours' : 'theirs'}, so voters give ${good ? 'credit' : 'blame'} ${forMe > 0 ? 'your way' : 'to your side'}: ${midNum(base)} everywhere (already counted).`],
       stakes: 'The economy is the economy. How you talk about it is up to you.',
       choices: forMe > 0 ? [
         { t: 'Take the victory lap', s: `+0.5 everywhere${x.whMine ? `, ${x.pres} +1 approval` : ''}.`, go: fx => { fx.n(0.5); if (x.whMine) fx.appr(1); return 'Every candidate had a hard hat and a factory floor by Friday.'; } },

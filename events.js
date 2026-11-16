@@ -13,7 +13,8 @@
 const EVT_FLANK = { D: 'Progressives', R: 'Freedom Caucus' };
 // independent career: floor events and moments that read MODERATE/EVT_FLANK/PARTY[S.side].prior or assume a party Senate
 // (game.js runEvent and the moment pool below skip them when IND())
-const EVT_IND_SKIP = ['evt_parliamentarian', 'evt_gang', 'evt_scotus', 'evt_whcounter', 'evt_switch', 'evt_vpwhip', 'evt_donor', 'evt_pledge_due'];
+// (evt_whcounter runs in the independent career now: MODERATE.I is the caucus itself)
+const EVT_IND_SKIP = ['evt_parliamentarian', 'evt_gang', 'evt_scotus', 'evt_switch', 'evt_vpwhip', 'evt_donor', 'evt_pledge_due'];
 const EVT_IND_SKIP_MOMENTS = ['leader', 'switch'];
 const EVT_AGENCY = { economy: 'the Commerce Department', environment: 'the EPA', security: 'the Pentagon', welfare: 'Health and Human Services', rural: 'the Agriculture Department', urban: 'HUD', taxes: 'the Treasury', tech: 'the Office of Science and Technology Policy' };
 const EVT_COMMITTEES = ['Finance', 'Appropriations', 'Armed Services', 'Judiciary', 'Commerce', 'Agriculture', 'Foreign Relations', 'HELP', 'Intelligence', 'Energy and Natural Resources', 'Banking', 'Environment and Public Works'];
@@ -78,6 +79,16 @@ function evtMemberOf(m) { return EVT_MEMBER[m.faction] || `a member of the ${m.f
 // the vote slips a day (the calendar can only stretch so far)
 function evtSlip(B) { if (B.days < 10) B.days++; return B.days; }
 function evtDate() { const n = S.career.bills + 1; return `${season(n)} ${billYear(n)} · Recess`; }
+// an independent White House on the new rules (world.js whIWH; the independent career, or a D/R career with the switch on)
+function evtIWH() { return typeof whIWH === 'function' ? whIWH() : false; }
+// "their President" / "the independent President" / … (world.js whWho), with a plain fallback
+function evtWho(cap) { return typeof whWho === 'function' ? whWho(cap) : cap ? 'The President' : 'the President'; }
+// the Senate leader's title for your party: "Majority Leader", "Minority Leader", or the junior coalition partner's
+function evtLeaderTitle() { return isMajority() ? 'Majority Leader' : (IND() || PARITY()) && inCoalition() ? 'Minority Leader (a coalition partner)' : 'Minority Leader'; }
+// the party (or bloc) that holds the committee gavels: the floor party (PARITY / the independent career), else the old two-party rule
+function evtGavelParty() { return IND() || PARITY() ? floorParty() : isMajority() ? S.side : other(S.side); }
+// Going independent (caucus.js): the odds scale with the size of the independent bloc, x (1 + I seats / 10), in every career with PARITY
+function evtIndFlipK() { return IND() || PARITY() ? 1 + seats('I') / 10 : 1; }
 
 /* =====================================================================
    1. BREAKING NEWS ON THE FLOOR — pushed into EVENTS (see runEvent in game.js)
@@ -164,9 +175,9 @@ EVENTS.push(
   } },
   // a committee chair wants hearings
   { id: 'evt_hearings', w: 0.8, make: () => {
-    const maj = isMajority(), chair = randOf(x => x.party === (maj ? S.side : other(S.side)) && !x.b.absent && !isLockedYes(x)); if (!chair) return null;
+    const gp = evtGavelParty(), chair = randOf(x => x.party === gp && !x.b.absent && !isLockedYes(x)); if (!chair) return null;
     const com = pick(EVT_COMMITTEES), yours = side(chair) === 'you';
-    return { title: `${lastName(chair)} Demands Hearings`, text: `${sen(chair)}, who chairs ${com}, says the ${S.bill.name} "hasn't had a single day of hearings" and wants two before any vote. ${yours ? 'Your own chair, your own problem.' : 'The other side holds the gavel.'}`, choices: [
+    return { title: `${lastName(chair)} Demands Hearings`, text: `${sen(chair)}, who chairs ${com}, says the ${S.bill.name} "hasn't had a single day of hearings" and wants two before any vote. ${yours ? 'Your own chair, your own problem.' : gp === 'I' ? 'The independents hold the gavels now.' : 'The other side holds the gavel.'}`, choices: [
       { t: 'Grant the hearings', s: `Vote slips a day (another night for Sen. ${S.rival})${yours ? ` · ${lastName(chair)} +10, relationship +1` : ' · opinion +3'}`, f: B => { evtSlip(B); if (yours) { evtWarm([chair], 10); chair.rel += 1; } else B.opinion += 3; log(`Two days of ${com} hearings. The vote slips to Day ${B.days}.`, 'sys'); } },
       { t: yours ? 'Overrule the chair' : 'Buy a time agreement', s: `2 capital${yours ? ` · ${lastName(chair)} −8, relationship −1` : ''}`, can: () => S.career.capital >= 2, f: () => { S.career.capital -= 2; if (yours) { evtWarm([chair], -8); chair.rel -= 1; } log(yours ? `You rolled ${sen(chair)}. They won't forget (−8).` : 'A time agreement, bought and paid for.', yours ? 'bad' : 'sys'); } },
       { t: 'Promise hearings "next session"', s: `${lastName(chair)} −5, opinion −2`, f: B => { evtWarm([chair], -5); B.opinion -= 2; log(`${sen(chair)} knows what "next session" means (−5).`, 'bad'); } },
@@ -199,7 +210,7 @@ EVENTS.push(
     const P = S.president, yours = vpYours(), ap = P.approval, hour = pick(['1:47', '2:12', '3:05', '4:40']), B = S.bill;
     if (yours) {
       const hot = ap >= 50, loyal = evtMine().filter(m => T(m, 'loyal'));
-      return { title: `The President Posts at ${hour} a.m.`, paper: 'night', text: hot ? `${presTitle()} fires off ${ri(7, 14)} posts praising the ${B.name} and naming the senators "who need to get on board." At ${ap}% approval, the base listens.` : `${presTitle()} spends the small hours attacking senators of their own party, by name, over the ${B.name}. At ${ap}% approval, that hurts you more than them.`, choices: hot ? [
+      return { title: `The President Posts at ${hour} a.m.`, paper: 'night', text: hot ? `${presTitle()} fires off ${ri(7, 14)} posts praising the ${B.name} and naming the senators "who need to get on board." At ${ap}% approval, the base listens.` : `${presTitle()} spends the small hours attacking senators of their own ${IND() ? 'caucus' : 'party'}, by name, over the ${B.name}. At ${ap}% approval, that hurts you more than them.`, choices: hot ? [
         { t: 'Amplify it', s: '1 action · opinion +7, your loyalists +6', f: B => { B.ap -= 1; B.opinion += 7; evtWarm(loyal, 6); log(`The President's posts, amplified (+7, loyalists +6).`, 'good'); } },
         { t: 'Let it ride', s: 'Opinion +3, loyalists +3', f: B => { B.opinion += 3; evtWarm(loyal, 3); log('The President\'s posts did some good on their own (+3).', 'good'); } },
       ] : [
@@ -208,7 +219,7 @@ EVENTS.push(
       ] };
     }
     const weak = ap < 45, omods = evtOpp().filter(m => m.faction === MODERATE[other(S.side)]);
-    return { title: `The President Posts at ${hour} a.m.`, paper: 'night', text: `${presTitle()} (${ap}%) calls the ${B.name} "${pick(['a disgrace', 'the worst bill in the history of the Senate, maybe ever', 'a scam cooked up by losers', 'treason, basically'])}" in ${ri(6, 14)} posts before dawn. ${weak ? 'Unpopular presidents make excellent foils.' : 'A popular President just put your bill on the ballot.'}`, choices: weak ? [
+    return { title: `The President Posts at ${hour} a.m.`, paper: 'night', text: `${evtIWH() ? `${presTitle()} (${ap}%), who answers to neither party,` : `${presTitle()} (${ap}%)`} calls the ${B.name} "${pick(['a disgrace', 'the worst bill in the history of the Senate, maybe ever', 'a scam cooked up by losers', 'treason, basically'])}" in ${ri(6, 14)} posts before dawn. ${weak ? 'Unpopular presidents make excellent foils.' : 'A popular President just put your bill on the ballot.'}`, choices: weak ? [
       { t: 'Pile on', s: 'Opinion +7 · your caucus +3 · their moderates +4 (embarrassed)', f: B => { B.opinion += 7; evtWarm(evtMine(), 3); evtWarm(omods, 4); log(`You made the ${ap}% President the face of the opposition (+7).`, 'good'); } },
       { t: 'Stay above it', s: 'Opinion +4, national mood +0.3', f: B => { B.opinion += 4; evtMood(0.3); log('You let the posts speak for themselves (+4).', 'good'); } },
     ] : [
@@ -416,7 +427,7 @@ EVENTS.push(
   // the majority fills the amendment tree (minority only)
   { id: 'evt_tree', w: 0.8, cond: () => !isMajority() && !S.bill.nomination && S.bill.amends.some(a => !a.used), make: () => {
     const B = S.bill, unused = () => B.amends.filter(a => !a.used);
-    return { title: 'Majority Fills the Amendment Tree', text: `The ${PARTY[other(S.side)].name} leader fills the amendment tree with placeholder amendments, blocking yours: ${unused().map(a => a.name).join(', ')}. In the minority, the floor is theirs.`, choices: [
+    return { title: 'Majority Fills the Amendment Tree', text: `The ${PARTY[IND() || PARITY() ? floorParty() : other(S.side)].name} leader fills the amendment tree with placeholder amendments, blocking yours: ${unused().map(a => a.name).join(', ')}. In the minority, the floor is theirs.`, choices: [
       { t: 'Accept it', s: 'Your amendments are dead · opinion +2 (you look reasonable)', f: B => { unused().forEach(a => a.used = true); B.opinion += 2; log('Your amendments died in the tree (+2 for grace).', 'bad'); } },
       { t: 'Force a vote to table', s: '2 capital · keep your amendments', can: () => S.career.capital >= 2, f: () => { S.career.capital -= 2; log('You won a vote to clear the tree. Your amendments live.', 'good'); } },
       { t: 'Trade: keep one', s: 'All but one amendment withdrawn', can: () => unused().length >= 2, f: () => { const u = unused(); u.slice(1).forEach(a => a.used = true); log(`You kept the ${u[0].name}; the rest are gone.`, 'sys'); } },
@@ -436,7 +447,7 @@ EVENTS.push(
   { id: 'evt_vpwhip', w: 0.7, cond: () => vpYours() && !S.bill.super && !!S.vp, make: () => {
     const V = S.vp, vf = V.faction || null, fac = S.members.filter(m => m.party === S.side && vf && m.faction === vf && !isLockedYes(m) && !m.b.absent);
     const fence = S.members.filter(m => Math.abs(support(m)) < 15 && !isLockedYes(m) && !m.b.absent && m.party !== 'I').sort((a, b) => (b.faction === V.faction ? 1 : 0) - (a.faction === V.faction ? 1 : 0));
-    return { title: `Vice President ${lastName(V)} Moves In`, paper: 'dawn', text: `Vice President ${V.name} sets up in the ceremonial office off the floor "for as long as it takes," ready to break a tie${vf ? ` — and to twist a few arms of fellow ${vf}. ${fac.length} of your senators share the VP's faction` : ''}.`, choices: [
+    return { title: `Vice President ${lastName(V)} Moves In`, paper: 'dawn', text: `Vice President ${V.name}${evtIWH() ? `, ${evtWho()}'s number two,` : ''} sets up in the ceremonial office off the floor "for as long as it takes," ready to break a tie${vf ? ` — and to twist a few arms of fellow ${vf}. ${fac.length} of your senators share the VP's faction` : ''}.`, choices: [
       { t: 'Send the VP to a fence-sitter', s: `1 action · ${fence[0] ? sen(fence[0]) : 'nobody'} +12${vf ? ', VP\'s faction +4' : ''}`, can: () => fence.length > 0, f: B => { B.ap -= 1; evtWarm([fence[0]], 12); evtWarm(fac.filter(m => m !== fence[0]), 4); log(`Vice President ${lastName(V)} worked ${sen(fence[0])} (+12).`, 'good'); } },
       { t: 'Keep the VP in the chair', s: `Your caucus +2${vf ? ', VP\'s faction +4 more' : ''}`, f: () => { evtWarm(evtMine(), 2); evtWarm(fac, 4); log(`The Vice President presides. Your caucus stands a little straighter (+2).`, 'good'); } },
     ] };
@@ -445,7 +456,7 @@ EVENTS.push(
   { id: 'evt_whcounter', w: 0.8, cond: () => !vpYours() && !S.bill.nomination, make: () => {
     const mods = evtMine().filter(m => m.faction === MODERATE[S.side]), pv = presVec(), t = TAGS.slice().sort((a, b) => pv[b] - pv[a])[0];
     if (mods.length < 2) return null;
-    return { title: 'Breakfast at the White House', paper: 'night', text: `${presTitle()} invites ${mods.length} of your ${MODERATE[S.side]} to breakfast in the Residence: eggs, a tour, and a quiet pitch to vote no on the ${S.bill.name}. ${pick(['Nobody says no to the Residence.', 'The French toast is said to be excellent.', 'Two of them bring their spouses.'])}`, choices: [
+    return { title: 'Breakfast at the White House', paper: 'night', text: `${IND() || evtIWH() ? `${presTitle()}, ${evtWho()},` : presTitle()} invites ${mods.length} of your ${MODERATE[S.side]} to breakfast in the Residence: eggs, a tour, and a quiet pitch to vote no on the ${S.bill.name}. ${pick(['Nobody says no to the Residence.', 'The French toast is said to be excellent.', 'Two of them bring their spouses.'])}`, choices: [
       { t: 'Crash the breakfast', s: `1 capital · your ${MODERATE[S.side]} +2 (flattered by all the attention)`, can: () => S.career.capital >= 1, f: () => { S.career.capital--; evtWarm(mods, 2); log(`You showed up at the White House uninvited. The ${MODERATE[S.side]} were amused (+2).`, 'good'); } },
       { t: 'Let them eat', s: `Your ${MODERATE[S.side]} −6`, f: () => { evtWarm(mods, -6); log(`Breakfast at the White House: your ${MODERATE[S.side]} came back wobbly (−6).`, 'bad'); } },
       { t: 'Offer the White House a concession', s: `${TAG[t][1]} +1 for everyone · veto risk drops · your ${MODERATE[S.side]} −2`, f: B => { evtApplyFx(`White House concession (${TAG[t][1]})`, { [t]: 1 }); B.softened = true; evtWarm(mods, -2); log(`You gave the President ${TAG[t][1]} language. The veto threat fades.`, 'sys'); } },
@@ -462,7 +473,7 @@ EVENTS.push(
   } },
   // leadership calls in the pledge you made between bills
   { id: 'evt_pledge_due', w: 0.6, weight: () => 500, cond: () => !!S.evtPledge && !S.bill.nomination, make: () => {
-    const pr = PARTY[S.side].prior, t = Object.keys(pr).sort((a, b) => pr[b] - pr[a])[0], loyal = evtMine().filter(m => T(m, 'loyal')), lead = isMajority() ? 'Majority Leader' : 'Minority Leader';
+    const pr = PARTY[S.side].prior, t = Object.keys(pr).sort((a, b) => pr[b] - pr[a])[0], loyal = evtMine().filter(m => T(m, 'loyal')), lead = PARITY() ? evtLeaderTitle() : isMajority() ? 'Majority Leader' : 'Minority Leader';
     const clear = () => { S.evtPledge = null; };
     return { title: 'Leadership Calls In Your Pledge', paper: 'night', text: `The ${lead} reminds you of the folder you took between bills. Leadership wants its <b>${TAG[t][1]}</b> language in the ${S.bill.name}, tonight, no questions. A pledge is a pledge — or it isn't.`, choices: [
       { t: 'Honor the pledge', s: `${TAG[t][1]} +1 for everyone · opinion −5 · your loyalists +6`, f: B => { clear(); evtApplyFx(`Leadership's ${TAG[t][1]} language`, { [t]: 1 }); B.opinion -= 5; evtWarm(loyal, 6); log(`You kept your word to leadership: ${TAG[t][1]} +1 (opinion −5).`, 'sys'); } },
@@ -479,6 +490,15 @@ EVENTS.push(
       { t: 'No comment', s: 'Scrutiny +30, opinion −4', f: B => { clear(); B.scrutiny += 30; B.opinion -= 4; log('"The book speaks for itself." It did (−4).', 'bad'); } },
     ] };
   } },
+  // evt_iveto: an independent President, who belongs to neither party, threatens to veto a party's bill it doesn't like
+  { id: 'evt_iveto', w: 0.8, cond: () => evtIWH() && !S.bill.nomination && !S.bill.aumf && !S.bill.softened && !killing() && sponsor() !== 'I' && sponsor() !== S.president.party && presStance(S.bill) <= 0, make: () => {
+    const B = S.bill, P = S.president, pv = presVec(), t = TAGS.slice().sort((a, b) => (pv[b] || 0) - (pv[a] || 0))[0], odds = Math.round(vetoOdds() * 100);
+    const owner = PARTY[sponsor()] ? PARTY[sponsor()].short : 'the majority';
+    return { title: `${lastName(P)} Threatens a Veto`, paper: 'storm', text: `${presTitle()} (${P.approval}%), ${IND() ? evtWho() : 'who answers to neither party'}, tells the press pool the ${B.name} is "${pick(['the same old partisan junk', 'a bill only a party boss could love', 'everything wrong with this town, in 400 pages', 'not serious'])}" and that it will be vetoed "unless somebody in the Senate remembers the country has more than two teams." It is the ${owner}' bill; the President wants <b>${TAG[t][1]}</b> language in it. Veto risk now: <b>${odds}%</b>.`, choices: [
+      { t: 'Soften the bill', s: `${TAG[t][1]} +1 for everyone · the President's stance improves · ${lastName(P)} +1 approval · your caucus −2`, f: B => { evtApplyFx(`The White House's ${TAG[t][1]} language`, { [t]: 1 }); B.softened = true; evtApproval(1); evtWarm(evtMine(), -2); log(`You wrote in the President's ${TAG[t][1]} language. The veto threat fades (now ${Math.round(vetoOdds() * 100)}%).`, 'sys'); } },
+      { t: 'Dare the veto', s: `Opinion +3 · ${lastName(P)} −2 approval · the veto risk stays`, f: B => { B.opinion += 3; evtApproval(-2); log(`"Veto it, then." You dared ${presTitle()}; the public likes a fight with Washington's newest party (+3).`, 'good'); } },
+    ] };
+  } },
 );
 
 /* =====================================================================
@@ -493,10 +513,10 @@ function evtNewsEcon() {
   if (Math.random() < 0.09) {
     const up = Math.random() < 0.5 + S.econ * 0.08, k = up ? 1 : -1, d = ri(1, 4);
     S.econ = clamp(S.econ + k * rnd(1, 2), -3, 3);
-    evtApproval(k * d); evtMood((P.party === S.side ? k : -k) * d * 0.3); evtSal('economy', 1);
+    evtApproval(k * d); evtMood((!IND() && evtIWH() ? 0 : P.party === S.side ? k : -k) * d * 0.3); evtSal('economy', 1); // an independent White House: neither party owns the economy
     const h = up ? pick([`The economy adds ${ri(280, 520)},000 jobs in a month and unemployment falls to ${(3.4 + rnd(0, 0.6)).toFixed(1)}%`, `Inflation cools to ${(1.8 + rnd(0, 0.6)).toFixed(1)}%, the lowest in years`, `The Dow closes above ${evtN(ri(48, 61) * 1000)} for the first time`, 'Wages outrun prices for a sixth straight month'])
       : pick([`Inflation jumps to ${(5 + rnd(0, 3)).toFixed(1)}%, with groceries leading the way`, `The Dow sheds ${evtN(ri(1200, 2600))} points in a week`, `The economy loses ${ri(90, 310)},000 jobs and unemployment climbs to ${(4.6 + rnd(0, 1.4)).toFixed(1)}%`, `Gas tops $${(4.2 + rnd(0, 1.3)).toFixed(2)} a gallon`]);
-    out.push(`${up ? '📈' : '📉'} <b>${h}.</b> ${presTitle()}'s approval ${up ? 'rises' : 'falls'} ${d} point${d > 1 ? 's' : ''}.`);
+    out.push(`${up ? '📈' : '📉'} <b>${h}.</b> ${presTitle()}'s approval ${up ? 'rises' : 'falls'} ${d} point${d > 1 ? 's' : ''}.${!IND() && evtIWH() ? ` With ${evtWho()} in charge, neither party gets the ${up ? 'credit' : 'blame'}.` : ''}`);
   } else if (Math.abs(S.econ) >= 2 && Math.random() < 0.2) {
     evtApproval(sgn(S.econ));
     out.push(S.econ > 0 ? `📈 <b>The boom rolls on:</b> ${pick(['help-wanted signs in every window', 'record holiday spending', 'a 401(k) rally'])}, and ${presTitle()} takes the credit (+1).` : `📉 <b>The slump deepens:</b> ${pick(['layoffs spread from tech to trucking', 'foreclosures tick up', 'small towns lose their last bank branch'])}, and ${presTitle()} takes the blame (−1).`);
@@ -556,7 +576,7 @@ function evtNewsTech() {
 function evtNewsPandemic() {
   if (Math.random() >= 0.01) return [];
   evtSal('welfare', 3); evtApproval(-2); if (S.president.party === S.side) evtMood(-0.5);
-  return [`🦠 <b>A new respiratory virus spreads from ${pick(['a cruise ship off Miami', 'a mink farm in Wisconsin', 'a conference in Las Vegas'])}.</b> Hospitals brace, masks reappear, and ${presTitle()}'s approval slips 2 points.`];
+  return [`🦠 <b>A new respiratory virus spreads from ${pick(['a cruise ship off Miami', 'a mink farm in Wisconsin', 'a conference in Las Vegas'])}.</b> Hospitals brace, masks reappear, and ${evtIWH() ? `${presTitle()}, ${evtWho()},` : `${presTitle()}'s approval`} slips 2 points.`];
 }
 // an impeachment inquiry against an unpopular opposing President, and its aftermath
 function evtNewsImpeachment() {
@@ -567,6 +587,9 @@ function evtNewsImpeachment() {
     if (I.stage === 1 && age >= 2) {
       if (Math.random() < 0.6) { I.stage = 2; I.bill = S.career.bills; evtApproval(-2); hist(P, 'Impeached by the House of Representatives'); const y = ri(218, 236); out.push(`⚖️ <b>The House impeaches ${presTitle()}, ${y}–${435 - y}</b>, on ${ri(2, 4)} articles. The Senate trial comes after the next bill; two-thirds are needed to remove.`); }
       else { S.impeachment = null; evtApproval(1); out.push(`⚖️ The impeachment inquiry into ${presTitle()} ends in a censure resolution instead. Both sides claim vindication (+1 approval).`); }
+    } else if (I.stage === 2 && age >= 2 && IND()) {
+      // the independent career: the trial is a vote, and your caucus's votes are in play (evtImpeachTrial, between bills)
+      I.stage = 3; out.push(`⚖️ <b>The Senate trial of ${presTitle()} reaches its final day.</b> Sixty-seven votes remove a President; the independents' votes are up for grabs.`);
     } else if (I.stage === 2 && age >= 2) {
       S.impeachment = null;
       const y = clamp(seats(S.side) + ri(-2, 6), 30, 66);
@@ -575,10 +598,18 @@ function evtNewsImpeachment() {
     }
     return out;
   }
+  if (IND()) { // the independent career: the House is never yours, so the AI House majority decides (5% an interlude when it is the other party's President)
+    if (houseMaj() !== P.party && P.approval < 35 && Math.random() < 0.05) {
+      S.impeachment = { year: currentYear(), bill: S.career.bills, pres: P.name, stage: 1, by: houseMaj() };
+      evtApproval(-3); hist(P, 'Became the subject of a House impeachment inquiry');
+      out.push(`⚖️ <b>The ${PARTY[houseMaj()].name} House opens an impeachment inquiry into ${presTitle()}${P.party === 'I' ? `, ${evtWho()}` : ''}</b> over ${pick(['a foreign business deal', 'the misuse of disaster funds', 'pressure on the Justice Department', 'a shredded subpoena'])}. Approval −3. If it reaches the Senate, your caucus will have to vote.`);
+    }
+    return out;
+  }
   if (P.party !== S.side && P.approval < 38 && houseMaj() === S.side && Math.random() < 0.5) {
     S.impeachment = { year: currentYear(), bill: S.career.bills, pres: P.name, stage: 1 };
     evtApproval(-3); evtMood(rnd(-1, 1)); hist(P, 'Became the subject of a House impeachment inquiry');
-    out.push(`⚖️ <b>The House opens an impeachment inquiry into ${presTitle()}</b> over ${pick(['a foreign business deal', 'the misuse of disaster funds', 'pressure on the Justice Department', 'a shredded subpoena'])}. Approval −3; the country splits down the middle.`);
+    out.push(`⚖️ <b>The House opens an impeachment inquiry into ${presTitle()}${evtIWH() ? `, ${evtWho()}` : ''}</b> over ${pick(['a foreign business deal', 'the misuse of disaster funds', 'pressure on the Justice Department', 'a shredded subpoena'])}. Approval −3; ${evtIWH() ? 'both parties smell blood, and the independents close ranks' : 'the country splits down the middle'}.`);
   }
   return out;
 }
@@ -626,9 +657,20 @@ function evtNewsCourtRumor() {
   if (Math.random() < 0.5) { return [`⚖️ Justice ${j.name} ends the retirement chatter from the bench: "<i>I'm not going anywhere.</i>"`]; }
   S.court = S.court.filter(x => x !== j);
   const ready = R.ready && S.president.party === S.side; if (ready) evtCap(1);
-  return [`⚖️ <b>The rumor was true: Justice ${j.name} (${PARTY[j.party].name} appointee, ${j.age}) retires.</b> A Supreme Court seat is open${ready ? ', and your shortlist is already on the leader\'s desk (+1 capital)' : ''}.`];
+  return [`⚖️ <b>The rumor was true: Justice ${j.name} (${PARTY[j.party].name} appointee, ${j.age}) retires.</b> A Supreme Court seat is open${evtIWH() ? ` for ${evtWho()} to fill` : ''}${ready ? ', and your shortlist is already on the leader\'s desk (+1 capital)' : ''}.`];
 }
 HOOKS.worldNews.push(...[evtNewsEcon, evtNewsOppScandal, evtNewsGovIndicted, evtNewsCourtLeak, evtNewsDisaster, evtNewsTrade, evtNewsTech, evtNewsPandemic, evtNewsImpeachment, evtNewsForeignVote, evtNewsRedistrict, evtNewsCelebrity, evtNewsMemoir, evtNewsCourtRumor].map(evtSafe));
+// evt_unitycab: a crossover member of an independent President's unity cabinet quits, and the post goes back to the Senate
+// (S.cabinetVacancy: game.js interlude runs the confirmation right after the news). Only under an independent White House.
+function evtNewsUnityCab() {
+  if (!evtIWH() || S.cabinetVacancy || S.pendingCabinet || Math.random() >= 0.08) return [];
+  const posts = CABINET_POSTS.filter(([post]) => S.cabinet[post] && S.cabinet[post].party !== 'I'), hit = pick(posts); if (!hit) return [];
+  const [post, title] = hit, c = S.cabinet[post], mine = c.party === S.side, P = S.president;
+  hist(c, `Resigned as ${title}, breaking with the independent President`); S.formers = S.formers || []; S.formers.push(c); S.cabinetVacancy = post;
+  evtApproval(-1); if (!IND() && mine) evtMood(0.3);
+  return [`🚪 <b>The unity cabinet cracks:</b> ${title} <b>${c.name}</b> (${c.party}), one of ${presTitle()}'s ${PARTY[c.party].name} picks, resigns over ${pick(['the President\'s veto of a bill their party wrote', 'a budget that "betrays everyone who voted for us"', 'being frozen out of the President\'s inner circle', 'pressure from their party to stop "propping up" an independent'])}. ${mine ? 'Your party cheers the exit (mood +0.3).' : IND() ? 'Your caucus has a cabinet post to fill.' : 'The other party calls it principle.'} ${lastName(P)} −1; the Senate gets a new nominee.`];
+}
+HOOKS.worldNews.push(evtSafe(evtNewsUnityCab));
 
 /* =====================================================================
    3. MOMENTS between bills — HOOKS.interlude (steps that must call next() once)
@@ -673,7 +715,7 @@ const EVT_MOMENTS = [
   } },
   // the leader's offer: capital now for a pledge
   { id: 'leader', cond: () => !S.evtPledge, run: next => {
-    const L = isMajority() ? 'the Majority Leader' : 'the Minority Leader', K = 'Between bills · The leader\'s office';
+    const L = PARITY() ? `the ${evtLeaderTitle()}` : isMajority() ? 'the Majority Leader' : 'the Minority Leader', K = 'Between bills · The leader\'s office';
     evtScreen({ kicker: K, h2: `${L.charAt(0).toUpperCase() + L.slice(1)} makes an offer`, body: `<p>Over a late scotch, ${L} slides a folder across the desk: <b>2 political capital</b>, right now, from the leadership fund. The price is a pledge. On your next bill, when leadership asks for its language, you deliver — no questions, no matter what it does to your count.</p><p style="color:var(--dim)">Pledges can be broken. Leadership has a long memory.</p>`, choices: [
       { k: 'take', t: 'Take the capital', s: '+2 capital now · leadership will call in the pledge on your next bill' },
       { k: 'no', t: 'Keep your independence', s: 'Nothing changes' },
@@ -732,7 +774,7 @@ const EVT_MOMENTS = [
   // a Supreme Court retirement rumor
   { id: 'rumor', cond: () => S.court.length === 9 && !S.nominee && !S.courtRumor, run: next => {
     const j = S.court.slice().sort((a, b) => b.age - a.age)[0], K = 'Between bills · Court watch';
-    evtScreen({ kicker: K, h2: `Is Justice ${lastName(j)} retiring?`, body: `<p>A clerk's cousin tells a reporter who tells your chief of staff: Justice <b>${j.name}</b> (${PARTY[j.party].name} appointee, ${j.age}) has been "getting their affairs in order." The Court is ${courtLabel()}. ${S.president.party === S.side ? `If it's true, ${presTitle()} gets a pick and you get a confirmation fight.` : `If it's true, ${presTitle()} gets a pick and your ${isMajority() ? 'majority decides whether there\'s a vote' : 'minority can only watch'}.`}</p>`, choices: [
+    evtScreen({ kicker: K, h2: `Is Justice ${lastName(j)} retiring?`, body: `<p>A clerk's cousin tells a reporter who tells your chief of staff: Justice <b>${j.name}</b> (${PARTY[j.party].name} appointee, ${j.age}) has been "getting their affairs in order." The Court is ${courtLabel()}. ${S.president.party === S.side ? `If it's true, ${presTitle()}${evtIWH() ? `, ${evtWho()},` : ''} gets a pick and you get a confirmation fight.` : `If it's true, ${presTitle()}${evtIWH() ? `, ${evtWho()},` : ''} gets a pick and your ${isMajority() ? 'majority decides whether there\'s a vote' : (PARITY() || IND()) && inCoalition() ? 'coalition decides whether there\'s a vote' : 'minority can only watch'}.`}</p>`, choices: [
       { k: 'prep', t: 'Quietly vet a shortlist', s: `If the rumor proves true${S.president.party === S.side ? ', you\'re ready: +1 capital' : ', you\'ll at least see it coming'}` },
       { k: 'ignore', t: 'Dismiss the chatter', s: 'Nothing changes' },
     ], pick: k => {
@@ -778,6 +820,57 @@ HOOKS.interlude.push(() => {
   const pool = EVT_MOMENTS.filter(m => (!m.cond || m.cond()) && !(IND() && EVT_IND_SKIP_MOMENTS.includes(m.id))); if (!pool.length) return [];
   const mo = pick(pool); S.evtLastMoment = S.career.bills;
   return [wrap(mo.run)];
+});
+
+/* ---------------- the independent career: an impeachment trial with the caucus's votes in play ---------------- */
+// the Vice President takes the oath; a new Vice President of the same party (and label) is confirmed
+function evtRemovePresident(old) {
+  const V = S.vp || newPerson(old.party, pick(STATES)[0], { age: ri(48, 68) });
+  const np = { ...V, party: old.party, faction: V.faction || old.faction, approval: clamp(old.approval + 10, 35, 60), terms: old.terms || 1 };
+  if (old.party === 'I') { np.label = V.label || old.label; np.lean = V.lean != null ? V.lean : old.lean; }
+  hist(old, 'Removed from office by the Senate'); hist(np, `Sworn in as President after the removal of President ${old.name}`);
+  S.formers = S.formers || []; S.formers.push(old);
+  S.president = np; S.undermine = 0; S.challenger = false; // the campaign against the old President does not carry over
+  S.vp = newPerson(old.party, pick(STATES)[0], { age: ri(48, 68) }); S.vp.faction = pick(FACTIONS[old.party])[0];
+  if (old.party === 'I') { S.vp.label = np.label; S.vp.lean = np.lean; }
+  hist(S.vp, 'Confirmed as Vice President');
+}
+function evtImpeachTrial(next) {
+  const I = S.impeachment, P = S.president, K = 'Between bills · The Senate trial';
+  if (!I || I.pres !== P.name) { S.impeachment = null; return next(); }
+  const opp = I.by && I.by !== P.party ? I.by : P.party === 'I' ? houseMaj() : other2(P.party), nI = seats('I'), ap = P.approval;
+  const nOpp = seats(opp), nP = P.party === 'I' ? 0 : seats(P.party), third = P.party === 'I' ? other2(opp) : null;
+  evtScreen({ kicker: K, h2: `The trial of ${presTitle()}`, body: `<p>The House managers have made their case against ${presTitle()} (${PARTY[P.party].name}, ${ap}% approval). Removal takes <b>67 votes</b>. The ${PARTY[opp].short} (${nOpp}) will vote to convict almost to a senator${nP ? `; the President's own ${PARTY[P.party].short} (${nP}) will mostly stand by them` : `; the ${PARTY[third].short} (${seats(third)}) are split`}. Your caucus has <b>${nI}</b> vote${nI === 1 ? '' : 's'}, and both parties are watching how you cast them.</p>`, choices: [
+    { k: 'imp:guilty', t: 'The caucus votes guilty', s: `Trust with the ${PARTY[opp].short} +1, with the ${PARTY[other2(opp)].short} −1` },
+    { k: 'imp:acquit', t: 'The caucus votes not guilty', s: `Trust with the ${PARTY[opp].short} −1, with the ${PARTY[other2(opp)].short} +1` },
+    { k: 'imp:free', t: 'A free vote: every member decides', s: 'Trust unchanged · the caucus splits' },
+  ], pick: k => {
+    const lines = []; let guilty = 0;
+    for (const m of S.members) {
+      if (m.party === 'I') guilty += k === 'imp:guilty' ? 1 : k === 'imp:free' ? (Math.random() < 0.5 ? 1 : 0) : 0;
+      else if (m.party === opp) guilty += Math.random() < 0.95 ? 1 : 0;
+      else if (m.party === P.party) guilty += Math.random() < clamp((35 - ap) / 100, 0, 0.2) ? 1 : 0;
+      else guilty += Math.random() < clamp(0.4 + (35 - ap) / 40, 0.1, 0.8) ? 1 : 0;
+    }
+    const d = k === 'imp:guilty' ? 1 : k === 'imp:acquit' ? -1 : 0;
+    if (d && typeof cauTrust === 'function') { cauTrust(opp, d); cauTrust(other2(opp), -d); }
+    S.impeachment = null;
+    const old = presTitle();
+    if (guilty >= 67) {
+      evtRemovePresident(P);
+      lines.push(`<b>Guilty, ${guilty}–${100 - guilty}.</b> ${old} is removed from office. Within the hour ${presTitle()} takes the oath in the East Room.`);
+    } else {
+      evtApproval(2); hist(P, `Acquitted by the Senate, ${guilty}–${100 - guilty}`);
+      lines.push(`<b>Not guilty: ${guilty}–${100 - guilty}</b>, ${67 - guilty} short of the 67 needed. ${old} claims total exoneration (+2 approval).`);
+    }
+    const fan = d > 0 ? opp : other2(opp), foe = other2(fan);
+    lines.push(d ? `Your caucus voted ${d > 0 ? 'guilty' : 'not guilty'} as a bloc: the ${PARTY[fan].short} noticed (trust +1), and the ${PARTY[foe].short} will remember (trust −1).` : 'Your caucus split its votes. Neither party can say you were with them.');
+    evtAfter(next, 'Between bills · The verdict', guilty >= 67 ? 'The President is removed' : 'The President survives', lines);
+  } });
+}
+HOOKS.interlude.push(() => {
+  if (!S || !IND() || !S.impeachment || S.impeachment.stage !== 3) return [];
+  return [next => { let called = false; const once = () => { if (called) return; called = true; next(); }; try { evtImpeachTrial(once); } catch (e) { console.error('events.js trial', e); S.impeachment = null; once(); } }];
 });
 
 /* ---------------- achievements ---------------- */
