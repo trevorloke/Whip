@@ -31,7 +31,7 @@ const orgCode = p => p === 'D' ? 1 : p === 'R' ? 2 : p === 'I' ? 3 : 0;
 const orgStamp = () => S.org ? orgK() * 100 + orgCode(S.org.prevFloor) * 10 + orgCode(S.org.floor) : -1;
 const orgWho = f => f === 'I' ? 'the Independent-led coalition' : `the ${PARTY[f].name} majority`;
 // a score with one decimal (the partner scores move in halves)
-const orgF1 = v => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10);
+const orgF1 = v => { const r = Math.round(v * 10) / 10; return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r); };
 
 /* ---------------- the NPC independents ---------------- */
 function indsMembers() { return S.members.filter(m => m.party === 'I'); }
