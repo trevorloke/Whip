@@ -429,9 +429,10 @@ function rsApplyI(rc, P, yr, news) {
       const ir = r.rows.find(x => x.inc), top = r.rows.find(x => !x.inc);
       rc.ind = { name: m.name, incumbent: true, str: rnd(30, 42) - (contested ? 1.5 : 0), label: lead || (typeof indLabel === 'function' ? indLabel(m) : null) };
       if (contested) {
-        rc.bruised = ir.pct < 60;
+        // not rc.bruised: that flag lowers the major-party holder's margin (projMargin); the stub's −1.5 is the I bruise
+        const hurt = ir.pct < 60;
         hist(m, r.runoff ? `Won the ${yr} Independent primary${rsRoW(r, 'a')}, ${r.runoff.rows[0].pct.toFixed(0)}–${r.runoff.rows[1].pct.toFixed(0)}, over ${top.name}` : `Won the ${yr} Independent primary, ${ir.pct.toFixed(0)}% to ${top.pct.toFixed(0)}% for ${top.name}`, yr);
-        if (rc.bruised) news.push(`${st}: Sen. ${m.name} (I) survives an Independent primary challenge from ${top.name}, ${rsP(fin[0].pct)}${rsRoW(r, 'a')}.`);
+        if (hurt) news.push(`${st}: Sen. ${m.name} (I) survives an Independent primary challenge from ${top.name}, ${rsP(fin[0].pct)}${rsRoW(r, 'a')}.`);
       }
     }
     return;
@@ -676,7 +677,7 @@ HOOKS.worldNews.push(() => {
   const out = [], yr = currentYear();
   S.rsPicks = S.rsPicks.filter(k => {
     const m = S.members.find(x => x.name === k.n && x.state === k.s);
-    if (m) { m.rel = (m.rel || 0) + 2; hist(m, `Arrived in the Senate owing the whip, who endorsed them in the ${k.y} primary`); out.push(`🤝 Sen. ${m.name} (${m.party}-${m.state}), your pick in the ${k.y} primary, arrives in the Senate owing you (+2 relationship).`); return false; }
+    if (m) { m.rel = (m.rel || 0) + 2; hist(m, `Arrived in the Senate owing the ${IND() ? 'caucus chair' : 'whip'}, who endorsed them in the ${k.y} primary`); out.push(`🤝 Sen. ${m.name} (${m.party}-${m.state}), your pick in the ${k.y} primary, arrives in the Senate owing you (+2 relationship).`); return false; }
     return yr <= k.y;
   });
   return out;
@@ -814,7 +815,7 @@ function rsRoomI(rc, back) {
   const surs = rsSurrogatesI(rc, me), surBtns = W.done.includes('sur') ? '<small>One surrogate per race: done.</small>' : surs.length ? surs.map(x => `<button class="btn" data-choice="rr:sur:${x.k}" ${x.left < 1 ? 'disabled' : ''}><b>📣 ${x.name}</b><small>${x.left > 0 ? `+1 to +2 · ${x.left} visit${x.left === 1 ? '' : 's'} left this cycle` : 'No visits left this cycle'}</small></button>`).join('') : '<small>No surrogate available: no caucus senator off the ballot, and no independent President above 50%.</small>';
   const who = rc.ind.incumbent ? `Sen. ${m.name} seeks a ${rsNth(m)} term as an independent` : rc.iPrimaried ? `${me.name} beat Sen. ${m.name} in the Independent primary` : r ? (r.unopp ? `Unopposed in the ${r.label} Independent primary` : `Won the ${r.label} Independent primary with ${rsP(f.pct)}${rsRoW(r)}`) : rc.ind.recruited ? 'Your recruit, on the ballot by petition' : 'On the ballot as an independent';
   showModal(`<div class="kicker">${E.year} · Senate race · Race room · Class ${m.cls}</div><h2>${stName(code)}: ${lastName(me)} vs ${majors.map(x => lastName(x.per)).join(' vs ')}</h2>
-    <div class="rs-noms rs-noms3">${card(me, L.color, ` <b class="prim-you">YOURS</b>`, `${typeof indPill === 'function' ? indPill(rc.ind.label) : rc.ind.label} · ${who}`)}<span class="rs-vs">vs</span>${majors.map(x => card(x.per, PARTY[x.p].color, ` <small>(${x.p})</small>`, x.per === m ? `U.S. Senator · seeking a ${rsNth(m)} term` : `${PARTY[x.p].name} nominee`)).join('<span class="rs-vs">vs</span>')}</div>
+    <div class="rs-noms rs-noms3">${card(me, L.color, ` <b class="prim-you">YOURS</b>`, `${typeof indPill === 'function' ? indPill(rc.ind.label) : rc.ind.label} · ${who}`)}<span class="rs-vs">vs</span>${majors.map(x => card(x.per, PARTY[x.p].color, ` <small>(${x.p})</small>`, rc.standDown === x.p ? `The ${PARTY[x.p].short} are standing aside in this race` : x.per === m ? `U.S. Senator · seeking a ${rsNth(m)} term` : `${PARTY[x.p].name} nominee`)).join('<span class="rs-vs">vs</span>')}</div>
     <div class="rs-room"><div class="rs-col">
       <div class="pollbox"><b>📈 ${lastName(me)} in a three-way race</b>
         <div class="salrow"><span>Projected share</span><b>${ex.i.toFixed(1)}%</b></div><div class="salrow"><span>Against the leader</span><b>${rsF(ex.margin)}</b></div>

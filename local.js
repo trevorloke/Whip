@@ -153,7 +153,7 @@ function localMayors(party) {
 // a governor's race draws a mayor or a Speaker about three times in ten (more if one has been eyeing it); not a mayor already on this year's city ballot
 // (nor anyone already on the ballot for the Senate this year: races.js names its nominees in rc.names)
 function localGovCandidate(party, code, year) {
-  const E = S.election, busy = n => !!E && (E.races || []).some(rc => (rc.names && (rc.names.D === n || rc.names.R === n)) || (rc.nominee && rc.nominee.name === n));
+  const E = S.election, busy = n => !!E && (E.races || []).some(rc => (rc.names && (rc.names.D === n || rc.names.R === n || rc.names.I === n)) || (rc.nominee && rc.nominee.name === n));
   const pool = localPrimaryPool(party, code).filter(x => !busy(x.p.name) && !Object.values(S.mayors).some(M => M.person === x.p && M.cycle === year));
   const keen = pool.filter(x => x.p.ambition);
   if (keen.length && Math.random() < 0.75) return pick(keen);
