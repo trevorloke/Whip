@@ -121,11 +121,30 @@ function locSpeaker(c) {
 function localPrimaryPool(party, state) {
   if (!S || !S.career) return [];
   localEnsure();
+  if (party === 'I') return locIndPool(state);
   const out = LOC_CITIES.filter(C => C[2] === state && S.mayors[C[0]].party === party).map(C => ({ p: S.mayors[C[0]].person, office: `${S.mayors[C[0]].acting ? 'Acting ' : ''}Mayor of ${C[1]}` }));
   const L = S.legis[state];
   if (L && locCtrl(L.lower || L.upper) === party) { const s = locSpeaker(state); if (s) out.push({ p: s, office: locSpkTitle(state) }); }
   return out;
 }
+// an Independent Senate primary (races.js) draws on local officials who might quit their party: each of the state's
+// party mayors and its sitting Speaker runs about one time in seven, as a copy that has left the party. The originals in
+// S.mayors / S.legis are never moved or changed (the clone only carries the name, the biography and the record).
+function locIndPool(state) {
+  const out = [], yr = currentYear();
+  const conv = (o, office) => {
+    if (!o || !o.name || (o.party !== 'D' && o.party !== 'R') || Math.random() >= 0.15) return;
+    const p = { name: o.name, gender: o.gender, party: 'I', state, born: o.born, seed: o.seed, background: o.background, hometown: o.hometown, history: (o.history || []).map(h => ({ ...h })), exParty: o.party };
+    hist(p, `Left the ${PARTY[o.party].name} Party to run for the U.S. Senate as an independent`, yr);
+    out.push({ p, office: `${office} (ex-${o.party})` });
+  };
+  for (const C of LOC_CITIES) if (C[2] === state && S.mayors[C[0]]) { const M = S.mayors[C[0]]; conv(M.person, `${M.acting ? 'Acting ' : ''}Mayor of ${C[1]}`); }
+  const L = S.legis[state], ctl = L ? locCtrl(L.lower || L.upper) : null;
+  if (L && L.spk && L.spk.party === ctl) conv(L.spk, locSpkTitle(state));   // only a Speaker already drawn: no new person is made here
+  return out;
+}
+// the parity switch (game.js): Independent-White-House texts and the I Senate pool are new behaviour in D/R careers
+const locNewI = () => IND() || (typeof PARITY === 'function' && PARITY());
 function localMayors(party) {
   if (!S || !S.career) return [];
   localEnsure();
@@ -307,7 +326,7 @@ const locList = a => a.length <= 1 ? a.join('') : `${a.slice(0, -1).join(', ')} 
 function locGovChance(plan, c) { const f = plan.fields[c], sg = f.A === S.side ? 1 : -1; return normCdf((sg * govMargin(f, plan.y) + (plan.help.gov[c] || 0)) / 8); }
 function locMayChance(plan, F) { const sd = locSideOf(F); return sd ? normCdf(sd * (locMayorMargin(F, plan.env) + sd * (plan.help.may[F.key] || 0)) / 9) : null; }
 function locOffPreview(plan, go) {
-  const P = S.president, out = other(P.party), me = S.side, c = S.career, y = plan.y;
+  const P = S.president, out = P.party === 'I' && locNewI() ? (IND() ? oppParty() : other2(S.side)) : other(P.party), me = S.side, c = S.career, y = plan.y;
   const govCands = c2 => { const f = plan.fields[c2], B = other(f.A); return [[f.cA, f.A, f.offA], [f.cB, B, f.offB]]; };
   const pname = (p, party, off) => p ? `<b style="color:${locPc(party)}">${p.name}</b> <small>(${party}${off ? `, ${off === 'Governor' ? 'incumbent' : off}` : ''})</small>` : `<b style="color:${locPc(party)}">the ${PARTY[party].short} nominee</b>`;
   const contests = plan.mayors.filter(F => locSideOf(F) !== 0).slice(0, 2);
@@ -320,7 +339,7 @@ function locOffPreview(plan, go) {
   const draw = () => {
     const left = Math.min(2 - plan.picks.length, c.capital);
     locShow(`<div class="kicker">Off-Year Elections · Fall ${y}</div><h2>November ${y}: The Off-Year Races</h2>
-      <p>No Senate seats on the ballot, but ${locList([plan.gov.length ? `${plan.gov.length} governor${plan.gov.length > 1 ? 's' : ''} (${locList(plan.gov.map(stName))})` : '', plan.legis.length ? `${plan.legis.length} legislative chamber${plan.legis.length > 1 ? 's' : ''}` : '', plan.mayors.length ? `${plan.mayors.length} mayors` : ''].filter(Boolean))} are. Every pundit in Washington will read the results as a verdict on ${presTitle()} (${P.approval}%), ${P.party === 'I' ? 'and with an independent in the White House, neither party can count on the usual swing.' : `and history favors the ${PARTY[out].short}: the party out of the White House usually gains.`}</p>
+      <p>No Senate seats on the ballot, but ${locList([plan.gov.length ? `${plan.gov.length} governor${plan.gov.length > 1 ? 's' : ''} (${locList(plan.gov.map(stName))})` : '', plan.legis.length ? `${plan.legis.length} legislative chamber${plan.legis.length > 1 ? 's' : ''}` : '', plan.mayors.length ? `${plan.mayors.length} mayors` : ''].filter(Boolean))} are. Every pundit in Washington will read the results as a verdict on ${presTitle()} (${P.approval}%), ${P.party === 'I' ? (locNewI() ? 'and with an Independent White House, both parties run against it: neither can count on the usual swing.' : 'and with an independent in the White House, neither party can count on the usual swing.') : `and history favors the ${PARTY[out].short}: the party out of the White House usually gains.`}</p>
       ${plan.gov.length ? `<div class="loc-prev">${plan.gov.map(cd => { const ch = locGovChance(plan, cd); return `<div class="race"><span><b>${stName(cd)}</b> <small style="color:var(--dim)">Governor${plan.fields[cd].open ? ' · open seat' : ''}</small><br>${govCands(cd).map(x => pname(...x)).join(' <small>vs</small> ')}</span><span class="chance"><b style="color:${chanceColor(ch)}">${Math.round(ch * 100)}%</b><span class="mbar"><i style="width:${ch * 100}%;background:${chanceColor(ch)}"></i></span><small>${IND() ? `${PARTY[other(plan.fields[cd].A)].short}' chance` : 'your chance'}</small></span></div>`; }).join('')}</div>` : ''}
       ${plan.legis.length ? `<p class="loc-chips"><b>Statehouses:</b> ${plan.legis.map(x => { const o = S.legis[x.code][x.chamber], p = locCtrl(o); return `<span class="bchip" style="border-color:${p ? locPc(p) : '#6b7280'}">${locChName(x.code, x.chamber)} <b style="color:${p ? locPc(p) : 'var(--ink)'}">${o.D}–${o.R}</b></span>`; }).join(' ')}</p>` : ''}
       ${plan.mayors.length ? `<p class="loc-chips"><b>City halls:</b> ${plan.mayors.slice(0, 8).map(F => `<span class="bchip">${LOC_CITY[F.key][1]} <small>${F.c1.inc ? `${F.c1.p.name} (${F.c1.party}) seeks a ${S.mayors[F.key].acting ? 'full' : 'new'} term` : `open: ${F.c1.p.name} (${F.c1.party}) vs ${F.c2.p.name} (${F.c2.party})`}</small></span>`).join(' ')}${plan.mayors.length > 8 ? ` <small style="color:var(--dim)">and ${plan.mayors.length - 8} more</small>` : ''}</p>` : ''}
@@ -347,12 +366,15 @@ function locOffRun(plan) {
 }
 // the referendum: flips toward the party out of the White House, weighted (a governor counts double, a city hall half)
 function locVerdict(plan) {
-  const r = plan.res, P = S.president, me = S.side, inP = P.party === 'I' ? other(me) : P.party, out = other(inP);
-  const net = (a, f) => a.reduce((s, x) => s + (f(x) === out ? 1 : f(x) === inP ? -1 : 0), 0);
+  const r = plan.res, P = S.president, me = S.side, iWH = P.party === 'I' && locNewI();
+  // an Independent White House: both parties run against it; the score is read from `out`'s side (the party you face)
+  const out = iWH ? (IND() ? oppParty() : other2(S.side)) : null, inP = iWH ? other2(out) : P.party === 'I' ? other(me) : P.party;
+  const outP = iWH ? out : other(inP);
+  const net = (a, f) => a.reduce((s, x) => s + (f(x) === outP ? 1 : f(x) === inP ? -1 : 0), 0);
   const gN = net(r.gov.filter(x => x.flip), x => x.wParty), cN = net(r.legis.filter(x => x.flipped), x => locCtrl(x.after)), mN = net(r.mayors.filter(x => x.flip), x => x.wParty);
-  const score = gN * 2 + cN + mN * 0.5 + plan.env * (out === 'D' ? 1 : -1) / 4;
+  const score = gN * 2 + cN + mN * 0.5 + plan.env * (outP === 'D' ? 1 : -1) / 4;
   const tone = score >= 2 ? 'rout' : score >= 0.5 ? 'warn' : score > -1 ? 'split' : 'defy';
-  const mood = +(clamp(score * 0.35, -1.5, 1.5) * (me === out ? 1 : -1)).toFixed(1);
+  const mood = +(clamp(score * 0.35, -1.5, 1.5) * (me === outP ? 1 : -1)).toFixed(1);
   S.mood = clamp(S.mood + mood, -15, 15);
   if (tone === 'rout') P.approval = clamp(P.approval - 1, 18, 82);
   const myFlips = r.gov.filter(x => x.flip && x.wParty === me).length, myCh = r.legis.filter(x => x.flipped && locCtrl(x.after) === me).length;
@@ -360,7 +382,7 @@ function locVerdict(plan) {
   if (myFlips || myCh >= 2) { cap = 1; S.career.capital += 1; }
   if (myFlips) { addLegacy(3 * myFlips); unlock('offyear'); }
   const helped = plan.picks.map(k => { const [t, v] = k.split(':'); const x = t === 'gov' ? r.gov.find(g => g.code === v) : t === 'may' ? r.mayors.find(m => m.key === v) : null; return x ? { where: t === 'gov' ? stName(v) : x.city, won: x.wParty === me, close: x.wPct - x.lPct < (t === 'gov' ? 3 : 4) } : t === 'leg' ? { where: 'the statehouses', won: r.legis.reduce((a, l) => a + l.after[me] - l.before[me], 0) > 0, leg: 1 } : null; }).filter(Boolean);
-  return { tone, score, mood, cap, myFlips, gN, cN, mN, out, inP, helped };
+  return { tone, score, mood, cap, myFlips, gN, cN, mN, out: outP, inP, helped, ...(iWH ? { iWH } : {}) };
 }
 function locOffNight(plan, tab, next) {
   const r = plan.res, y = plan.y;
@@ -374,14 +396,14 @@ function locOffNight(plan, tab, next) {
 }
 function locOffMorning(plan, done) {
   const r = plan.res, V = plan.verdict, P = S.president, L = lastName(P).toUpperCase(), y = plan.y, me = S.side;
-  const hl = { rout: pick([`THE OFF-YEAR VERDICT: VOTERS REBUKE ${L}`, `THE OFF-YEAR VERDICT: A THUMPING FOR THE ${PARTY[V.inP].short.toUpperCase()}`]), warn: `THE OFF-YEAR VERDICT: A WARNING SHOT FOR ${L}`, split: 'THE OFF-YEAR VERDICT: A SPLIT DECISION', defy: `THE OFF-YEAR VERDICT: ${PARTY[V.inP].short.toUpperCase()} DEFY HISTORY` }[V.tone];
+  const hl = { rout: pick([`THE OFF-YEAR VERDICT: VOTERS REBUKE ${L}`, `THE OFF-YEAR VERDICT: A THUMPING FOR THE ${PARTY[V.inP].short.toUpperCase()}`]), warn: `THE OFF-YEAR VERDICT: A WARNING SHOT FOR ${L}`, split: 'THE OFF-YEAR VERDICT: A SPLIT DECISION', defy: V.iWH ? `THE OFF-YEAR VERDICT: THE ${PARTY[V.inP].short.toUpperCase()} HOLD THE LINE` : `THE OFF-YEAR VERDICT: ${PARTY[V.inP].short.toUpperCase()} DEFY HISTORY` }[V.tone];
   const g = r.gov.slice().sort((a, b) => (b.flip ? 1 : 0) - (a.flip ? 1 : 0) || (a.wPct - a.lPct) - (b.wPct - b.lPct)), lf = r.legis.filter(x => x.flipped), bigM = r.mayors.slice().sort((a, b) => locPop(b.key) - locPop(a.key))[0];
   const govLine = x => `In ${stName(x.code)}, ${x.wOff && x.wOff !== 'Governor' ? `${x.wOff} ` : ''}${x.wName} (${x.wParty}) ${x.flip ? `took the governor's mansion from the ${PARTY[x.lParty].short}` : x.incumbent === x.wName ? 'won a second term' : `held the governorship for the ${PARTY[x.wParty].short}`}, ${x.wPct.toFixed(0)}–${x.lPct.toFixed(0)} over ${x.lName}${x.lOff && x.lOff !== 'Governor' ? `, the ${x.lOff}` : ''}.`;
   const body = [
     g.length ? g.slice(0, 2).map(govLine).join(' ') : `No governors were on the ballot, but ${r.mayors.length} city halls were.`,
     r.legis.length ? (lf.length ? `The statehouses moved: ${lf.map(x => `the ${locChName(x.code, x.chamber)} ${locCtrl(x.after) ? `flipped to the ${PARTY[locCtrl(x.after)].short}, ${x.after.D}–${x.after.R}` : `deadlocked at ${x.after.D}–${x.after.R}`}`).join('; ')}.` : `Every legislative chamber on the ballot (${r.legis.length}) stayed in the same hands.`) : '',
     bigM ? `In ${bigM.city}, ${bigM.wName} (${bigM.wParty}) ${bigM.inc ? 'cruised to another term' : bigM.flip ? `flipped City Hall` : bigM.open ? 'won the open race' : `unseated Mayor ${bigM.lName}`}, ${bigM.wPct.toFixed(0)}–${bigM.lPct.toFixed(0)}${bigM.intra ? `, in an all-${PARTY[bigM.wParty] ? PARTY[bigM.wParty].name : 'independent'} runoff` : ''}.${r.mayors.filter(m => m.flip).length > 1 ? ` ${r.mayors.filter(m => m.flip).length} city halls changed parties in all.` : ''}` : '',
-    { rout: `“This was a referendum on ${presTitle()}, and ${lastName(P)} lost it,” said a ${PARTY[V.out].name} strategist before the last precincts were in. The White House blamed turnout.`, warn: `No wave, but a warning: the ${PARTY[V.out].short} ran ahead of the map almost everywhere. “Ignore this at your peril,” one ${PARTY[V.inP].name} pollster wrote at 2 a.m.`, split: `Both parties claimed victory before breakfast, which usually means neither got one. The ${PARTY[V.out].short} expected more from a year like this.`, defy: `The party in the White House was supposed to lose ground. It didn't. “${presTitle()} has coattails, apparently,” a stunned ${PARTY[V.out].name} consultant conceded.` }[V.tone],
+    { rout: `“This was a referendum on ${presTitle()}, and ${lastName(P)} lost it,” said a ${PARTY[V.out].name} strategist before the last precincts were in. The White House blamed turnout.`, warn: `No wave, but a warning: the ${PARTY[V.out].short} ran ahead of the map almost everywhere. “Ignore this at your peril,” one ${PARTY[V.inP].name} pollster wrote at 2 a.m.`, split: `Both parties claimed victory before breakfast, which usually means neither got one. The ${PARTY[V.out].short} expected more from a year like this.`, defy: V.iWH ? `With an independent in the White House, both parties ran against ${lastName(P)}, and the ${PARTY[V.inP].short} ran the better race: the ${PARTY[V.out].short} had expected to gain and did not.` : `The party in the White House was supposed to lose ground. It didn't. “${presTitle()} has coattails, apparently,” a stunned ${PARTY[V.out].name} consultant conceded.` }[V.tone],
   ].filter(Boolean);
   const helped = V.helped.map(h => h.leg ? `Your money for the statehouse caucuses ${h.won ? 'paid off: a net gain in seats' : 'bought nothing: a net loss in seats'}.` : `Your trip to ${h.where}: ${h.won ? (h.close ? '<b style="color:var(--yes)">won, narrowly — you may have made the difference</b>' : '<b style="color:var(--yes)">won</b>') : (h.close ? '<b style="color:var(--no)">lost by a whisker</b>' : '<b style="color:var(--no)">lost</b>')}.`).join(' ');
   showModal(`${frontPage({ headline: hl, sub: `${r.gov.length ? `Governors: ${locList(r.gov.map(x => `${x.code} ${x.wParty}${x.flip ? ' (flip)' : ''}`))}. ` : ''}${r.legis.length ? `${lf.length} of ${r.legis.length} chambers flip. ` : ''}${r.mayors.length ? `${r.mayors.length} mayors elected.` : ''}`, body, mood: V.tone === 'split' ? 'night' : (V.tone !== 'defy') === (me === V.out) ? 'dawn' : 'storm', date: `November ${y} · Morning edition` })}

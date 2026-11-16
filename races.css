@@ -55,6 +55,12 @@
 .rs-pb .salrow{display:grid;grid-template-columns:minmax(120px,220px) 1fr 44px}
 .rs-pb .salrow .mbar{width:100%}
 .rs-pb .salrow b{text-align:right}
+/* parity: Independent Senate primaries and the independent's race room */
+.rs-filed{font-size:9px;font-weight:800;letter-spacing:1px;background:var(--gold);color:#1a1405;padding:1px 5px;border-radius:3px;vertical-align:middle}
+.rs-cn small .ind-pill{font-size:10px;padding:0 5px}
+.rs-noms3{flex-wrap:wrap}
+.rs-noms3 .rs-nom{flex:1 1 220px}
 @media (max-width:760px){.rs-cards{grid-template-columns:1fr}.rs-res,.rs-room{grid-template-columns:1fr}.rs-noms{flex-direction:column}.rs-vs{display:none}}
+@media (max-width:760px){.rs-noms3 .rs-nom{flex:0 0 auto}}
 @media (max-width:480px){.rs-cand{flex-wrap:wrap}.rs-cand .btn{margin-left:42px}.rs-prow{flex-direction:column;align-items:flex-start}}
 @media (max-width:480px){.rs-pb .salrow{grid-template-columns:minmax(0,1fr) 80px 40px}}
