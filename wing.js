@@ -77,6 +77,16 @@ function wingOwnVeto() { const r = whRel(); return r <= -5 ? Math.min(0.35, (-r 
 function wingPrimaryThreat(m) { return S.president.party !== 'I' && S.president.party === S.side && whRel() <= -4 && m.party === S.side && m.faction === wingOf() ? 0.2 : 0; }
 // a D/R career facing an independent White House (PARITY): the deal and the retaliation run on the new rules
 function wingIWH() { return !IND() && S.president.party === 'I' && PARITY(); }
+// the President's own people in the Senate: the President's faction in your party; in the independent career (every caucus
+// member is an 'Independents'), the caucus senators whose label sits close to the President's (label lean within 0.35)
+function wingPresMate(m) {
+  const P = S.president;
+  if (!IND()) return m.party === S.side && m.faction === P.faction;
+  if (m.party !== 'I' || typeof indLabelInfo !== 'function') return false;
+  const pl = P.lean != null ? P.lean : indLabelInfo(P.label).lean || 0;
+  return m.label === P.label || Math.abs((indLabelInfo(m.label).lean || 0) - pl) <= 0.35;
+}
+function wingPresMates() { return S.members.filter(wingPresMate); }
 // the Congress the wing.js deal covers (game.js vetoOdds reads S.whDealK against the same index)
 const wingK = () => Math.floor(S.career.bills / 6);
 // your-side-positive points in one Senate race: a feuding President campaigns against your candidates (or keeps away)
@@ -99,7 +109,7 @@ function wingConsequences() {
   if (wingIWH()) { // a D/R career and an independent White House: vetoes follow the President's stance on each bill
     out.push(`Vetoes follow ${whWho()}'s stance on each bill${S.whDealK === wingK() ? ': your deal holds, and vetoes on your bills are 30% less likely this Congress' : ''}.`);
     if (r <= -3) out.push('Expect retaliation between bills: veto threats that void any deal, and attacks on your party in the press.');
-    if (r <= -5) out.push(`The President will campaign against your senators${P.approval >= 45 ? ' (−1 in every race, −3 where targeted)' : ' (at this approval, it backfires: +0.5)'}.`);
+    if (r <= -5) out.push(`The President will campaign against your senators${P.approval >= 45 ? ' (−1 in every race)' : ' (at this approval, it backfires: +0.5)'}.`);
     if (r >= 2) out.push('Your base calls the détente collaboration (mood −0.2 between bills).');
     return out;
   }
@@ -119,8 +129,8 @@ function wingConsequences() {
 function wingBattleMoves() {
   const P = S.president, yours = P.party === S.side, maj = isMajority(), hm = houseMaj() === S.side, cap = S.career.capital;
   if (yours && IND()) return [ // your caucus's President: the same moves, in caucus terms
-    ['break', 'Break with the President publicly', `A floor speech that ends the pretense. Approval −6, the feud deepens (−4), the caucus's President-first members turn on you (−2), the independents' mood −1.${P.approval < 40 ? ' At this approval, the caucus cheers (+1 confidence).' : ''}${whRel() <= -2 ? ' Push the feud to hostile and the President\'s people recruit primary challengers against the caucus.' : ''}`, 2, true],
-    ['peace', 'Make peace with the President', 'A long dinner in the residence. Feud +4, the caucus warms (+1).', 2, whRel() < 0],
+    ['break', 'Break with the President publicly', `A floor speech that ends the pretense. Approval −6, the feud deepens (−4), ${wingPresMates().length ? `the ${wingPresMates().length} caucus senator${wingPresMates().length === 1 ? '' : 's'} closest to the President turn on you (−2)` : 'no caucus senator stands close enough to the President to care'}, the independents' mood −1.${P.approval < 40 ? ' At this approval, the caucus cheers (+1 confidence).' : ''}${whRel() <= -2 ? ' Push the feud to hostile and the President\'s people recruit primary challengers against the caucus.' : ''}`, 2, true],
+    ['peace', 'Make peace with the President', `A long dinner in the residence. Feud +4${wingPresMates().length ? `, the caucus senators closest to the President warm (+1)` : ''}.`, 2, whRel() < 0],
   ];
   if (yours) return [
     ['break', 'Break with the President publicly', `A floor speech that ends the pretense. Approval −6, the feud deepens (−4), the President's faction turns on you (−2), your wing rallies (+1), party mood −1.${P.approval < 40 ? ' At this approval, the caucus cheers (+1 confidence).' : ''}`, 2, true],
@@ -141,8 +151,8 @@ function wingBattle(k) {
   const cost = (wingBattleMoves().find(x => x[0] === k) || [])[3]; if (cost == null || S.career.capital < cost || S.wingBattleUsed === S.career.bills) return;
   S.career.capital -= cost; S.wingBattleUsed = S.career.bills;
   let msg;
-  if (k === 'break') { d(6); wingHit(-4); for (const m of S.members) { if (m.party === S.side && m.faction === P.faction) m.rel -= 2; if (m.party === S.side && m.faction === wingOf()) m.rel += 1; } S.mood -= 1; if (P.approval < 40) S.career.confidence = Math.min(5, S.career.confidence + 1); hist(P, IND() ? 'Publicly repudiated by the independent caucus\'s leader' : 'Publicly repudiated by their own party\'s Senate whip'); msg = 'You broke with the President on the Senate floor.'; }
-  if (k === 'peace') { wingHit(4); for (const m of S.members) if (m.party === S.side && m.faction === P.faction) m.rel += 1; msg = 'Peace, for now, with the White House.'; }
+  if (k === 'break') { d(6); wingHit(-4); for (const m of S.members) { if (wingPresMate(m)) m.rel -= 2; if (m.party === S.side && m.faction === wingOf()) m.rel += 1; } S.mood -= 1; if (P.approval < 40) S.career.confidence = Math.min(5, S.career.confidence + 1); hist(P, IND() ? 'Publicly repudiated by the independent caucus\'s leader' : 'Publicly repudiated by their own party\'s Senate whip'); msg = 'You broke with the President on the Senate floor.'; }
+  if (k === 'peace') { wingHit(4); for (const m of S.members) if (wingPresMate(m)) m.rel += 1; msg = 'Peace, for now, with the White House.'; }
   if (k === 'probe') { if (Math.random() < (isMajority() ? 0.2 : 0.1)) { S.mood -= 1.5; wingHit(-1); msg = 'The investigation looks like a witch hunt. It backfires.'; } else { const n = isMajority() ? ri(3, 7) : ri(1, 3); d(n); wingHit(-2); hist(P, isMajority() ? 'Subpoenaed by the Senate' : 'Faced a Senate demand for an inspector general'); msg = `The probe lands: ${presTitle()} −${n}.`; } }
   if (k === 'rebut') { const n = ri(1, 2); d(n); S.mood += 0.8; wingHit(-1); msg = `Your rebuttal wins the night: ${presTitle()} −${n}.`; }
   if (k === 'holds') { d(2); wingHit(-2); S.cabinetHolds = (S.cabinetHolds || 0) + 1; msg = 'Every nominee is on hold. The President is furious.'; }

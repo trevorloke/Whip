@@ -830,7 +830,7 @@ function evtRemovePresident(old) {
   if (old.party === 'I') { np.label = V.label || old.label; np.lean = V.lean != null ? V.lean : old.lean; }
   hist(old, 'Removed from office by the Senate'); hist(np, `Sworn in as President after the removal of President ${old.name}`);
   S.formers = S.formers || []; S.formers.push(old);
-  S.president = np;
+  S.president = np; S.undermine = 0; S.challenger = false; // the campaign against the old President does not carry over
   S.vp = newPerson(old.party, pick(STATES)[0], { age: ri(48, 68) }); S.vp.faction = pick(FACTIONS[old.party])[0];
   if (old.party === 'I') { S.vp.label = np.label; S.vp.lean = np.lean; }
   hist(S.vp, 'Confirmed as Vice President');

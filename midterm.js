@@ -91,17 +91,17 @@ function midSeatChart(polls, side, opts = {}) {
   const x = i => pl + (n < 2 ? (W - pl - pr) / 2 : i * (W - pl - pr) / (n - 1)), y = v => pt + (hi - v) / (hi - lo) * (H - pt - pb), col = PARTY[side].color;
   let svg = `<svg viewBox="0 0 ${W} ${H}" class="lchart mid-chart">`;
   for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="#2a3242"/><text x="${pl - 5}" y="${y(v) + 4}" font-size="${fs}" fill="#6b7587" text-anchor="end">${v}</text>`;
-  svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(51)}" y2="${y(51)}" stroke="#e3b54a" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${y(51) + 4}" font-size="${fs}" fill="#e3b54a" font-weight="700">51 · ${PARITY() && need !== 51 && need !== 50 ? 'alone' : 'control'}</text>`;
+  svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(51)}" y2="${y(51)}" stroke="#e3b54a" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${y(51) + 4}" font-size="${fs}" fill="#e3b54a" font-weight="700">51 · ${PARITY() && need !== 51 && !(need === 50 && vpYours()) ? 'alone' : 'control'}</text>`;
   const lab51 = y(51) + 4, lab50 = Math.max(y(50) + 4, lab51 + fs + 1); // on a tall seat axis the two lines sit close: keep their labels apart
   // PARITY: the independents can move the line for control off 50/51
-  const odd = PARITY() && need !== 51 && need !== 50, labN = odd ? (need < 51 ? Math.max(y(need) + 4, lab51 + fs + 1) : Math.min(y(need) + 4, lab51 - fs - 1)) : null;
+  const odd = PARITY() && need !== 51 && !(need === 50 && vpYours()), labN = odd ? (need < 51 ? Math.max(y(need) + 4, lab51 + fs + 1) : Math.min(y(need) + 4, lab51 - fs - 1)) : null;
   if (odd) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(need)}" y2="${y(need)}" stroke="#a78bfa" stroke-dasharray="5 3" stroke-width="1.4"/><text x="${W - pr + 6}" y="${labN}" font-size="${fs}" fill="#a78bfa" font-weight="700">${need} · control</text>`;
-  if (need === 50) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${lab50}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
+  if (need === 50 && !odd) svg += `<line x1="${pl}" x2="${W - pr}" y1="${y(50)}" y2="${y(50)}" stroke="#e3b54a" stroke-opacity=".45" stroke-dasharray="2 4"/><text x="${W - pr + 6}" y="${lab50}" font-size="${fs}" fill="#b8a24a">50 + VP</text>`;
   pts.forEach((p, i) => { svg += `<line x1="${x(i)}" x2="${x(i)}" y1="${pt}" y2="${H - pb + 4}" stroke="#2a3242" stroke-dasharray="2 4"/>`; if (narrow && n > 3 && (n - 1 - i) % 2) return; svg += `<text x="${x(i)}" y="${H - 8}" font-size="${fs}" fill="#9aa3b2" text-anchor="${n > 1 && i === 0 ? 'start' : n > 1 && i === n - 1 ? 'end' : 'middle'}" font-weight="${i === n - 1 ? 800 : 400}">${String(p.short || p.lbl || '').slice(0, 12)}</text>`; });
   svg += `<polyline fill="none" stroke="${col}" stroke-width="2.6" stroke-linejoin="round" points="${pts.map((p, i) => `${x(i)},${y(+p.seats)}`).join(' ')}"/>`;
   pts.forEach((p, i) => { svg += `<circle cx="${x(i)}" cy="${y(+p.seats)}" r="${i === n - 1 ? 4.5 : 2.8}" fill="${col}"><title>${p.lbl}: ${(+p.seats).toFixed(1)} seats projected${p.gb != null ? `, generic ballot ${(+p.gb).toFixed(1)}%` : ''}</title></circle>`; });
   // the value label must not sit on the "51 · control" or "50 + VP" labels: move it above or below both
-  const last = vals[n - 1], labs = need === 50 ? [lab51, lab50] : odd ? [lab51, labN] : [lab51];
+  const last = vals[n - 1], labs = need === 50 && !odd ? [lab51, lab50] : odd ? [lab51, labN] : [lab51];
   let ly = y(last) + 4;
   if (labs.some(b => Math.abs(ly - b) < 12)) ly = last >= 51 || ly < Math.min(...labs) ? Math.min(...labs) - 12 : Math.max(...labs) + 13;
   return svg + `<text x="${W - pr + 6}" y="${ly}" font-size="${narrow ? 13 : 12}" fill="${col}" font-weight="800">~${last.toFixed(1)}</text></svg>`;
@@ -533,10 +533,10 @@ const MID_EVENTS = [
       ] };
   } },
   { id: 'economy', w: () => 1, make: x => {
-    const e = typeof S.econ === 'number' ? S.econ : gauss(), good = e > 0.4 || (e > -0.4 && Math.random() < 0.5), jobs = good ? ri(220, 410) : -ri(40, 160), forWh = good ? 1 : -1, forMe = x.whMine ? forWh : -forWh, base = +(0.6 * forMe).toFixed(1);
+    const e = typeof S.econ === 'number' ? S.econ : gauss(), good = e > 0.4 || (e > -0.4 && Math.random() < 0.5), jobs = good ? ri(220, 410) : -ri(40, 160), forWh = good ? 1 : -1, forMe = x.whMine ? forWh : -forWh, iw = PARITY() && x.P.party === 'I', base = iw ? 0 : +(0.6 * forMe).toFixed(1); // an independent White House: neither party owns the economy
     return { h: good ? `JOBS REPORT BLOWS PAST FORECASTS: +${jobs},000` : `ECONOMY SHEDS ${-jobs},000 JOBS IN SEPTEMBER`, d: good ? `Unemployment ticks down; ${x.pres}'s team claims credit before the markets open.` : `The first negative report in ${ri(2, 4)} years lands three weeks before the vote.`, mood: forMe > 0 ? 'dawn' : 'storm',
       auto: fx => fx.n(base),
-      body: [good ? `Employers added ${jobs},000 jobs, ${ri(80, 160)},000 more than economists expected. Wages are up ${rnd(3.5, 5.2).toFixed(1)}% on the year.` : `Payrolls fell by ${-jobs},000; factory and trucking jobs led the decline. The ${pick(['Dow', 'S&P'])} dropped ${rnd(2, 4).toFixed(1)}% by lunch.`, `The White House is ${x.whMine ? 'yours' : 'theirs'}, so voters give ${good ? 'credit' : 'blame'} ${forMe > 0 ? 'your way' : 'to your side'}: ${midNum(base)} everywhere (already counted).`],
+      body: [good ? `Employers added ${jobs},000 jobs, ${ri(80, 160)},000 more than economists expected. Wages are up ${rnd(3.5, 5.2).toFixed(1)}% on the year.` : `Payrolls fell by ${-jobs},000; factory and trucking jobs led the decline. The ${pick(['Dow', 'S&P'])} dropped ${rnd(2, 4).toFixed(1)}% by lunch.`, iw ? `The White House belongs to neither party, so the ${good ? 'credit' : 'blame'} lands on ${whWho()}: no change in your races until you make something of it.` : `The White House is ${x.whMine ? 'yours' : 'theirs'}, so voters give ${good ? 'credit' : 'blame'} ${forMe > 0 ? 'your way' : 'to your side'}: ${midNum(base)} everywhere (already counted).`],
       stakes: 'The economy is the economy. How you talk about it is up to you.',
       choices: forMe > 0 ? [
         { t: 'Take the victory lap', s: `+0.5 everywhere${x.whMine ? `, ${x.pres} +1 approval` : ''}.`, go: fx => { fx.n(0.5); if (x.whMine) fx.appr(1); return 'Every candidate had a hard hat and a factory floor by Friday.'; } },

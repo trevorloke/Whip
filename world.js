@@ -729,7 +729,7 @@ function bindExec(draw) {
     S.career.capital -= cost; S.underUsed = S.career.bills; S.undermine = (S.undermine || 0) + 1;
     if (typeof wingHit === 'function') wingHit(k === 'recruit' ? -3 : -2);
     if (k === 'leak') { const d = ri(3, 6); P.approval = clamp(P.approval - d, 18, 82); S.mood -= 0.4; hist(P, IND() ? 'Battered by leaks from the independent caucus' : 'Battered by leaks from inside their own party'); toast(`The leaks land: ${presTitle()} −${d}.`); }
-    if (k === 'slow') { P.approval = clamp(P.approval - 4, 18, 82); for (const m of S.members) if (m.party === P.party && m.faction === P.faction) m.rel -= 1; hist(P, 'Agenda stalled by their own party in the Senate'); toast('The President\'s agenda grinds to a halt.'); }
+    if (k === 'slow') { P.approval = clamp(P.approval - 4, 18, 82); for (const m of S.members) if (m.party === P.party && m.faction === P.faction) m.rel -= 1; hist(P, IND() ? 'Agenda stalled by the independent caucus in the Senate' : 'Agenda stalled by their own party in the Senate'); toast('The President\'s agenda grinds to a halt.'); }
     if (k === 'recruit') { S.challenger = true; hist(P, IND() ? 'Drew a primary challenger recruited by the independent caucus' : 'Drew a primary challenger recruited by Senate leadership'); toast('A challenger is ready to take on the President.'); }
     sfx.gavel(); draw();
   });
