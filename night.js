@@ -66,7 +66,7 @@ function presSetup() {
 }
 // the parity path for an independent White House (CONTRACT §5.7): every career but a D/R one with the switch off, and only for a
 // new-path Alliance nominee (engine 'prim') or none at all, so an old-path nominee keeps the old formula end to end
-const PRES_INC_I_BASE = 31;   // the contract's base is 30 (≤ 34); 31 puts re-election inside both bands (≈ 39% at 50% approval, ≈ 60% at 56%)
+const PRES_INC_I_BASE = 30;   // the contract's base (≤ 34). With the primary bruise only for a contested race (indFinish): re-elected ≈ 36% at 50% approval, 60% at 56%, 5% at 40
 // an open year with an independent White House: the Alliance nominee is the Vice President or a cabinet member (indie.js ref)
 function presHeirI(T) { return !!(T && T.ref && (T.ref.type === 'vp' || T.ref.type === 'cab') && !T.incumbent); }
 function presNewI() { const N = S.nominees || {}; return S.president.party === 'I' && (IND() || PARITY()) && (!N.I || N.I.engine === 'prim'); }

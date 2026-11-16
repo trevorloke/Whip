@@ -292,8 +292,9 @@ neither party can organize without you.
   minority tools and the floor votes your partner owes you.
 - **The Caucus Room.** Between bills: the roster, trust and Lean, courting a
   defector, banking recruits, a reach-out tour, changing banner, or **the
-  Jeffords** (switching partner mid-Congress). Parties will try to poach your
-  members, and party senators sometimes want in.
+  Jeffords** (switching partner mid-Congress; taking the gavel from the
+  partner you organized with hands back the package it paid you). Parties will
+  try to poach your members, and party senators sometimes want in.
 - **Elections.** The party primaries are theirs (you can only meddle). Your
   own seats go through **Filing Day** and real Independent primaries (see
   [Filing Day and Independent Senate primaries](#filing-day-and-independent-senate-primaries)).
@@ -303,7 +304,9 @@ neither party can organize without you.
   and convention (see [Independent primaries](#independent-primaries)) and
   fight a **Third Force** fall campaign for the 15% debate line, with a
   possible cabinet offer to withdraw and an **Elector Gambit** if nobody
-  reaches 270. With your caucus in the room, voters turn harder on whichever
+  reaches 270. When the ticket is your caucus's own President running again,
+  it is a re-election campaign instead: no fade, no squeeze, always on the
+  debate stage, and October puts the record on trial. With your caucus in the room, voters turn harder on whichever
   party gets within reach of running the Senate alone. The verdict is about
   caucus size and the balance of power. Lose every seat (unless the President
   is yours) and the career is over.
@@ -349,8 +352,9 @@ blocs ("D 46 · R 47 · I 7") and who organizes.
   then pick a partner by a fixed rule (their lean, who courted them, trust).
   An Independent-led Senate is rare; in one you play the junior partner (a
   Contract slot every third bill, +1 action) or the opposition. Bills the
-  independents bring to the floor have their own whip, the independents'
-  chair.
+  independents bring to the floor, the budget included, have their own whip,
+  the independents' chair; as the junior partner you can back their budget as
+  written.
 
 ## Independent primaries
 
@@ -393,7 +397,8 @@ blocs ("D 46 · R 47 · I 7") and who organizes.
   follow its label, its Vice President breaks ties by stance, and once per
   Congress the White House sends up **the President's bill**.
 - **A unity cabinet** of independents and both parties, and confirmations
-  where each party whips its own nominees.
+  where each party whips its own nominees. An independent President's
+  Supreme Court nominee is no party's pick: senators weigh it on the merits.
 - **Seen from a party career.** Wing battles add **Cut a deal with the
   independent White House** (fewer vetoes on your bills this Congress, and the
   independents trust you more). The midterm penalty lands on independent

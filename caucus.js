@@ -74,7 +74,7 @@ const CAU_OFFERS = {
   gavel: [2, (p, B) => { const m = cauOfferTarget(p, B, 'gavel'); return `A subcommittee gavel for ${m ? `Sen. ${m.name}` : 'one of your senators'}`; }, 'any', 'settle', () => 'a gavel'],
   standdown: [3, (p, B) => { const m = cauOfferTarget(p, B, 'sd'), x = B.cauX && B.cauX[p]; return `No ${PARTY[p].name} nominee against ${m ? `Sen. ${m.name} (${m.state})` : 'your senator'} in ${x ? x.y : 'the next election'}`; }, 'any', 'settle', p => `a ${PARTY[p].short.replace(/s$/, '')} stand-aside`],
 };
-const CAU_STRAT = { national: 'A national campaign', region0: 'Win the West', region1: 'Win the heartland', region2: 'Win the East', deny: 'Deny them the swing states', five: 'Five percent or bust' };
+const CAU_STRAT = { national: 'A national campaign', region0: 'Win the West', region1: 'Win the heartland', region2: 'Win the East', deny: 'Deny them the swing states', five: 'Five percent or bust', record: 'Run on the record' };
 
 /* ---------------- small helpers ---------------- */
 const cauForce = k => IND() && typeof window !== 'undefined' && window.CAU_FORCE && window.CAU_FORCE[k] != null ? window.CAU_FORCE[k] : null;
@@ -199,6 +199,8 @@ function cauOrgDefault() {
   if (seats('D') !== seats('R')) return seats('D') > seats('R') ? 'D' : 'R';
   return floorPartyWith(null);
 }
+// the package p paid at this Congress's Organizing Resolution, while p is still your partner (a Jeffords into the lead over p repays it)
+function cauRepay(p) { const C = S.cau, x = C && C.pkg; return x && x.k === cauK() && x.p === p && C.partner === p && !C.lead ? x : null; }
 function cauPkgText(k) { if (k.lead) return `+${k.cap} capital · you lead the Senate yourself`; const parts = []; if (k.cap) parts.push(`+${k.cap} capital`); if (k.gavels) parts.push(`${k.gavels} gavel${k.gavels > 1 ? 's' : ''} (+${k.gavels} action${k.gavels > 1 ? 's' : ''} a bill while they run the floor)`); if (k.floor) parts.push('a floor vote on one of your bills'); return parts.join(' · '); }
 // the Path to the Gavel for one partner: why a Gavel Bargain with p is not on the table yet
 function cauLeadWhyNot(p) {
@@ -237,12 +239,12 @@ function cauOrganize(next, opts = {}) {
   // the Gavel Bargain: always on the card list; disabled with the Path to the Gavel until it is legal and the partner says yes
   const leadCard = p => {
     const legal = indLeadLegal(p), sc = legal ? cauLeadScore(p) : null, cur = !!C.lead && C.partner === p, P = PARTY[p].short;
-    const keep = !sw && cur, cost = keep ? 0 : sw ? 3 : 2, poor = c.capital < cost;
+    const rp = sw ? cauRepay(p) : null, keep = !sw && cur, cost = keep ? 0 : sw ? 3 + (rp ? rp.cap : 0) : 2, poor = c.capital < cost;
     const dis = !legal || sc < 0 || (sw && (blocked || cur)) || poor;
     const body = !legal ? `<small class="cau-path">🔒 Path to the Gavel: ${cauLeadWhyNot(p)}</small>`
       : `<small>An independent Majority Leader, with the ${P} as your junior partner: they get every third docket slot (the Contract) · ${seats(p)} + ${seats('I')} = ${seats(p) + seats('I')} votes</small><span class="cau-scores">${cauScoreHTML(p)}</span>`
         + (sc < 0 ? `<small class="cau-bad">The ${P} say no: the score is under 0. Raise their trust or wait for a better Senate.</small>`
-          : `<small class="cau-dim">${keep ? 'Keep the gavel: no new cost' : `${cost} capital · ${P} trust +0.5, ${PARTY[other2(p)].short} −1 · legacy +15`}${poor ? ' · <b>you can\'t afford it</b>' : ''}</small>`);
+          : `<small class="cau-dim">${keep ? 'Keep the gavel: no new cost' : rp ? `${cost} capital (3, plus the ${rp.cap} the ${P} paid you this Congress${rp.floor ? ' and the floor vote they owe you' : ''}) · ${P} trust −2: you take the gavel from your own partner · legacy +15` : `${cost} capital · ${P} trust +0.5, ${PARTY[other2(p)].short} −1 · legacy +15`}${poor ? ' · <b>you can\'t afford it</b>' : ''}</small>`);
     return `<button class="cau-card cau-org cau-lead ${p.toLowerCase()}" data-choice="org:lead:${p}" ${dis ? 'disabled' : ''}><span class="cau-card-h"><b>Lead the Senate, with the ${P}</b>${cur ? ' <small>your gavel now</small>' : ''}</span>${body}</button>`;
   };
   const before = floorParty(), path = indGavelPath(), ofD = orgOutcome('D', false).floor;
@@ -260,15 +262,18 @@ function cauOrganize(next, opts = {}) {
   const choose = o => {
     const isLead = o.startsWith('lead:'), lp = isLead ? o.slice(5) : null, old = C.partner || null, wasLead = !!C.lead;
     const partner = isLead ? lp : o === 'none' ? null : o;
+    let repaid = null;
     if (isLead) {
       if ((lp !== 'D' && lp !== 'R') || !indLeadLegal(lp) || cauLeadScore(lp) < 0) return;
-      const keep = !sw && wasLead && old === lp, cost = keep ? 0 : sw ? 3 : 2;
+      const rp = sw ? cauRepay(lp) : null, keep = !sw && wasLead && old === lp, cost = keep ? 0 : sw ? 3 + (rp ? rp.cap : 0) : 2;
       if ((sw && (blocked || (wasLead && old === lp))) || c.capital < cost) return;
       c.capital -= cost;
       if (sw && old && old !== lp) cauTrust(old, -3);
-      C.partner = lp; C.lead = true; C.leadK = k;
+      if (rp) { C.floorOwed = Math.max(0, (C.floorOwed || 0) - rp.floor); C.pkg = null; repaid = rp; }   // a Jeffords into the lead over your own partner hands back its package
+      C.partner = lp; C.lead = true; C.leadK = k; C.pkg = null;
       C.pact = { p: lp, skipped: 0, paid: 0, owed: 0, k, crackedK: -1, burned: false, at: c.bills };
-      if (!keep) { cauTrust(lp, 0.5); if (!(sw && old === other2(lp))) cauTrust(other2(lp), -1); cauLean(3 * cauToward(lp)); }   // a Jeffords already cost the old partner 3
+      if (repaid) cauTrust(lp, -2);   // the other party and your lean already moved when you took their package
+      else if (!keep) { cauTrust(lp, 0.5); if (!(sw && old === other2(lp))) cauTrust(other2(lp), -1); cauLean(3 * cauToward(lp)); }   // a Jeffords already cost the old partner 3
       C.gavels = 0; C.orgK = k; if (sw) C.jeffK = k;
     } else if (sw) {
       if (blocked || (partner === old && !wasLead) || c.capital < 3) return;
@@ -277,13 +282,14 @@ function cauOrganize(next, opts = {}) {
       if (partner) { cauTrust(partner, 1); cauLean(3 * cauToward(partner)); }
       else cauLean(-clamp(C.lean, -3, 3));
       C.lead = false; C.pact = null;
-      C.partner = partner; C.gavels = partner ? cauPackage(partner).gavels : 0; C.jeffK = k; C.orgK = k;
+      C.partner = partner; C.pkg = null; C.gavels = partner ? cauPackage(partner).gavels : 0; C.jeffK = k; C.orgK = k;
     } else {
       C.lead = false; C.pact = null;
-      C.partner = partner;
+      C.partner = partner; C.pkg = null;
       if (partner) {
         const pkg = cauPackage(partner);
         c.capital += pkg.cap; C.gavels = pkg.gavels; C.floorOwed += pkg.floor;
+        if (!pkg.lead && !pkg.alone) C.pkg = { k, p: partner, cap: pkg.cap, floor: pkg.floor };   // a Jeffords into the lead over this partner repays it
         cauTrust(partner, 1); cauTrust(other2(partner), -1); cauLean(3 * cauToward(partner));
       } else { C.gavels = 0; cauTrust('D', 0.5); cauTrust('R', 0.5); S.mood += 0.5; }
       C.orgK = k;
@@ -291,7 +297,7 @@ function cauOrganize(next, opts = {}) {
     cauOrgRefresh();
     const fp = floorParty(), flipped = fp !== before;
     if (fp === 'I' && C.ileadK !== k) { C.ilead = (C.ilead || 0) + 1; C.ileadK = k; }   // Congresses the independents have led
-    if (flipped && caucusDecides()) { unlock('cau_org'); addLegacy(10); }
+    if (flipped && caucusDecides() && !repaid) { unlock('cau_org'); addLegacy(10); }
     sfx.gavel();
     const paper = (fpOpts, btn) => { showModal(`${frontPage(fpOpts)}<div class="choices"><button class="btn primary big adv" id="cau-ok">${btn}</button></div>`); $('#cau-ok').onclick = () => next(); };
     const date = sw ? `${season(S.career.bills + 1)} ${yr} · Extra` : `January ${yr} · The new Congress`;
@@ -300,7 +306,7 @@ function cauOrganize(next, opts = {}) {
       const P = C.partner ? PARTY[C.partner].short : null;
       return paper({ headline: 'INDEPENDENTS TAKE THE SENATE', sub: `${C.lead ? `A Gavel Bargain with the ${P}` : P ? `The ${P} caucus with the independents, who out-seat them` : 'The biggest bloc in the chamber'}: an independent Majority Leader. ${blocLine()}.`, mood: 'dawn', date,
         body: [`WASHINGTON — For the first time in living memory, neither party holds the gavel. The ${seats('I')}-member independent caucus will set the calendar, write the budget and chair the committees${P ? `, with the ${P} as junior partners who get every third bill on the docket` : ''}.`,
-          `"We didn't ask for the keys to run the place like a party," said the caucus chair. "We asked for them so nobody else could." ${PARTY[indOpp()].short} leaders called it "a hostage situation with a seating chart."`] }, 'Take the gavel');
+          `"We didn't ask for the keys to run the place like a party," said the caucus chair. "We asked for them so nobody else could." ${PARTY[indOpp()].name} leaders called it "a hostage situation with a seating chart."`] }, 'Take the gavel');
     }
     if (sw && flipped) {
       unlock('cau_jeffords'); addLegacy(12);
@@ -308,7 +314,7 @@ function cauOrganize(next, opts = {}) {
       return paper({ headline: `INDEPENDENTS HAND THE SENATE TO THE ${PARTY[fp].short.toUpperCase()}`, sub: `The caucus walks across the aisle mid-Congress. The ${PARTY[fp].short} take the gavels with ${n} votes.`, mood: 'storm', date,
         body: before === 'I' ? [`WASHINGTON — The independent caucus gave up its own gavel this morning. The ${PARTY[fp].short} will run the floor for the rest of the Congress.`]
           : [`WASHINGTON — The committee nameplates were being unscrewed before the vote was even gaveled closed. The ${PARTY[before].short}, who ran the floor this morning, will spend the rest of the Congress in the minority because ${seats('I')} independents changed their minds.`,
-            `"We didn't leave them. They left the middle of the country," said the caucus chair. ${PARTY[before].short} leaders called it "the most cynical act in the history of the Senate" and promised the independents would pay for it at the ballot box.`] }, 'The Senate changes hands');
+            `"We didn't leave them. They left the middle of the country," said the caucus chair. ${PARTY[before].name} leaders called it "the most cynical act in the history of the Senate" and promised the independents would pay for it at the ballot box.`] }, 'The Senate changes hands');
     }
     toast(fp === 'I' ? (C.lead ? `You keep the gavel, with the ${PARTY[C.partner].short} as junior partners.` : 'Your caucus runs the floor.') : partner ? `The independents caucus with the ${PARTY[partner].short}. The ${PARTY[fp].short} run the floor.` : `The independents stand alone. The ${PARTY[fp].short} run the floor.`);
     if (!opts.first && flipped) {
@@ -1308,13 +1314,17 @@ function cauRunningMate(next) {
   $('#modal-card').querySelectorAll('[data-choice^="vp:"]').forEach(b => b.onclick = () => choose(+b.dataset.choice.slice(3)));
   $('#cau-vp-go').onclick = () => choose(first);
 }
+// the ticket is a sitting independent President running again (new path): a top-two candidate, not a third party
+function cauTicketInc(I) { const P = S.president; return !!(I && I.incumbent && I.engine === 'prim' && P.party === 'I' && I.name === P.name && P.terms < 2 && typeof presNewI === 'function' && presNewI() && typeof presIncI === 'function'); }
+// the ticket's national share before the fall campaign: night.js presSetup owns a running President's (presIncI); others carry it
+function cauTicketPct(I) { return !I ? 0 : cauTicketInc(I) ? +presIncI(S.president, I).strength : +I.strength || 0; }
 function cauPresBoxHTML() {
   if (!IND() || !S.cau) return '';
   const E = S.election || {}, I = S.nominees && S.nominees.I;
   if (!I || !I.yours) return `<div class="presbox cau-presbox"><b>🗽 No caucus ticket this year.</b> <small class="cau-dim">${S.cau.presEnvD && S.cau.presEnvD.y === E.year ? `Your endorsement is worth about ${Math.abs(S.cau.presEnvD.v)} points to the ${PARTY[S.cau.presEnvD.v > 0 ? 'D' : 'R'].short}.` : 'Your caucus sits out the presidential race.'}</small></div>`;
-  const nat = (+I.strength || 0) + cauThirdNat(I);
+  const nat = cauTicketPct(I) + cauThirdNat(I);
   return `<div class="presbox cau-presbox"><div class="cau-tk">${I.p ? `<span class="cp">${portrait(I.p)}</span>` : ''}<span><b>${I.name}</b> ${indPill(I.label)}${I.vp ? ` <small>with ${I.vp.name}</small>` : ''}<br>
-    <small>Your caucus's ticket · polling ~<b>${nat.toFixed(1)}%</b> nationally · ${nat >= 15 ? '<b class="cau-good">over the 15% debate line</b>' : `${(15 - nat).toFixed(1)} points under the 15% line`}</small></span></div>
+    <small>${cauTicketInc(I) ? `Your caucus's President, running for a second term` : `Your caucus's ticket`} · polling ~<b>${nat.toFixed(1)}%</b> nationally · ${cauTicketInc(I) ? '<b class="cau-good">on the debate stage as the incumbent</b>' : nat >= 15 ? '<b class="cau-good">over the 15% debate line</b>' : `${(15 - nat).toFixed(1)} points under the 15% line`}</small></span></div>
     <div class="race"><span>📣 <b>Ticket money</b><br><small class="cau-dim">Bulk spending for the ticket: the first unit ≈ +0.7 points nationally, less after.</small></span><span class="cashctl"><button class="btn" data-pc="-1" ${E.presCash ? '' : 'disabled'}>−</button><span>${money(E.presCash || 0)}</span><button class="btn" data-pc="1" ${(E.cash || 0) < 1 ? 'disabled' : ''}>+</button></span></div></div>`;
 }
 function cauFallCampaign(done) {
@@ -1323,45 +1333,48 @@ function cauFallCampaign(done) {
   E.cauCamp = E.cauCamp || { nat: 0, stateAdj: {}, fade: 0, strategy: null };
   const cp = E.cauCamp, rec = { year, strategy: null, debate: null, october: null, pledge: null, pct: null, lines: [] };
   let fadeMul = 1;
-  const K = s => `Third Force · ${s} · ${year}`;
+  const inc = cauTicketInc(I), pct = () => cauTicketPct(I) + cp.nat;   // a sitting President is no third party: no fade, no squeeze
+  const K = s => `${inc ? 'The Re-election' : 'Third Force'} · ${s} · ${year}`;
   const screen = (k, h2, body, choices, onPick) => {
     cauScreen(K(k), h2, body, choices.map(([key, t, s]) => `<button class="btn" data-choice="${key}">${t}<small>${s}</small></button>`).join(''), `<button class="btn primary big adv" id="cau-fc-go">${choices[0][1]}</button>`);
     $('#modal-card').querySelectorAll('[data-choice]').forEach(b => b.onclick = () => { sfx.click(); onPick(b.dataset.choice); });
     $('#cau-fc-go').onclick = () => { sfx.click(); onPick(choices[0][0]); };
   };
-  const poll = () => { const p = indThreeWay(N.I); return `<div class="cau-poll"><span style="color:${PARTY.D.color}">${N.D ? N.D.name : 'Democrat'} (D) <b>${p.D}%</b></span><span style="color:${PARTY.R.color}">${N.R ? N.R.name : 'Republican'} (R) <b>${p.R}%</b></span><span style="color:${PARTY.I.color}">${I.name} (I) <b>${(+p.I).toFixed(1)}%</b></span><span class="cau-dim">undecided ${p.und}%</span></div>`; };
+  const poll = () => { const p = indThreeWay({ ...N.I, strength: cauTicketPct(N.I) }); return `<div class="cau-poll"><span style="color:${PARTY.D.color}">${N.D ? N.D.name : 'Democrat'} (D) <b>${p.D}%</b></span><span style="color:${PARTY.R.color}">${N.R ? N.R.name : 'Republican'} (R) <b>${p.R}%</b></span><span style="color:${PARTY.I.color}">${I.name} (I) <b>${(+p.I).toFixed(1)}%</b></span><span class="cau-dim">undecided ${p.und}%</span></div>`; };
   const finish = () => {
-    cp.fade = +(S.nominees && S.nominees.I ? S.nominees.I.strength * rnd(0.15, 0.3) * fadeMul : 0).toFixed(1);
+    cp.fade = +(S.nominees && S.nominees.I && !inc ? S.nominees.I.strength * rnd(0.15, 0.3) * fadeMul : 0).toFixed(1);
     if (cp.fade) rec.lines.push(`The squeeze: as November nears, ${cp.fade} points drift home to the two parties.`);
     S.lastCauCampaign = rec;
     done();
   };
   // 1. Labor Day
-  screen('Labor Day', `${I.name}'s fall campaign`, `<p>Labor Day: the three-way race begins. Third candidates fade in the fall as voters "come home"; your job is to slow the fade and put the ticket where it can matter.</p>${poll()}`, [
+  screen('Labor Day', `${I.name}'s fall campaign`, inc ? `<p>Labor Day: ${presTitle()} seeks a second term without either party. A sitting President is no spoiler: both parties are running against the record, and your job is to defend it state by state.</p>${poll()}`
+    : `<p>Labor Day: the three-way race begins. Third candidates fade in the fall as voters "come home"; your job is to slow the fade and put the ticket where it can matter.</p>${poll()}`, [
     ['camp:national', 'Run a national campaign', 'Every state, every network: +1.5 nationally'],
     ['camp:region:0', 'Win the West', '+4 in the western states, −0.5 elsewhere'],
     ['camp:region:1', 'Win the heartland', '+4 in the middle of the country, −0.5 elsewhere'],
     ['camp:region:2', 'Win the East', '+4 in the eastern states, −0.5 elsewhere'],
     ['camp:deny', 'Deny them the swing states', '+3 in the 8 closest states: maybe nobody reaches 270'],
-    ['camp:five', 'Five percent or bust', '+1 nationally, and the fall fade is halved'],
+    inc ? ['camp:record', 'Run on the record', `+1 nationally${S.president.approval >= 50 ? ', +0.5 more at ' + S.president.approval + '% approval' : ''}`] : ['camp:five', 'Five percent or bust', '+1 nationally, and the fall fade is halved'],
   ], k => {
     const st = Object.keys(EV);
     if (k === 'camp:national') { cp.nat += 1.5; cp.strategy = 'national'; }
     else if (k.startsWith('camp:region:')) { const r = +k.slice(12); for (const c of st) cp.stateAdj[c] = (cp.stateAdj[c] || 0) + (Math.min(2, Math.floor(colOf(c) / 4)) === r ? 4 : -0.5); cp.strategy = 'region' + r; }
     else if (k === 'camp:deny') { const pm = presProjection().margins; st.slice().sort((a, b) => Math.abs(pm[a]) - Math.abs(pm[b])).slice(0, 8).forEach(c => cp.stateAdj[c] = (cp.stateAdj[c] || 0) + 3); cp.strategy = 'deny'; }
+    else if (k === 'camp:record') { cp.nat += S.president.approval >= 50 ? 1.5 : 1; cp.strategy = 'record'; }
     else { cp.nat += 1; fadeMul *= 0.5; cp.strategy = 'five'; }
     rec.strategy = CAU_STRAT[cp.strategy] || cp.strategy; rec.lines.push(`Labor Day: ${rec.strategy}.`);
     debates();
   });
   // 2. the debates
   const debates = () => {
-    const strong = (+I.strength || 0) + cp.nat >= 15;
-    if (strong) screen('The debates', 'On the stage', `<p>${I.name} polls ${((+I.strength || 0) + cp.nat).toFixed(1)}%: over the commission's <b>15% line</b>. Three podiums, ninety minutes, sixty million viewers.</p>`, [
+    const strong = inc || pct() >= 15;   // the incumbent is always on the stage
+    if (strong) screen('The debates', 'On the stage', inc ? `<p>${presTitle()} takes the incumbent's podium, polling ${pct().toFixed(1)}%. Both challengers came to run against the record. Ninety minutes, sixty million viewers.</p>` : `<p>${I.name} polls ${pct().toFixed(1)}%: over the commission's <b>15% line</b>. Three podiums, ninety minutes, sixty million viewers.</p>`, [
       ['deb:attack', 'Go after both of them', 'Swing big: anywhere from −2 to +4'],
       ['deb:wonk', 'Know every number', 'The policy night: anywhere from −2 to +4'],
       ['deb:pox', '"A pox on both their houses"', 'The outsider pitch: anywhere from −2 to +4'],
     ], k => { const d = +clamp(1 + gauss() * 2, -2, 4).toFixed(1); cp.nat += d; rec.debate = `${k.slice(4)} (${cauSigned(d)})`; rec.lines.push(`The debates: ${d >= 2 ? 'a breakout night' : d >= 0 ? 'a solid night' : 'a rough night'} (${cauSigned(d)} nationally).`); october(); });
-    else screen('The debates', 'Locked out', `<p>${I.name} polls ${((+I.strength || 0) + cp.nat).toFixed(1)}%: under the commission's <b>15% line</b>. No podium.</p>`, [
+    else screen('The debates', 'Locked out', `<p>${I.name} polls ${pct().toFixed(1)}%: under the commission's <b>15% line</b>. No podium.</p>`, [
       ['deb:town', 'Hold a counter-town-hall', 'A sure thing: +0.5'],
       ['deb:crash', 'Crash the debate hall', '40%: the stunt of the year (+2); otherwise it backfires (−1)'],
     ], k => { const d = k === 'deb:town' ? 0.5 : Math.random() < 0.4 ? 2 : -1; cp.nat += d; rec.debate = `${k.slice(4)} (${cauSigned(d)})`; rec.lines.push(`Locked out of the debates: ${k === 'deb:town' ? 'a town hall' : d > 0 ? 'the crash works' : 'the crash backfires'} (${cauSigned(d)}).`); october(); });
@@ -1382,6 +1395,10 @@ function cauFallCampaign(done) {
       }
       S.mood += 1; rec.october = 'refused the cabinet offer'; rec.lines.push(`October: ${I.name} refuses a cabinet seat to stay in the race.`); pledge();
     });
+    else if (inc) screen('October', 'The record', `<p>Both parties' closing ads are about one thing: <b>${lastName(I.p || I)}'s four years</b>. Nobody calls the President a spoiler; they call the President a failure. Answer them.</p>`, [
+      ['oct:rose', 'The Rose Garden', 'Stay presidential: +0.5 nationally'],
+      ['oct:tour', 'Barnstorm the swing states', '+2 in the 8 closest states'],
+    ], k => { if (k === 'oct:rose') cp.nat += 0.5; else { const pm = presProjection().margins; Object.keys(EV).sort((a, b) => Math.abs(pm[a]) - Math.abs(pm[b])).slice(0, 8).forEach(c => cp.stateAdj[c] = (cp.stateAdj[c] || 0) + 2); } rec.october = k === 'oct:rose' ? 'stayed presidential' : 'barnstormed the swing states'; rec.lines.push(`October: the record on trial. The President ${rec.october}.`); pledge(); });
     else screen('October', 'The squeeze', `<p>The ads start: <b>"A vote for ${lastName(I.p || I)} is a vote for the other guy."</b> Both parties are telling your voters to come home.</p>`, [
       ['oct:five', 'Hold the five percent', 'The fall fade is halved'],
       ['oct:broke', 'Go for broke', '+1 nationally, but the fade runs 20% harder'],
@@ -1440,7 +1457,7 @@ function cauPathRaces() {
 function cauPulseHTML() {
   if (!IND() || !S.cau) return '';
   const C = S.cau, o = cauOutlook(), fp = floorParty(), N = S.nominees, presYr = isPresYear(nextElectionK());
-  const tk = !presYr ? '' : N && N.I && N.I.yours ? `<p>🗳 Your ticket: <b>${N.I.name}</b> ${indPill(N.I.label)}${N.I.strength != null ? ` at ~${(+N.I.strength || 0).toFixed(1)}% nationally` : ''}${N.I.vp ? `, with ${N.I.vp.name}` : ''}.</p>` : '<p class="cau-dim">🗳 No caucus ticket yet: the Ballot Alliance primaries decide it.</p>';
+  const tk = !presYr ? '' : N && N.I && N.I.yours ? `<p>🗳 Your ticket: <b>${N.I.name}</b> ${indPill(N.I.label)}${N.I.strength != null ? ` at ~${cauTicketPct(N.I).toFixed(1)}% nationally` : ''}${N.I.vp ? `, with ${N.I.vp.name}` : ''}.</p>` : '<p class="cau-dim">🗳 No caucus ticket yet: the Ballot Alliance primaries decide it.</p>';
   return `<div class="presbox cau-pulse"><b>🗽 The Independent caucus</b>
     <p>${seats('I')} senator${seats('I') === 1 ? '' : 's'} under the ${indPill(C.label)} banner · ${blocLine()} · partner: ${C.partner ? PARTY[C.partner].short : 'no one'} · ${fp === 'I' ? '<b class="cau-key">your caucus runs the floor</b>' : `the ${PARTY[fp].short} run the floor`}${kingmakerNow() ? ' · <b class="cau-key">you hold the balance</b>' : ''}${C.pact ? ` · <span class="cau-pact">Contract</span> kept ${C.pact.paid || 0}/${(C.pact.paid || 0) + (C.pact.skipped || 0)}` : ''}</p>
     <p class="cau-path">🔨 ${cauPathLine()}<br><small class="cau-dim">${cauPathRaces()}</small></p>

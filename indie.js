@@ -414,7 +414,7 @@ function primaryFieldI(withIncumbent, plan) {
   return field;
 }
 // the heir of an independent White House starts here (balance knob, CONTRACT §9: the I-WH open-year successor target)
-const IND_HEIR_BASE = 21;
+const IND_HEIR_BASE = 19;   // 21 put the heir at ~33% once the nominee kept the whole convention bounce (IND_BOUNCE_K 1)
 // how much of the Alliance convention's bounce a non-incumbent nominee keeps (the contract's 0.5 left the I career's nominee at 3% wins; §9 band 5–12%)
 const IND_BOUNCE_K = 1;
 // a non-incumbent Alliance nominee's national share (the single owner of it; the incumbent's is presSetup's)
@@ -438,7 +438,7 @@ function indFinish(R, state, n, year) {
   let line, major = null;
   if (N.incumbent) {
     // presSetup owns a running independent President's strength; the primary leaves its bruise in adj (16: the old fallback)
-    N.adj = R ? -1.5 : 0; N.strength = 16;
+    N.adj = R && N.contested ? -1.5 : 0; N.strength = 16;   // only a contested race (no clinch) bruises, as for D/R
     line = !R ? `<b>Independents:</b> ${presTitle()} was renominated without opposition and carries the Alliance line again.`
       : N.contested ? `<b>Independents:</b> ${presTitle()} leads the Alliance revolt's count with ${primN(N.del)} delegates${N.runnerUp ? ` to ${N.runnerUp.name}'s ${primN(N.runnerUp.del)}` : ''}, short of the ${primN(N.need)} needed: the at-large officers will decide on the convention floor.`
       : `<b>Independents:</b> ${presTitle()} beat back an Alliance revolt, ${primN(N.del)} delegates to ${N.runnerUp ? `${N.runnerUp.name}'s ${primN(N.runnerUp.del)}` : 'none'}.`;

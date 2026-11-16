@@ -514,7 +514,7 @@ function primariesModal(done) {
       const prev = myCand(); if (prev && hqPlan && R.plans[prev.name] === hqPlan) delete R.plans[prev.name];
       endorsed = f.name; endorsedHist.push(f.name); note = ''; hqPlan = null; R.poll = primaryPoll(R);
       // the caucus's donors (parity path): an Alliance campaign the caucus runs can always afford three ad buys
-      if (NEWI && R.party === 'I' && f.cash < 9) { toast(`The caucus's donors top up ${lastName(f.p)}'s war chest: +$${9 - f.cash}M.`); f.cash = 9; }
+      if (NEWI && R.party === 'I' && f.cash < 9 && !f.toppedUp) { toast(`The caucus's donors top up ${lastName(f.p)}'s war chest: +$${9 - f.cash}M.`); f.cash = 9; f.toppedUp = true; } // once per candidate
       hist(f.p, IND() && NEWI ? 'Endorsed for President by the independent caucus chair, who took over the campaign\'s strategy' : IND() ? 'Endorsed for President by the Independent caucus, whose senators lent the campaign their networks' : `Endorsed for President by the ${PARTY[mine].name} whip, who took over the campaign's strategy`);
       sfx.up(); draw();
     };

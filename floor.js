@@ -32,7 +32,7 @@ function flForced() {
   if (S.pendingAUMF) out.push({ name: `War vote: Authorization for Use of Military Force in ${S.pendingAUMF}`, why: `${presTitle()} asked Congress for a war vote`, aim: IND() ? flAimI(FL_AUMF_FX, S.president.party) : 'pass' });
   if (S.docket) out.push({ name: S.docket.name, why: S.docket.forced ? 'a bipartisan bloc forced it onto the floor' : 'already on the calendar', aim: IND() ? flAimI(S.docket.tpl[2], billParty(S.docket.tpl[0]) || (S.docket.forced ? floorParty() : 'I')) : 'pass' });
   if (flWhDue()) { const t = S.whBill.tpl, fx = t[t.length > 3 ? 3 : 2]; out.push({ name: t[0], why: 'the White House sent it up', aim: IND() ? flAimI(fx, S.president.party) : typeof orgAim === 'function' ? orgAim(fx) : 'pass', wh: true }); }
-  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: IND() ? flNomination().aim : (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
+  if (flNomDue()) out.push({ name: `Supreme Court confirmation: Judge ${S.nominee.name}`, why: 'a seat on the Court is open, and nominations jump the line', aim: IND() || (PARITY() && S.nominee.party === 'I') ? flNomination().aim : (S.nominee.party || S.side) === S.side ? 'pass' : 'kill' });
   return out;
 }
 function forcedNext(n) {
@@ -148,10 +148,12 @@ HOOKS.interlude.push(() => {
 function flNomination() {
   const N = S.nominee, p = N.party || S.side, pr = p === 'I' && (IND() || PARITY()) && S.president.party === 'I' ? presVec() : PARTY[p === 'I' ? other(S.side) : p].prior, fx = {}, mod = 1 / (1 + (N.tries || 0)), mine = p === S.side;
   TAGS.slice().sort((a, b) => Math.abs(pr[b] || 0) - Math.abs(pr[a] || 0)).slice(0, 3).forEach(t => fx[t] = Math.round((pr[t] || 0) * 2 * mod) || Math.sign(pr[t] || 0));
+  const iNom = !IND() && PARITY() && p === 'I' && typeof orgAim === 'function'; // an independent President's nominee: an independent-owned vote, aimed by fit
   return { tpl: [`Confirmation of Judge ${N.name}`, mine ? `${presTitle()}'s nominee for the Supreme Court. No filibuster: a simple majority confirms. The other side calls the nominee an extremist.`
     : IND() ? `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${floorWho()}. No filibuster for judges: a simple majority confirms. Both parties will bid for your caucus's votes.`
+    : iNom ? `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${floorWho()}. No filibuster for judges: a simple majority confirms. An independent pick: neither party whips it, and your caucus weighs the nominee on the merits.`
     : `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARITY() ? floorWho() : `${PARTY[other(S.side)].name} majority`}. No filibuster for judges: a simple majority confirms. Your caucus calls the nominee an extremist; peel off enough of theirs and the seat stays open.`, fx],
-    nomination: true, aim: IND() ? flAimI(fx, p) : (mine ? 'pass' : 'kill'), by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '' };
+    nomination: true, aim: IND() ? flAimI(fx, p) : iNom ? orgAim(fx) : (mine ? 'pass' : 'kill'), by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '', ...(iNom ? { ownP: 'I' } : {}) };
 }
 // old saves call this
 function billPool() { return AGENDA[S.side].concat(AGENDA.both).filter(b => !(S.history || []).slice(-8).some(h => h.name === b[0])); }

@@ -206,7 +206,7 @@ EVENTS.push(
     ] };
   } },
   // the President posts in the small hours
-  { id: 'evt_presstorm', w: 0.8, make: () => {
+  { id: 'evt_presstorm', w: 0.8, cond: () => !(evtIWH() && !IND() && presStance(S.bill) > 0), make: () => { // an independent President doesn't attack a bill it backs
     const P = S.president, yours = vpYours(), ap = P.approval, hour = pick(['1:47', '2:12', '3:05', '4:40']), B = S.bill;
     if (yours) {
       const hot = ap >= 50, loyal = evtMine().filter(m => T(m, 'loyal'));
