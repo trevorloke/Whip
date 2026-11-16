@@ -120,10 +120,12 @@ function platformHTML() {
 function adoptPromises() {
   const E = S.election, plat = E.platform || [];
   if (!plat.length) return '';
-  if (IND() ? !caucusDecides() : !isMajority()) { S.promises = []; return IND() ? `<p>🤞 Your caucus doesn't hold the balance of power, so nobody will hold you to your platform.</p>` : `<p>🤞 Your party lost the Senate, so nobody will hold you to your platform.</p>`; }
+  // judged when you run the floor, govern as the junior partner, or (I career) hold the balance
+  const judged = IND() ? isMajority() || inCoalition() || caucusDecides() : PARITY() ? isMajority() || inCoalition() : isMajority();
+  if (!judged) { S.promises = []; return IND() ? `<p>🤞 Your caucus doesn't hold the balance of power, so nobody will hold you to your platform.</p>` : `<p>🤞 Your party lost the Senate, so nobody will hold you to your platform.</p>`; }
   S.promises = plat.map(id => ({ id, due: S.career.bills + 6, done: false, count: 0, broken: false }));
   S.termBudgets = { passed: 0, total: 0 };
-  return `<p>🤞 <b>${IND() ? 'You hold the balance, so now you have to deliver:' : 'You won, so now you have to deliver:'}</b> ${plat.map(id => promiseOf(id)[1]).join(', ')}. You have six bills.</p>`;
+  return `<p>🤞 <b>${IND() ? (isMajority() ? 'Your caucus runs the Senate, so now you have to deliver:' : 'You hold the balance, so now you have to deliver:') : PARITY() && !isMajority() ? 'Your party governs as the junior partner, so now you have to deliver:' : 'You won, so now you have to deliver:'}</b> ${plat.map(id => promiseOf(id)[1]).join(', ')}. You have six bills.</p>`;
 }
 // a bill just finished: credit any promises it fulfills
 function creditPromises(won, isLaw) {

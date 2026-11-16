@@ -1,1 +1,18 @@
-/* org.css: the independents in a D/R career (Lane 1). Phase 0 ships an empty stub. */
+/* org.css: the independents in a D/R career (The Independents' Price) and the Contract slots on the floor schedule (Lane 1). */
+.org-sens{display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px;margin:10px 0}
+.org-sen{display:flex;gap:8px;align-items:center;background:#141821;border:1px solid var(--line);border-left:3px solid var(--ind);border-radius:8px;padding:6px 8px;min-width:0}
+.org-sen svg{width:40px;height:40px;border-radius:50%;flex:none;border:2px solid #9b7be066}
+.org-sen > div{min-width:0;line-height:1.35;overflow-wrap:anywhere}
+.org-sen small{color:var(--dim)}
+.org-proj{background:#1a1730;border:1px solid #9b7be055;border-radius:8px;padding:9px 11px;margin:10px 0;line-height:1.5}
+.org-proj small{color:var(--dim)}
+.org-shop .btn.org-gavel{border-color:var(--gold);box-shadow:inset 0 0 0 1px #e3b54a44}
+.org-pact{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;line-height:1.5;padding:0 7px;border-radius:999px;color:#1b1608;background:var(--gold);vertical-align:middle;white-space:nowrap}
+.org-called{color:var(--gold2)}
+.fl-slot.org-pactrow{box-shadow:inset 3px 0 0 var(--gold)}
+@media (max-width:600px){
+  .org-sens{grid-template-columns:1fr 1fr}
+  .org-sen{padding:5px 6px}
+  .org-sen svg{width:32px;height:32px}
+}
+@media (max-width:360px){ .org-sens{grid-template-columns:1fr} }
