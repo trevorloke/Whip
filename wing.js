@@ -73,7 +73,12 @@ const whRel = () => S.whRel || 0;
 function wingFeudLabel(r = whRel()) { return r <= -7 ? 'open war' : r <= -4 ? 'hostile' : r <= -1.5 ? 'cold' : r < 1.5 ? 'correct' : r < 4 ? 'cordial' : 'close partners'; }
 function wingVetoAdj() { const r = whRel(); return r < 0 ? Math.min(0.3, -r * 0.035) : -Math.min(0.15, r * 0.03); }
 function wingOwnVeto() { const r = whRel(); return r <= -5 ? Math.min(0.35, (-r - 4) * 0.07) : 0; }
-function wingPrimaryThreat(m) { return S.president.party === S.side && whRel() <= -4 && m.party === S.side && m.faction === wingOf() ? 0.2 : 0; }
+// (an independent President never threatens party senators' primaries: the threat against the caucus is game.js indChallengeRoll)
+function wingPrimaryThreat(m) { return S.president.party !== 'I' && S.president.party === S.side && whRel() <= -4 && m.party === S.side && m.faction === wingOf() ? 0.2 : 0; }
+// a D/R career facing an independent White House (PARITY): the deal and the retaliation run on the new rules
+function wingIWH() { return !IND() && S.president.party === 'I' && PARITY(); }
+// the Congress the wing.js deal covers (game.js vetoOdds reads S.whDealK against the same index)
+const wingK = () => Math.floor(S.career.bills / 6);
 // your-side-positive points in one Senate race: a feuding President campaigns against your candidates (or keeps away)
 function wingRaceAdj(rc) {
   const r = whRel(), P = S.president; if (r > -5 || !S.election) return 0;
@@ -85,6 +90,19 @@ function wingRaceAdj(rc) {
 function wingHit(d) { S.whRel = clamp(whRel() + d, -10, 10); }
 function wingConsequences() {
   const r = whRel(), P = S.president, yours = P.party === S.side, out = [];
+  if (yours && IND()) { // the independent career: your caucus's own President
+    if (r <= -3) out.push(`${presTitle()} won't make calls for the caucus's bills.`);
+    if (r <= -4) out.push('The President\'s people are recruiting primary challengers against the caucus.');
+    if (r >= 3) out.push('The President has the caucus\'s back: calls land, vetoes are off the table.');
+    return out;
+  }
+  if (wingIWH()) { // a D/R career and an independent White House: vetoes follow the President's stance on each bill
+    out.push(`Vetoes follow ${whWho()}'s stance on each bill${S.whDealK === wingK() ? ': your deal holds, and vetoes on your bills are 30% less likely this Congress' : ''}.`);
+    if (r <= -3) out.push('Expect retaliation between bills: veto threats that void any deal, and attacks on your party in the press.');
+    if (r <= -5) out.push(`The President will campaign against your senators${P.approval >= 45 ? ' (−1 in every race, −3 where targeted)' : ' (at this approval, it backfires: +0.5)'}.`);
+    if (r >= 2) out.push('Your base calls the détente collaboration (mood −0.2 between bills).');
+    return out;
+  }
   if (yours) {
     if (r <= -3) out.push(`${presTitle()} won't make calls for your bills.`);
     if (r <= -4) out.push('The White House is quietly backing primary challengers against your wing (+20% challenge odds).');
@@ -100,15 +118,21 @@ function wingConsequences() {
 }
 function wingBattleMoves() {
   const P = S.president, yours = P.party === S.side, maj = isMajority(), hm = houseMaj() === S.side, cap = S.career.capital;
+  if (yours && IND()) return [ // your caucus's President: the same moves, in caucus terms
+    ['break', 'Break with the President publicly', `A floor speech that ends the pretense. Approval −6, the feud deepens (−4), the caucus's President-first members turn on you (−2), the independents' mood −1.${P.approval < 40 ? ' At this approval, the caucus cheers (+1 confidence).' : ''}${whRel() <= -2 ? ' Push the feud to hostile and the President\'s people recruit primary challengers against the caucus.' : ''}`, 2, true],
+    ['peace', 'Make peace with the President', 'A long dinner in the residence. Feud +4, the caucus warms (+1).', 2, whRel() < 0],
+  ];
   if (yours) return [
     ['break', 'Break with the President publicly', `A floor speech that ends the pretense. Approval −6, the feud deepens (−4), the President's faction turns on you (−2), your wing rallies (+1), party mood −1.${P.approval < 40 ? ' At this approval, the caucus cheers (+1 confidence).' : ''}`, 2, true],
     ['peace', 'Make peace with the President', 'A long dinner in the residence. Feud +4, the President\'s faction warms (+1).', 2, whRel() < 0],
   ];
+  const iwh = wingIWH(), dealt = iwh && S.whDealK === wingK();
   return [
     ['probe', maj ? 'Subpoena the White House' : 'Demand an inspector general', maj ? 'Your committee chairs open a full investigation. Approval −3 to −7; one in five times it looks like a witch hunt (your mood −1.5).' : 'In the minority you can only demand one. Approval −1 to −3, small backfire risk.', maj ? 2 : 1, true],
     ['rebut', 'Prime-time rebuttal', `Your party answers the President on every network. Approval −1 to −2, your party's mood +0.8.`, 1, true],
-    ['holds', 'Hold the President\'s nominees', 'Holds on every nominee in the queue. Approval −2, the President fumes (feud −2).', 1, true],
+    ['holds', iwh ? 'Hold the independent President\'s nominees' : 'Hold the President\'s nominees', 'Holds on every nominee in the queue. Approval −2, the President fumes (feud −2).', 1, true],
     ['impeach', 'Open an impeachment inquiry', `The nuclear option. Needs your party's House majority, approval under 45 and a hostile feud. 55%: approval −8 and your base energized; 45%: it backfires (approval +4, mood −2.5, −1 confidence).`, 3, hm && P.approval < 45 && whRel() <= -4],
+    iwh ? ['deal', 'Cut a deal with the independent White House', `Trade a priority for a priority. Feud +2; for the rest of this Congress vetoes on your bills are 30% less likely, and the independents in the Senate trust your party more (+1). Your base grumbles (mood −0.3).${dealt ? ' Done: the deal holds this Congress.' : ''}`, 1, !dealt] :
     ['deal', 'Cut a deal with the White House', IND() ? 'Trade a priority for a priority. Feud +3, veto risk down. Your trust with the President\'s party +0.5; your Lean moves their way.' : `Trade a priority for a priority. Feud +3, veto risk down. Your base grumbles (mood −0.5); ${[MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()) ? 'your wing likes deals (+0.5).' : 'your wing hates it (−0.5).'}`, 1, true],
   ].map(x => x.concat([cap]));
 }
@@ -117,14 +141,19 @@ function wingBattle(k) {
   const cost = (wingBattleMoves().find(x => x[0] === k) || [])[3]; if (cost == null || S.career.capital < cost || S.wingBattleUsed === S.career.bills) return;
   S.career.capital -= cost; S.wingBattleUsed = S.career.bills;
   let msg;
-  if (k === 'break') { d(6); wingHit(-4); for (const m of S.members) { if (m.party === S.side && m.faction === P.faction) m.rel -= 2; if (m.party === S.side && m.faction === wingOf()) m.rel += 1; } S.mood -= 1; if (P.approval < 40) S.career.confidence = Math.min(5, S.career.confidence + 1); hist(P, 'Publicly repudiated by their own party\'s Senate whip'); msg = 'You broke with the President on the Senate floor.'; }
+  if (k === 'break') { d(6); wingHit(-4); for (const m of S.members) { if (m.party === S.side && m.faction === P.faction) m.rel -= 2; if (m.party === S.side && m.faction === wingOf()) m.rel += 1; } S.mood -= 1; if (P.approval < 40) S.career.confidence = Math.min(5, S.career.confidence + 1); hist(P, IND() ? 'Publicly repudiated by the independent caucus\'s leader' : 'Publicly repudiated by their own party\'s Senate whip'); msg = 'You broke with the President on the Senate floor.'; }
   if (k === 'peace') { wingHit(4); for (const m of S.members) if (m.party === S.side && m.faction === P.faction) m.rel += 1; msg = 'Peace, for now, with the White House.'; }
   if (k === 'probe') { if (Math.random() < (isMajority() ? 0.2 : 0.1)) { S.mood -= 1.5; wingHit(-1); msg = 'The investigation looks like a witch hunt. It backfires.'; } else { const n = isMajority() ? ri(3, 7) : ri(1, 3); d(n); wingHit(-2); hist(P, isMajority() ? 'Subpoenaed by the Senate' : 'Faced a Senate demand for an inspector general'); msg = `The probe lands: ${presTitle()} −${n}.`; } }
   if (k === 'rebut') { const n = ri(1, 2); d(n); S.mood += 0.8; wingHit(-1); msg = `Your rebuttal wins the night: ${presTitle()} −${n}.`; }
   if (k === 'holds') { d(2); wingHit(-2); S.cabinetHolds = (S.cabinetHolds || 0) + 1; msg = 'Every nominee is on hold. The President is furious.'; }
   if (k === 'holds' && IND() && S.cau && (P.party === 'D' || P.party === 'R')) S.cau.trust[P.party] = clamp(S.cau.trust[P.party] - 0.5, -5, 5);
   if (k === 'impeach') { if (Math.random() < 0.55) { d(8); S.mood += 1.5; wingHit(-3); hist(P, 'Faced an impeachment inquiry'); msg = `The inquiry is devastating: ${presTitle()} −8.`; } else { P.approval = clamp(P.approval + 4, 18, 82); S.mood -= 2.5; S.career.confidence = Math.max(1, S.career.confidence - 1); wingHit(-2); msg = 'The inquiry backfires. The public rallies to the President.'; } }
-  if (k === 'deal') { wingHit(3); S.mood -= 0.5; const likes = [MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()); for (const m of wingMembers()) m.rel += likes ? 0.5 : -0.5; msg = 'A deal with the White House.'; }
+  if (k === 'deal' && wingIWH()) { // the independent White House: a veto truce for this Congress, and the independents' trust
+    wingHit(2); S.mood -= 0.3; S.whDealK = wingK();
+    if (typeof indsEnsure === 'function') indsEnsure();
+    if (S.inds && S.inds.trust) S.inds.trust[S.side] = (S.inds.trust[S.side] || 0) + 1;
+    hist(P, `Cut a deal with the ${PARTY[S.side].name} whip`); msg = 'A deal with the independent White House.';
+  } else if (k === 'deal') { wingHit(3); S.mood -= 0.5; const likes = [MODERATE[S.side], CROSS[S.side], 'New Democrats', 'Establishment'].includes(wingOf()); for (const m of wingMembers()) m.rel += likes ? 0.5 : -0.5; msg = 'A deal with the White House.'; }
   if (k === 'deal' && IND() && S.cau && (P.party === 'D' || P.party === 'R')) { S.cau.trust[P.party] = clamp(S.cau.trust[P.party] + 0.5, -5, 5); S.cau.lean = clamp(S.cau.lean + (P.party === 'D' ? -0.5 : 0.5), -10, 10); }
   if (P.party !== S.side && P.approval < 35) unlock('warpath');
   S.mood = clamp(S.mood, -15, 15);
@@ -149,7 +178,7 @@ HOOKS.office.push({
         </div>`;
     }
     const r = whRel(), cons = wingConsequences(), moves = wingBattleMoves();
-    h += `<hr><b>${IND() ? '⚖️ The swing bloc and the White House' : yours ? '🗡️ You and the President' : '⚔️ Battle the White House'}</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}) at ${P.approval}% · relations: <b style="color:${r <= -4 ? 'var(--no)' : r >= 2 ? 'var(--yes)' : 'var(--gold2)'}">${wingFeudLabel(r)}</b> (${r > 0 ? '+' : ''}${r.toFixed(1)})</small>
+    h += `<hr><b>${IND() ? (yours ? '🗡️ The caucus and its President' : '⚖️ The swing bloc and the White House') : yours ? '🗡️ You and the President' : wingIWH() ? '⚔️ Battle the independent White House' : '⚔️ Battle the White House'}</b> <small style="color:var(--dim)">· ${presTitle()} (${P.party}) at ${P.approval}% · relations: <b style="color:${r <= -4 ? 'var(--no)' : r >= 2 ? 'var(--yes)' : 'var(--gold2)'}">${wingFeudLabel(r)}</b> (${r > 0 ? '+' : ''}${r.toFixed(1)})</small>
       <div class="wing-meter"><i style="left:${(r + 10) * 5}%"></i></div>
       ${cons.length ? `<ul class="wing-cons">${cons.map(c => `<li>${c}</li>`).join('')}</ul>` : '<p style="font-size:12px;color:var(--dim);margin:4px 0">No feud to speak of. Every hostile move has a price: the President hits back.</p>'}
       <div class="shop sinks">${moves.map(([k, t, s, c, ok]) => `<button class="btn" data-battle="${k}" ${!ok || used || cap < c ? 'disabled' : ''}><span>${t}<small>${s}</small></span><span class="cost">${c} cap</span></button>`).join('')}</div>
@@ -186,7 +215,11 @@ HOOKS.worldNews.push(() => {
   if (r > -3 || Math.random() > Math.min(0.6, 0.2 + 0.06 * (-r - 3))) return out;
   const upNext = S.members.filter(m => m.party === S.side && isUp(m)), mine = S.members.filter(m => m.party === S.side);
   const roll = Math.random();
-  if (!yours) {
+  if (wingIWH()) { // an independent White House hits back with veto threats and the press, never with primaries
+    if (roll < 0.4) { const voided = S.whDealK === wingK(); S.whDealK = -1; out.push(`🛑 <b>${presTitle()} threatens to veto "anything with the ${PARTY[S.side].short}' fingerprints on it."</b>${voided ? ' Your deal with the White House is dead.' : ' Every bill you pass now has a veto to beat.'}`); }
+    else if (roll < 0.8) { S.mood -= 0.5; const t = pick(TAGS); S.salience[t] = (S.salience[t] || 1) + 1; out.push(`📺 <b>${presTitle()} goes on every network</b> to call both parties "the problem" and yours "the worse half of it," with ${TAG[t][1].toLowerCase()} as Exhibit A. Your party's numbers sag.`); }
+    else { if (S.career.capital >= 2) S.career.capital -= 2; else S.career.confidence = Math.max(1, S.career.confidence - 1); out.push('🗞️ <b>The White House leaks oppo on the whip.</b> A week of bad stories costs you with your own caucus.'); }
+  } else if (!yours) {
     if (roll < 0.35 && upNext.length) { const m = pick(upNext); m.rec -= 2; out.push(`🏗️ <b>The White House cancels a federal project in ${ST[m.state].name}</b>, two months after Sen. ${m.name} called the President "a disgrace." Sen. ${lastName(m)}'s re-election just got harder.`); }
     else if (roll < 0.65 && upNext.length) { const m = pick(upNext); S.whTargets = (S.whTargets || []).concat([{ id: m.id, year: electionYear(nextElectionK()) }]); out.push(`🎯 <b>${presTitle()} vows to campaign against Sen. ${m.name}</b> (${m.state}) personally. "The Senate's obstructionists will answer to the voters."`); }
     else if (roll < 0.9) { S.mood -= 0.4; const t = pick(TAGS); S.salience[t] = (S.salience[t] || 1) + 1; out.push(`🖋️ ${presTitle()} signs an executive order aimed squarely at your party's agenda on ${TAG[t][1].toLowerCase()}.`); }
@@ -194,7 +227,7 @@ HOOKS.worldNews.push(() => {
   } else {
     if (roll < 0.35) { if (S.career.capital > 0) S.career.capital--; out.push(`🧊 <b>The White House freezes out the whip.</b> No calls returned, no seat at the table, no favors (−1 capital).`); }
     else if (roll < 0.65 && wingMembers().length) { const m = pick(wingMembers()); m.rec -= 1; S.whTargets = (S.whTargets || []).concat([{ id: m.id, year: electionYear(nextElectionK()) }]); out.push(`🗡️ <b>${presTitle()}'s allies recruit a primary challenger against Sen. ${m.name}</b>, a leader of your wing.`); }
-    else if (roll < 0.9) { S.mood -= 0.6; out.push(`🔥 <b>A ${PARTY[S.side].name} civil war:</b> the President's allies and yours trade insults on every network. Your party's mood suffers.`); }
+    else if (roll < 0.9) { S.mood -= 0.6; out.push(IND() ? '🔥 <b>A civil war among the independents:</b> the President\'s allies and your caucus trade insults on every network. The independents\' mood suffers.' : `🔥 <b>A ${PARTY[S.side].name} civil war:</b> the President's allies and yours trade insults on every network. Your party's mood suffers.`); }
     else { S.career.confidence = Math.max(1, S.career.confidence - 1); out.push('🗞️ <b>The President\'s team leaks against the whip.</b> Your caucus wonders whose side you\'re on (−1 confidence).'); }
   }
   S.mood = clamp(S.mood, -15, 15);
