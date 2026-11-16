@@ -78,3 +78,37 @@
 }
 .cau-lm{display:inline-block;background:var(--gold);color:#1a1405;font-family:inherit;font-weight:800;font-size:10px;padding:2px 6px;border-radius:4px;letter-spacing:1px;vertical-align:middle;margin-left:8px}
 .cau-offer .cau-fight{display:block;margin-top:4px}
+
+/* independent parity: the Gavel Bargain, the Path to the Gavel, the Contract, the Coalition Table, Filing Day */
+.cau-bad{color:#ff9a9a}
+.cau-path{font-size:13px;color:#d9ccff;background:#1a1530;border:1px dashed #a78bfa66;border-radius:8px;padding:6px 10px;margin:8px 0}
+.cau-card .cau-path{display:block;background:none;border:0;padding:0;margin:0;color:#c4b5fd}
+.cau-lead{--ic:#a78bfa;background:linear-gradient(135deg,#1d1736,#141821 60%)}
+.cau-lead.d{border-top:2px solid #3b82f6} .cau-lead.r{border-top:2px solid #ef4444}
+.cau-lead .cau-card-h b{color:#d9ccff}
+.cau-lead:disabled{opacity:.62}
+.cau-scores{display:flex;flex-wrap:wrap;gap:4px}
+.cau-score{display:inline-block;font-size:11px;line-height:1.3;padding:1px 7px;border-radius:999px;border:1px solid var(--line);color:var(--dim);background:#10141c;white-space:normal}
+.cau-score b{color:var(--ink)}
+.cau-score.pro{border-color:#2f6b47;color:#9fe0b8} .cau-score.con{border-color:#7a3333;color:#ffb3b3}
+.cau-score.tot{font-weight:800;border-width:2px}
+.cau-pact{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.6px;text-transform:uppercase;padding:0 6px;border-radius:4px;background:var(--gold);color:#1a1405;vertical-align:middle}
+.cau-coal{margin:10px 0}
+.cau-coalbar{position:relative;display:flex;height:16px;border-radius:4px;background:#2a313d;margin:18px 0 6px;overflow:visible}
+.cau-coalbar > i{display:block;height:100%}
+.cau-coalbar > i:first-child{border-radius:4px 0 0 4px}
+.cau-line{position:absolute;top:-16px;bottom:-3px;width:0;border-left:1px dashed #ffffff88}
+.cau-line span{position:absolute;top:0;left:-9px;font-size:10px;color:var(--dim);width:18px;text-align:center}
+.cau-line.lo span{left:-19px;text-align:right} .cau-line.hi span{left:1px;text-align:left}
+.cau-line.need{border-left:2px solid var(--gold)} .cau-line.need span{color:var(--gold2);font-weight:800}
+.cau-coal small{display:block;font-size:12px;color:var(--dim)}
+.cau-coal small b{color:var(--ink)}
+.cau-lane.on{background:#1d1736}
+.cau-lanemap{max-width:520px;margin:6px auto}
+.cau-lanemap svg{width:100%;height:auto;max-height:260px}
+@media (max-width:600px){
+  .cau-coalbar{margin-top:20px}
+  .cau-line span{font-size:9px}
+  .cau-lanemap svg{max-height:180px}
+  .cau-path{font-size:12px}
+}
