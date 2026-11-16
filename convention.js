@@ -177,17 +177,30 @@ function conventionsDue() { const n = S.career.bills + 1; return n % 6 === 5 && 
 function conventionsModal(done) {
   convEnsureNominees();
   CONV_TAKEN = [];
-  const P = S.president, order = P.party === 'I' ? ['D', 'R'] : [other(P.party), P.party];
+  // the two parties keep today's order (the out-party in late July, the White House party in August). On the parity path a
+  // new-path Alliance nominee (engine 'prim', not a major-party bolter) holds its convention first, in mid-July (indie.js)
+  const P = S.president, two = P.party === 'I' ? ['D', 'R'] : [other2(P.party), P.party], NI = S.nominees.I;
+  const iConv = (IND() || PARITY()) && !!NI && NI.engine === 'prim' && !(NI.major && !NI.heavy) && typeof indConventionFlow === 'function';
+  const order = (iConv ? ['I'] : []).concat(two);
   let finished = false;
   const finish = () => {
     if (finished) return; finished = true;
     S.nominees.conventionsDone = true;
     const rec = { year: convYear() };
     for (const p of ['D', 'R']) { const N = S.nominees[p]; rec[p] = { nominee: N.name, city: N.city, vp: N.vp ? { name: N.vp.name, state: N.vp.state } : null, bounce: N.bounce, unity: N.unity, planks: (N.planks || []).slice(), theme: N.theme, keynote: N.keynote, events: (N._lines || []).slice(0, 8) }; delete N._lines; }
+    const I = iConv && S.nominees.I;
+    if (I && I.name) rec.I = { nominee: I.name, label: I.label || null, city: I.city || null, vp: I.vp ? { name: I.vp.name, state: I.vp.state || null } : null, bounce: I.bounce == null ? null : I.bounce, unity: I.unity == null ? null : I.unity, ballots: I.ballots || 1, brokered: !!I.brokered };
     S.conventions = rec;
     done();
   };
-  const run = i => { if (i >= 2) return finish(); const p = order[i], month = i === 0 ? 'late July' : 'August'; (p === S.side ? convMine : convTheirs)(p, month, () => run(i + 1)); };
+  const run = i => {
+    if (i >= order.length) return finish();
+    const p = order[i];
+    if (p === 'I') return indConventionFlow('mid-July', () => run(i + 1));
+    const month = two.indexOf(p) === 0 ? 'late July' : 'August';
+    console.assert(p === 'D' || p === 'R', 'conventionsModal: a two-party convention for', p);
+    (p === S.side ? convMine : convTheirs)(p, month, () => run(i + 1));
+  };
   // the state above is ready at once; the first screen paints in a microtask (instant for the player, but after the
   // script that opened the interlude has finished, so an automated driver sees the end of the vote, not a new flow)
   Promise.resolve().then(() => run(0));
@@ -204,6 +217,7 @@ function convStore(C) {
 /* ---------------- running mates ---------------- */
 function convVPField(C) {
   const p = C.p, N = C.N, P = C.P, used = new Set([N.name]), out = [];
+  console.assert(p === 'D' || p === 'R', 'convVPField: no two-party running-mate field for', p);
   const mk = (person, office, kind, riskScale = 1) => {
     if (!person || used.has(person.name)) return null; used.add(person.name);
     const m = S.members.find(x => x.name === person.name), lean = ST[person.state] ? ST[person.state].lean : 0;
@@ -598,6 +612,7 @@ function convStakes(C) {
   const P = C.P, N = C.N, mood = convMoodOf(C.p), sen = seats(C.p);
   if (C.isPres) return `At stake: a second term. ${presTitle()} stands at ${P.approval}% approval${P.approval >= 50 ? ', a number an incumbent can win on' : P.approval >= 44 ? ', which is survivable with the right fall' : ', and no President has been re-elected from there without a miracle'}; the ${PARTY[C.p].short} hold ${sen} Senate seats.`;
   if (C.holdsWH) { const streak = S.whStreak || 1; return `At stake: holding the White House without the incumbent. ${presTitle()} leaves office at ${P.approval}% approval, ${P.approval >= 50 ? 'an asset the ticket will lean on' : 'a weight the ticket must carry'}; ${streak >= 2 ? `the ${PARTY[C.p].short} are asking for a ${convNth(streak + 1)} straight term, which voters rarely grant` : 'voters have not kept one party in the West Wing for a third term since 1988'}.`; }
+  if (P.party === 'I' && (IND() || PARITY())) return `At stake: the White House, which an independent holds. ${presTitle()} stands at ${P.approval}% approval${S.nominees && S.nominees.I && S.nominees.I.incumbent && S.nominees.I.name === P.name ? ' and is on the ballot again, against both parties' : ' and is not on the ballot'}. The ${PARTY[C.p].short} hold ${sen} Senate seats${IND() ? '.' : ` and a mood that is ${convMoodWord(mood)} (${fmt(mood)}).`}`;
   return `At stake: taking back the White House from ${presTitle()}'s ${PARTY[C.q].short}${P.approval < 45 ? `, who are defending a President at ${P.approval}%` : P.approval >= 52 ? `, who are defending a popular President (${P.approval}%)` : ''}. The ${PARTY[C.p].short} hold ${sen} Senate seats${IND() ? '.' : ` and a mood that is ${convMoodWord(mood)} (${fmt(mood)}).`}`;
 }
 function convOpeningScreen(C, next) {
@@ -668,6 +683,7 @@ function convMine(p, month, next) {
 
 /* ---------------- the other party's convention: a watch-only report ---------------- */
 function convTheirs(p, month, next) {
+  console.assert(p === 'D' || p === 'R', 'convTheirs: the Alliance convention is indConventionFlow, not convState');
   const C = convState(p, month);
   const N0 = C.N, unity0 = C.unity, margin0 = convMargin(), rc = C.N.contested && C.N.runnerUp ? convAutoRollCall(C) : null;
   const N = C.N;

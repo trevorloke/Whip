@@ -43,7 +43,7 @@ let CAMP_EVT_LIVE = null;  // the October surprise's live definition (functions;
 
 /* ---------------- small helpers ---------------- */
 const campC = () => (S.election && S.election.camp) || null;
-const campSign = () => S.side === 'D' ? 1 : -1;              // D-positive → your-ticket-positive
+const campSign = () => S.side === 'D' ? 1 : S.side === 'R' ? -1 : 0;   // D-positive → your-ticket-positive
 const campYear = () => S.election ? S.election.year : electionYear(nextElectionK());
 const campLast = n => (n && n.name ? (lastName(n) || n.name) : '—');
 const campNum = (v, d = 1) => (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(d);
@@ -68,8 +68,20 @@ function campStars(c) { const n = clamp(Math.round((c - 0.75) / 0.75 * 5), 0, 5)
 function campAdj(code, pts) { const C = campC(); if (!C || !EV[code]) return; C.stateAdj[code] = +((C.stateAdj[code] || 0) + pts * campSign()).toFixed(3); }
 function campLeadText(pt) { const l = pt.me - pt.them; return Math.abs(l) < 1 ? 'a dead heat' : `${l > 0 ? 'you lead' : 'you trail'} by ${Math.abs(l).toFixed(1)}`; }
 // the third candidate on the ballot: the independent nominee (indie.js S.nominees.I), or October's surging independent
-function campTPFrom(I) { const ln = +I.lean || 0; return { name: I.name, share: +clamp(+I.strength || 3, 0.5, 45).toFixed(1), hurts: ln < -0.05 ? 'D' : ln > 0.05 ? 'R' : pick(['D', 'R']), cause: null, label: I.label || 'Independent', major: !!I.major, lean: ln, color: I.color || PARTY.I.color, nom: true }; }
-function campTPShare(v) { const C = campC(), tp = C && C.thirdParty; if (!tp) return; tp.share = +clamp(v, 0.5, 45).toFixed(1); const I = S.nominees && S.nominees.I; if (tp.nom && I && I.name === tp.name) I.strength = tp.share; }
+// a sitting independent President on the ballot (parity: presSetup's top-two incumbent) is the incumbent, not a spoiler: inc
+function campTPFrom(I) { const ln = +I.lean || 0, inc = PARITY() && !!I.top2 && !!I.incumbent; return { name: I.name, share: +clamp(+I.strength || 3, 0.5, inc ? 48 : 45).toFixed(1), hurts: ln < -0.05 ? 'D' : ln > 0.05 ? 'R' : pick(['D', 'R']), cause: null, label: I.label || 'Independent', major: !!I.major, lean: ln, color: I.color || PARTY.I.color, nom: true, ...(inc ? { inc: true } : {}) }; }
+// the third candidate's share moves. A non-incumbent's moves its strength; a running President's goes into N.I.adj (presSetup owns
+// the President's strength and adds adj to it), so a campaign event moves the night as much as the poll
+function campTPShare(v) {
+  const C = campC(), tp = C && C.thirdParty; if (!tp) return;
+  const was = tp.share; tp.share = +clamp(v, 0.5, tp.inc ? 48 : 45).toFixed(1);
+  const I = S.nominees && S.nominees.I; if (!(tp.nom && I && I.name === tp.name)) return;
+  if (tp.inc) I.adj = +((+I.adj || 0) + tp.share - was).toFixed(1); else I.strength = tp.share;
+}
+// the President's approval moved: the poll follows (0.6 a point); presSetup already reads the approval itself
+function campTPMirror(dv) { const C = campC(), tp = C && C.thirdParty; if (tp && tp.inc) tp.share = +clamp(tp.share + dv, 0.5, 48).toFixed(1); }
+const campIncI = () => { const C = campC(); return !!(C && C.thirdParty && C.thirdParty.inc); };
+const campWho = () => typeof whWho === 'function' ? whWho() : 'the independent President';
 // what share of the third candidate's vote comes out of the Democratic column (by lean; an unlabeled surge draws evenly)
 function campTPDrawD(tp) { return tp && tp.lean != null ? clamp(0.5 - 0.3 * tp.lean, 0.1, 0.9) : 0.5; }
 const campTPColor = tp => (tp && tp.color) || PARTY.I.color;
@@ -233,12 +245,14 @@ function campTicketsHTML(noms) {
 }
 // the third card: the independent nominee (or October's surging independent), smaller, with where its votes come from
 function campIndCardHTML() {
-  const C = campC(), I = S.nominees && S.nominees.I, tp = C && C.thirdParty ? C.thirdParty : I && I.name ? campTPFrom(I) : null;
+  // before the fall campaign a running independent President's record has no strength of its own (presSetup owns it): show presIncI's
+  const C = campC(), I = S.nominees && S.nominees.I, incI = I && I.name && I.incumbent && S.president.party === 'I' && I.name === S.president.name && S.president.terms < 2 && typeof presNewI === 'function' && presNewI();
+  const tp = C && C.thirdParty ? C.thirdParty : I && I.name ? campTPFrom(incI ? presIncI(S.president, I) : I) : null;
   if (!tp) return '';
   const person = I && I.name === tp.name ? campPersonOf(I) : null, from = tp.lean == null ? null : tp.lean < -0.12 ? 'D' : tp.lean > 0.12 ? 'R' : 0;
   return `<span class="vs">vs</span><div class="camp-tk ind-tk" style="border-color:${campTPColor(tp)}">${person && person.seed != null ? portrait(person) : '<span class="camp-noport">🗳️</span>'}<div>
-    <div class="camp-tkn"><b>${tp.name}</b>${typeof indPill === 'function' ? indPill(tp.label || 'Independent') : ''}${tp.major ? '<span class="ind-major">a real contender</span>' : ''}${person ? '<a href="#" data-cprof="I">profile</a>' : ''}</div>
-    <small>${I && I.name === tp.name && I.office ? `${I.office} · ` : ''}polling <b>${tp.share.toFixed(1)}%</b>${from === null ? '' : from ? ` · draws more from ${PARTY[from].short}` : ' · draws from both sides'}${tp.share >= 15 ? ' · qualifies for the debates' : ''}</small></div></div>`;
+    <div class="camp-tkn"><b>${tp.name}</b>${typeof indPill === 'function' ? indPill(tp.label || 'Independent') : ''}${tp.inc ? '<span class="ind-major">the incumbent</span>' : tp.major ? '<span class="ind-major">a real contender</span>' : ''}${person ? '<a href="#" data-cprof="I">profile</a>' : ''}</div>
+    <small>${tp.inc ? 'President · ' : I && I.name === tp.name && I.office ? `${I.office} · ` : ''}polling <b>${tp.share.toFixed(1)}%</b>${from === null ? '' : from ? ` · draws more from ${PARTY[from].short}` : ' · draws from both sides'}${tp.inc ? ' · on the debate stage as the incumbent' : tp.share >= 15 ? ' · qualifies for the debates' : ''}</small></div></div>`;
 }
 function campTrackerHTML() {
   const C = campC(), mine = S.side, noms = campNoms();
@@ -293,7 +307,7 @@ function fallCampaign(done) {
   E.camp = { round: 0, stage: 'r1', polls: [], strategy: null, theme: null, themeHot: false, focus: [], debates: [], events: [], surrogates: [], national: 0, stateAdj: {}, thirdParty: null, momentum: false, adBuy: 0, gotv: false, opp: null, ui: {}, autoLog: [] };
   CAMP_UI = { done, draw: null };
   const IN = presSetup().noms.I;   // indie.js's nominee, or a sitting independent President seeking a second term
-  if (IN && IN.name) { E.camp.thirdParty = campTPFrom(IN); log(`On the ballot too: ${IN.name} (${IN.label || 'Independent'}), polling ${E.camp.thirdParty.share}%.`, 'sys'); }
+  if (IN && IN.name) { E.camp.thirdParty = campTPFrom(IN); log(E.camp.thirdParty.inc ? `On the ballot too: ${presTitle()} (${IN.label || 'Independent'}) seeks a second term against both parties, polling ${E.camp.thirdParty.share}%.` : `On the ballot too: ${IN.name} (${IN.label || 'Independent'}), polling ${E.camp.thirdParty.share}%.`, 'sys'); }
   campStartPolls();
   log(`The fall campaign begins: ${S.nominees[S.side].name} vs ${S.nominees[other(S.side)].name}.`, 'sys');
   campRound1();
@@ -373,7 +387,7 @@ function campRound1() {
     const convLine = p => { const n = noms[p]; if (!hasConv) return p === mine ? `The conventions are over and the matchup is set: your nominee ${n.name} against ${noms[other(p)].name}` : ''; const un = n.unity != null && n.unity < 0.85 ? `, and a party only ${Math.round(n.unity * 100)}% united` : ''; return `${p === mine ? 'Your nominee ' : ''}${n.name} left ${n.city ? n.city : 'the convention'} with ${n.bounce != null ? `a ${campNum(n.bounce, 1)}-point bounce` : 'the nomination'}${un}`; };
     const vp = my.vp, vpx = vp && vp.state && P.by[vp.state] ? P.by[vp.state] : null;
     const vpLine = vp ? (vpx ? ` Running mate <b>${vp.name}</b> puts ${stName(vp.state)} (${vpx.ev} EV) in play: +2 there, where you ${vpx.m >= 0 ? 'lead' : 'trail'} by ${Math.abs(vpx.m).toFixed(1)}.` : ` Running mate <b>${vp.name}</b> brings little geography and a lot of energy.`) : '';
-    const pres = S.president.party === mine && campIsPres(my, mine) ? ` ${presTitle()} is on the ballot at ${S.president.approval}% approval.` : campIsPres(their, other(mine)) ? ` ${presTitle()} seeks a second term at ${S.president.approval}% approval; you're trying to take the White House.` : ` ${presTitle()} is not on the ballot, and sits at ${S.president.approval}%.`;
+    const pres = PARITY() && S.president.party === 'I' && noms.I && noms.I.incumbent ? ` ${presTitle()}, an independent President, seeks a second term at ${S.president.approval}% approval, running against both parties' tickets.` : S.president.party === mine && campIsPres(my, mine) ? ` ${presTitle()} is on the ballot at ${S.president.approval}% approval.` : campIsPres(their, other(mine)) ? ` ${presTitle()} seeks a second term at ${S.president.approval}% approval; you're trying to take the White House.` : ` ${presTitle()} is not on the ballot, and sits at ${S.president.approval}%.`;
     const intro = `It's Labor Day, ${campYear()}: nine weeks to Election Day. ${convLine(mine)}${hasConv ? `; ${convLine(other(mine))}` : ''}.${pres}${vpLine} Choose the message your ticket repeats until the country is sick of it, and the map you'll bet the fall on.`;
     const themeHTML = C.ui.theme ? campPickHTML(`${TAG[C.ui.theme][0]} ${TAG[C.ui.theme][1]}`, 'theme', hot.includes(C.ui.theme) ? 'A top-2 issue with voters: +1 national.' : CAMP_THEME_LINE[C.ui.theme])
       : `<div class="camp-opts">${TAGS.map(t => `<button class="btn" data-choice="theme:${t}"><span>${TAG[t][0]} ${TAG[t][1]}<small>${CAMP_THEME_LINE[t]}${hot.includes(t) ? ' <b style="color:var(--gold2)">🔥 top issue: +1 national</b>' : ''}${t === my.theme ? ' <b>★ the convention\'s theme</b>' : ''}</small></span></button>`).join('')}</div>`;
@@ -436,7 +450,7 @@ function campDebate(which, mineKey, prep, theirsKey, city, theirPrep) {
 // a third podium: an independent polling 15% or more makes the first debate. The majors' game plans still decide the winner;
 // the independent picks a fight with one of them (±0.5 for your ticket) and gains or loses ground of their own
 function campIndDebate() {
-  const C = campC(), tp = C.thirdParty; if (!tp || tp.share < 15) return null;
+  const C = campC(), tp = C.thirdParty; if (!tp || (tp.share < 15 && !tp.inc)) return null;   // a sitting President is always on the stage
   const noms = campNoms(), mine = S.side, last = C.polls[C.polls.length - 1], I = S.nominees && S.nominees.I;
   const target = Math.random() < 0.65 ? (last.me >= last.them ? mine : other(mine)) : pick([mine, other(mine)]);
   const ch = I && I.name === tp.name ? campCharisma(I) : 1, d = +clamp(rnd(-1.5, 2.5) + (ch - 1) * 4, -2.5, 3.5).toFixed(1), swing = +((target === mine ? -1 : 1) * rnd(0.15, 0.5)).toFixed(2);
@@ -451,6 +465,7 @@ function campIndDebate() {
 }
 function campStageLine() {
   const tp = campC().thirdParty; if (!tp) return '';
+  if (tp.inc) return ` <b>Three podiums:</b> ${presTitle()} (${tp.label || 'Independent'}) takes the stage as the incumbent, polling ${tp.share.toFixed(1)}%.`;
   return tp.share >= 15 ? ` <b>Three podiums:</b> ${tp.name} (${tp.label || 'Independent'}) cleared the commission's 15% bar at ${tp.share.toFixed(1)}% and will be on the stage too.` : ` ${tp.name} (${tp.label || 'Independent'}) polls ${tp.share.toFixed(1)}%, short of the commission's 15% bar, and will hold a protest rally outside the hall.`;
 }
 function campVpDebate() {
@@ -569,7 +584,8 @@ function campFx() {
     sts(codes, v) { codes.forEach(c => campAdj(c, v)); add(`${campNum(v)} in ${codes.join(', ')}`, v >= 0); return F; },
     cash(v) { const E = S.election; const real = Math.max(-E.cash, v); E.cash += real; add(`${real > 0 ? '+' : '−'}${Math.abs(real)} campaign unit${Math.abs(real) === 1 ? '' : 's'}`, real >= 0); return F; },
     cap(v) { const real = Math.max(-S.career.capital, v); S.career.capital += real; add(`${campNum(real, 0)} capital`, real >= 0); return F; },
-    appr(v) { S.president.approval = clamp(Math.round(S.president.approval + v), 18, 82); add(`${presTitle()} ${campNum(v, 0)} approval`, (v >= 0) === whMine); return F; },
+    appr(v) { const a0 = S.president.approval; S.president.approval = clamp(Math.round(S.president.approval + v), 18, 82); add(`${presTitle()} ${campNum(v, 0)} approval`, (v >= 0) === whMine); if (campIncI()) campTPMirror(0.6 * (S.president.approval - a0)); return F; },
+    tp(v, why) { const tp = campC().thirdParty; if (!tp) return F; campTPShare(tp.share + v); add(`${campLast(tp)} ${campNum(v)}${why ? ` (${why})` : ''}`, v <= 0); return F; },
     mood(v) { S.mood = clamp(S.mood + v, -15, 15); add(`party mood ${campNum(v)}`, v >= 0); return F; },
     sal(tag, v) { S.salience = S.salience || {}; S.salience[tag] = (S.salience[tag] || 1) + v; add(`voters talk more about ${TAG[tag][1].toLowerCase()}`, true); return F; },
     note(t, good) { add(t, good !== false); return F; },
@@ -581,7 +597,7 @@ function campFx() {
 }
 function campCtx() {
   const C = campC(), E = S.election, P = S.president, mine = S.side, theirs = other(mine), noms = campNoms(), my = noms[mine], their = noms[theirs];
-  return { C, E, P, mine, theirs, my, their, myL: campLast(my), theirL: campLast(their), whMine: P.party === mine, year: campYear(), myVp: my.vp, theirVp: their.vp, proj: campProj(), theme: C && TAGS.includes(C.theme) ? C.theme : 'economy' };
+  return { C, E, P, mine, theirs, my, their, myL: campLast(my), theirL: campLast(their), whMine: P.party === mine, iInc: campIncI(), iWH: PARITY() && P.party === 'I', year: campYear(), myVp: my.vp, theirVp: their.vp, proj: campProj(), theme: C && TAGS.includes(C.theme) ? C.theme : 'economy' };
 }
 // the pool: each entry has a weight (0 = cannot happen) and a maker that writes the front page and the choices
 const CAMP_EVENTS = [
@@ -632,7 +648,7 @@ const CAMP_EVENTS = [
       { t: 'Pledge federal aid in the ticket\'s name (1 unit)', s: `+0.7 in ${code} and ${near}; −1 campaign unit.`, can: () => S.election.cash >= 1, go: fx => { fx.cash(-1); fx.sts([code, near], 0.7); return `"${x.myL} Relief Centers" opened in six parishes. The lawyers hated the name. The locals didn't.`; } },
     ];
     return { h: `HURRICANE ${name.toUpperCase()} SLAMS ${stName(code).toUpperCase()}`, d: `Category ${cat} at landfall; ${out.toLocaleString()},000 without power along the Gulf.`, mood: 'storm',
-      body: [`${name} came ashore near ${pick(CAMP_COAST[code])} at 3 a.m. with ${110 + cat * 15} mph winds. ${gov ? `Gov. ${gov.name} (${gov.party})` : 'The governor'} has asked for a federal disaster declaration; ${presTitle()} is ${x.whMine ? 'your party\'s President' : 'their party\'s President'}, and the response will be judged on live television.`, `Both campaigns pulled their ads in ${stName(code)}. Neither knows for how long.`],
+      body: [`${name} came ashore near ${pick(CAMP_COAST[code])} at 3 a.m. with ${110 + cat * 15} mph winds. ${gov ? `Gov. ${gov.name} (${gov.party})` : 'The governor'} has asked for a federal disaster declaration; ${presTitle()} is ${x.iWH ? `${campWho()}, ${x.iInc ? 'on the ballot against both tickets' : 'not on the ballot'}` : x.whMine ? 'your party\'s President' : 'their party\'s President'}, and the response will be judged on live television.`, `Both campaigns pulled their ads in ${stName(code)}. Neither knows for how long.`],
       stakes: `${stName(code)} (${EV[code]} EV) and ${stName(near)} (${EV[near]} EV) will remember who showed up.`, choices: ch };
   } },
   { id: 'crisis', w: () => S.war ? 1.6 : 0.9, make: x => {
@@ -642,7 +658,8 @@ const CAMP_EVENTS = [
         body: [`The worst day of the war in ${W.place} lands three weeks before the election. ${presTitle()}, who ${warMine ? 'is' : 'is not'} of your party, addressed the nation from the Oval Office for nine minutes.`, `${sup < 45 ? 'A majority now says the war was a mistake.' : 'The country, for now, is behind the troops and the President.'} Both tickets have to say something by morning.`],
         stakes: 'Wars make and break fall campaigns.',
         choices: [
-          { t: 'Rally around the flag', s: `+0.5 for the President's party's ticket (${warMine ? 'yours' : 'theirs'}); approval +2.`, go: fx => { fx.n(warMine ? 0.5 : -0.5); fx.appr(2); return `${x.my.name} stood with the Commander in Chief. ${warMine ? 'Unity helped the ticket.' : 'Statesmanlike, and it helped the other side.'}`; } },
+          x.iWH && W.party === 'I' ? { t: 'Rally around the flag', s: `Approval +2${x.iInc ? ': the independent President\'s own share rises with it' : '; neither ticket owns this White House'}.`, go: fx => { fx.appr(2); return `${x.my.name} stood with the Commander in Chief. Statesmanlike${x.iInc ? ', and it helped the President\'s own campaign' : ''}.`; } }
+            : { t: 'Rally around the flag', s: `+0.5 for the President's party's ticket (${warMine ? 'yours' : 'theirs'}); approval +2.`, go: fx => { fx.n(warMine ? 0.5 : -0.5); fx.appr(2); return `${x.my.name} stood with the Commander in Chief. ${warMine ? 'Unity helped the ticket.' : 'Statesmanlike, and it helped the other side.'}`; } },
           { t: 'Call for a withdrawal timeline', s: sup < 45 ? '+0.9 national: the public wants out.' : '−0.6 national: it reads as retreat while the country backs the war.', go: fx => { fx.n(sup < 45 ? 0.9 : -0.6); fx.mood(sup < 45 ? 0.4 : -0.4); return sup < 45 ? `"Bring them home" became the rally chant of the final weeks.` : `"Cut and run," the other side said, and the country agreed with them.`; } },
           warMine && campIsPres(x.my, x.mine) ? { t: 'Announce a full review of the war plan', s: '+0.3 national; party mood −0.3 as the hawks grumble.', go: fx => { fx.n(0.3); fx.mood(-0.3); return `${presTitle()} ordered a top-to-bottom review from the Oval Office. The generals saluted; the hawks in your caucus seethed.`; } }
             : warMine ? { t: 'Quietly distance the ticket from the war', s: '+0.3 national; −2 approval for your own President; party mood −0.5.', go: fx => { fx.n(0.3); fx.appr(-2); fx.mood(-0.5); return `${x.my.name} talked about "the war we were handed." The White House noticed.`; } }
@@ -654,7 +671,8 @@ const CAMP_EVENTS = [
       body: [`Three weeks before the election, ${what} in ${place}. ${presTitle()} (${S.president.party}) weighs a show of force; the networks are already running countdown clocks.`, 'A foreign crisis is the one October surprise nobody can spin for long.'],
       stakes: 'Rallies help the President\'s party. Fiascos do the opposite.',
       choices: [
-        { t: 'Back a show of force', s: `Approval +3 (helps ${x.whMine ? 'your' : 'their'} ticket); ${x.whMine ? '+0.4' : '−0.4'} national.`, go: fx => { fx.appr(3); fx.n(x.whMine ? 0.4 : -0.4); fx.sal('security', 2); return `Carrier groups moved. ${x.my.name} said the right things about standing together. ${x.whMine ? 'The ticket rode the rally.' : 'The rally was the other side\'s.'}`; } },
+        x.iWH ? { t: 'Back a show of force', s: `Approval +3${x.iInc ? ': it helps the independent President\'s own share, not the other ticket' : '; neither ticket owns this White House'}.`, go: fx => { fx.appr(3); fx.sal('security', 2); return `Carrier groups moved. ${x.my.name} said the right things about standing together. The rally was the President's.`; } }
+          : { t: 'Back a show of force', s: `Approval +3 (helps ${x.whMine ? 'your' : 'their'} ticket); ${x.whMine ? '+0.4' : '−0.4'} national.`, go: fx => { fx.appr(3); fx.n(x.whMine ? 0.4 : -0.4); fx.sal('security', 2); return `Carrier groups moved. ${x.my.name} said the right things about standing together. ${x.whMine ? 'The ticket rode the rally.' : 'The rally was the other side\'s.'}`; } },
         { t: 'Urge restraint and diplomacy', s: 'A coin flip: +0.5 if talks hold, −0.5 if the crisis worsens.', go: fx => { if (Math.random() < 0.5) { fx.n(0.5); return 'The talks held. "Grown-up foreign policy," the editorials said, and they meant your nominee.'; } fx.n(-0.5); return `${place.charAt(0).toUpperCase() + place.slice(1)} got worse while you counseled patience. "Weak," said the ads.`; } },
         { t: 'Demand the President consult Congress', s: x.whMine ? '−0.3 national: it reads as disloyalty to your own President.' : '+0.3 national: the whip defends the Senate\'s war powers.', go: fx => { fx.n(x.whMine ? -0.3 : 0.3); return x.whMine ? 'Your own President\'s aides called you "unhelpful." On the record.' : 'A letter signed by forty senators. Constitutional, and useful.'; } },
       ] };
@@ -675,9 +693,9 @@ const CAMP_EVENTS = [
       { t: 'Offer a plan instead of blame', s: '+0.4 national; party mood +0.5.', go: fx => { fx.n(0.4); fx.mood(0.5); return 'A plan, not a pile-on. The editorial boards swooned; the voters liked it fine.'; } },
     ]);
     return { h: good ? 'JOBS REPORT: UNEMPLOYMENT FALLS TO ' + rate + '%' : 'HIRING STALLS; UNEMPLOYMENT CLIMBS TO ' + rate + '%', d: `The economy ${good ? 'added' : n < 0 ? 'lost' : 'added just'} ${Math.abs(n)},000 jobs last month.`, mood: good ? 'dawn' : 'storm',
-      body: [`The last jobs report before the election ${good ? 'is a gift to the White House' : 'is a problem for the White House'}: ${presTitle()} is ${x.whMine ? 'your' : 'their'} party's President, and the numbers move the incumbent party ${good ? 'up' : 'down'} on their own.`, `Wages ${good ? 'rose' : 'were flat'}; the markets ${good ? 'rallied' : 'shrugged'}.`],
-      stakes: `The incumbent party's ticket already moved ${good ? '+0.8' : '−0.8'} on the news. The spin is what's left.`,
-      auto: fx => { fx.n((good ? 0.8 : -0.8) * (x.whMine ? 1 : -1), 'the report itself'); fx.appr(good ? 2 : -2); }, choices: ch };
+      body: [`The last jobs report before the election ${good ? 'is a gift to the White House' : 'is a problem for the White House'}: ${x.iInc ? `${presTitle()} is ${campWho()} and on the ballot, and the numbers move the President's own share ${good ? 'up' : 'down'}` : x.iWH ? `${presTitle()} is ${campWho()} and not on the ballot, so the numbers move neither ticket` : `${presTitle()} is ${x.whMine ? 'your' : 'their'} party's President, and the numbers move the incumbent party ${good ? 'up' : 'down'}`} on their own.`, `Wages ${good ? 'rose' : 'were flat'}; the markets ${good ? 'rallied' : 'shrugged'}.`],
+      stakes: x.iInc ? `The President's share already moved ${good ? '+1.5' : '−1.5'} on the news. The spin is what's left.` : x.iWH ? 'Neither ticket owns this White House: the spin is all there is.' : `The incumbent party's ticket already moved ${good ? '+0.8' : '−0.8'} on the news. The spin is what's left.`,
+      auto: fx => { if (x.iInc) fx.tp(good ? 1.5 : -1.5, 'the report itself'); else if (!x.iWH) fx.n((good ? 0.8 : -0.8) * (x.whMine ? 1 : -1), 'the report itself'); fx.appr(good ? 2 : -2); }, choices: ch };
   } },
   { id: 'scotus', w: () => 0.9, make: x => {
     const maj = courtCount('R') > courtCount('D') ? 'R' : 'D', law = pick((S.laws || []).slice(-4)), strikes = law ? law.party !== maj : Math.random() < 0.6, energized = other(maj);
@@ -757,13 +775,14 @@ const CAMP_EVENTS = [
     const cause = tp0 ? [L ? L.line : 'fixing what both parties broke', (Object.entries(L ? L.issues : {}).sort((a, b) => b[1] - a[1])[0] || ['economy'])[0]] : pick(IND_CAUSES);
     const name = tp0 ? tp0.name : fullName(), share = tp0 ? +(tp0.share + rnd(2, tp0.major ? 4 : 5)).toFixed(1) : +rnd(4, 9).toFixed(1), hurts = tp0 ? tp0.hurts : Math.random() < 0.5 ? x.mine : x.theirs;
     const who = hurts === x.mine ? x.my.name : x.their.name, I = S.nominees && S.nominees.I;
-    return { h: `${name.toUpperCase()} SURGES TO ${Math.round(share)}% IN NEW POLL`, d: tp0 ? `The ${tp0.label && tp0.label !== 'Independent' ? tp0.label : 'independent'} campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.` : `The independent's "${cause[0]}" campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.`, mood: 'night',
+    return { h: `${tp0 && tp0.inc ? 'PRESIDENT ' + lastName({ name }).toUpperCase() : name.toUpperCase()} SURGES TO ${Math.round(share)}% IN NEW POLL`, d: tp0 && tp0.inc ? `The independent President's re-election campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.` : tp0 ? `The ${tp0.label && tp0.label !== 'Independent' ? tp0.label : 'independent'} campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.` : `The independent's "${cause[0]}" campaign catches fire ${hurts === x.mine ? 'among your voters' : 'among the other side\'s voters'}.`, mood: 'night',
       body: tp0 ? [`${name}${I && I.office && I.name === name ? ` (${I.office})` : ''} gained ${(share - tp0.share).toFixed(1)} points in a week on a promise of ${cause[0]} and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, tp0.major ? 'This is no protest vote anymore: the independent leads outright in a handful of state polls.' : 'Third-party surges usually fade. Usually.']
         : [`${name}, ${pick(BACKGROUNDS)} from ${pick(STATES)[1]} running on "${cause[0]}", qualified for the ballot in ${ri(38, 50)} states and is now drawing ${Math.round(share)}% nationally, mostly from ${who}.`, 'Third-party surges usually fade. Usually.'],
       stakes: `${hurts === x.mine ? '−0.5 for your ticket' : '+0.5 for your ticket'} already in; ${tp0 ? `${lastName({ name })} polls ${share.toFixed(1)}% from here on` : `${name} appears in the polls from here on`}.`,
       auto: fx => { if (tp0) { campTPShare(share); x.C.thirdParty.surged = true; } else x.C.thirdParty = { name, share, hurts, cause: cause[0] }; if (!tp0) fx.n(hurts === x.mine ? -0.5 : 0.5, 'votes siphoned'); },
       choices: [
-        { t: `Attack ${lastName({ name })} as a spoiler`, s: `Their share −2; ${hurts === x.mine ? '+0.3 national as voters come home' : '−0.2 national: you drove their voters back to the other side'}.`, go: fx => { campTPShare(Math.max(1, x.C.thirdParty.share - 2)); fx.n(hurts === x.mine ? 0.3 : -0.2); return `"A vote for ${lastName({ name })} is a vote for ${hurts === x.mine ? x.theirL : x.myL}," the ads said. Some voters listened.`; } },
+        x.iInc && tp0 && tp0.inc ? { t: 'Run against the President\'s record', s: 'The President\'s share −2; +0.3 national for your ticket.', go: fx => { fx.tp(-2); fx.n(0.3); return `"Four years of ${lastName({ name })}: what did you get?" asked the ads, with receipts. Some of the President's voters came home.`; } }
+        : { t: `Attack ${lastName({ name })} as a spoiler`, s: `Their share −2; ${hurts === x.mine ? '+0.3 national as voters come home' : '−0.2 national: you drove their voters back to the other side'}.`, go: fx => { campTPShare(Math.max(1, x.C.thirdParty.share - 2)); fx.n(hurts === x.mine ? 0.3 : -0.2); return `"A vote for ${lastName({ name })} is a vote for ${hurts === x.mine ? x.theirL : x.myL}," the ads said. Some voters listened.`; } },
         { t: `Court their voters: adopt "${cause[0]}"`, s: 'A coin flip: +0.6 if it works, −0.3 if your base grumbles.', go: fx => { if (Math.random() < 0.5) { fx.n(0.6); fx.sal(cause[1], 1); return `${x.my.name} gave a whole speech on ${cause[0].toLowerCase() === cause[0] ? cause[0] : `"${cause[0]}"`}. ${lastName({ name })}'s voters noticed.`; } fx.n(-0.3); return 'Your base wondered why the nominee was suddenly talking like the independent.'; } },
         { t: 'Ignore them', s: 'No effect.', go: () => `The campaign never said ${lastName({ name })}'s name. ${lastName({ name })} said yours constantly.` },
       ] };
@@ -777,15 +796,16 @@ const CAMP_EVENTS = [
       choices: [
         { t: 'Call for unity', s: 'No national effect; party mood +0.3.', go: fx => { fx.mood(0.3); return 'A joint statement with the other ticket. Rare, and remembered fondly for about a day.'; } },
         { t: 'Hit the other ticket on security', s: x.mine === 'R' ? '+0.6 national.' : 'A coin flip: +0.5 if it lands, −0.5 if it sounds like opportunism.', go: fx => { if (x.mine === 'R' || Math.random() < 0.5) { fx.n(x.mine === 'R' ? 0.6 : 0.5); return `"Who do you trust at 3 a.m.?" asked the ad. The answer polled well.`; } fx.n(-0.5); return 'Attacking on security the day after a plot read as opportunism, and the other side said so.'; } },
-        { t: campIsPres(x.my, x.mine) ? 'Stand on the response as Commander in Chief' : 'Praise the President\'s response', s: `Approval +2 (${x.whMine ? 'your' : 'their'} President); ${x.whMine ? '+0.3' : '−0.3'} national.`, go: fx => { fx.appr(2); fx.n(x.whMine ? 0.3 : -0.3); return campIsPres(x.my, x.mine) ? 'A somber address from the Oval Office, then straight back to the trail. It looked like command.' : x.whMine ? 'The President got the credit, and the ticket shared it.' : 'Gracious, and it helped the other side.'; } },
+        x.iWH ? { t: 'Praise the President\'s response', s: `Approval +2 for the independent President${x.iInc ? ', whose own share rises with it' : ''}.`, go: fx => { fx.appr(2); return x.iInc ? 'Gracious, and it helped the President\'s campaign more than the other ticket.' : 'Gracious, and it cost nothing: neither ticket owns this White House.'; } }
+        : { t: campIsPres(x.my, x.mine) ? 'Stand on the response as Commander in Chief' : 'Praise the President\'s response', s: `Approval +2 (${x.whMine ? 'your' : 'their'} President); ${x.whMine ? '+0.3' : '−0.3'} national.`, go: fx => { fx.appr(2); fx.n(x.whMine ? 0.3 : -0.3); return campIsPres(x.my, x.mine) ? 'A somber address from the Oval Office, then straight back to the trail. It looked like command.' : x.whMine ? 'The President got the credit, and the ticket shared it.' : 'Gracious, and it helped the other side.'; } },
       ] };
   } },
   { id: 'recession', w: () => 1, make: x => {
     const drop = rnd(4, 9).toFixed(1);
     return { h: `MARKETS PLUNGE ${drop}% ON RECESSION FEARS`, d: `The worst day on Wall Street in ${ri(6, 14)} years, three weeks before the vote.`, mood: 'storm',
-      body: [`A bad inflation print, a bank wobble and a bond auction nobody showed up for: the Dow lost ${drop}% by the close. ${presTitle()} (${x.whMine ? 'your party' : 'their party'}) called it "a correction, not a collapse."`, 'Retirement statements arrive in mailboxes the week before the election.'],
-      stakes: `The incumbent party's ticket already moved ${x.whMine ? '−0.8' : '+0.8'}; the President −3 approval.`,
-      auto: fx => { fx.n(x.whMine ? -0.8 : 0.8, 'the crash'); fx.appr(-3); fx.sal('economy', 3); },
+      body: [`A bad inflation print, a bank wobble and a bond auction nobody showed up for: the Dow lost ${drop}% by the close. ${presTitle()} (${x.iWH ? `an independent, ${x.iInc ? 'on the ballot' : 'not on the ballot'}` : x.whMine ? 'your party' : 'their party'}) called it "a correction, not a collapse."`, 'Retirement statements arrive in mailboxes the week before the election.'],
+      stakes: x.iInc ? 'The President\'s share already moved −1.5; the President −3 approval.' : x.iWH ? 'Neither ticket owns this White House; the President −3 approval.' : `The incumbent party's ticket already moved ${x.whMine ? '−0.8' : '+0.8'}; the President −3 approval.`,
+      auto: fx => { if (x.iInc) fx.tp(-1.5, 'the crash'); else if (!x.iWH) fx.n(x.whMine ? -0.8 : 0.8, 'the crash'); fx.appr(-3); fx.sal('economy', 3); },
       choices: x.whMine ? [
         { t: '"The fundamentals are strong"', s: 'A coin flip: −0.2 if the markets steady, −1.0 if they keep falling and the line is ridiculed.', go: fx => { if (Math.random() < 0.5) { fx.n(-0.2); return 'The markets clawed half of it back within a week, and the line aged fine.'; } fx.n(-1.0); return 'The markets fell again on Thursday. "Fundamentals" became a punchline.'; } },
         { t: 'Propose an emergency package (1 capital)', s: '+0.5 national; −1 capital.', can: () => S.career.capital >= 1, go: fx => { fx.cap(-1); fx.n(0.5); return 'A $200 billion plan drafted overnight by your staff. It would never pass, and it didn\'t have to.'; } },
@@ -812,8 +832,8 @@ const CAMP_EVENTS = [
     const up = Math.random() < 0.5 + (50 - S.president.approval) / 120, d = ri(5, 8);
     const [h, why] = up ? pick([['a hostage rescue', 'a daring rescue abroad'], ['a stirring address to the nation', 'a speech for the ages'], ['a historic peace deal', 'peace breaking out'], ['a cancer-screening breakthrough from a federal lab', 'a breakthrough from the labs']]) : pick([['a White House scandal', 'a West Wing scandal'], ['a botched press conference', 'a press conference gone wrong'], ['soaring gas prices', 'four-dollar gas'], ['a chief of staff\'s resignation', 'chaos in the West Wing']]);
     return { h: `${presTitle().toUpperCase()} APPROVAL ${up ? 'SURGES' : 'CRATERS'} AFTER ${h.toUpperCase()}`, d: `${up ? 'Up' : 'Down'} ${d} points in a week, to ${clamp(S.president.approval + (up ? d : -d), 18, 82)}%.`, mood: up ? 'dawn' : 'storm',
-      body: [`After ${why}, ${presTitle()}'s approval ${up ? 'jumped' : 'fell'} ${d} points. The President is ${x.whMine ? 'your party\'s' : 'their party\'s'}, so the ticket ${x.whMine === up ? 'gains' : 'loses'} with every point.`, `The ${up ? 'glow' : 'stench'} reaches every down-ballot race in the country.`],
-      stakes: `Already in: ${campNum(up ? d : -d, 0)} approval, about ${campNum((up ? d : -d) / 5 * (x.whMine ? 1 : -1))} for your ticket.`,
+      body: [`After ${why}, ${presTitle()}'s approval ${up ? 'jumped' : 'fell'} ${d} points. ${x.iInc ? `The President is ${campWho()} and on the ballot, so the President's own share ${up ? 'rises' : 'falls'} with every point.` : x.iWH ? `The President is ${campWho()} and not on the ballot: neither ticket owns the number.` : `The President is ${x.whMine ? 'your party\'s' : 'their party\'s'}, so the ticket ${x.whMine === up ? 'gains' : 'loses'} with every point.`}`, `The ${up ? 'glow' : 'stench'} reaches every down-ballot race in the country.`],
+      stakes: x.iInc ? `Already in: ${campNum(up ? d : -d, 0)} approval, about ${campNum((up ? d : -d) * 0.6)} on the President's share.` : x.iWH ? `Already in: ${campNum(up ? d : -d, 0)} approval, and nothing for either ticket.` : `Already in: ${campNum(up ? d : -d, 0)} approval, about ${campNum((up ? d : -d) / 5 * (x.whMine ? 1 : -1))} for your ticket.`,
       auto: fx => fx.appr(up ? d : -d),
       choices: x.whMine ? (up ? (campIsPres(x.my, x.mine) ? [
         { t: 'Lean into it: a victory-lap tour', s: '+0.4 national; approval +1.', go: fx => { fx.n(0.4); fx.appr(1); return `${presTitle()} did five rallies in five days. The crowds were enormous.`; } },
@@ -831,7 +851,8 @@ const CAMP_EVENTS = [
         { t: 'Attack the President anyway', s: 'A coin flip: ±0.3.', go: fx => { const ok = Math.random() < 0.5; fx.n(ok ? 0.3 : -0.3); return ok ? 'The attacks kept the base warm.' : 'Attacking a popular President in a good week looked sour.'; } },
         { t: `Change the subject to ${TAG[x.theme][1].toLowerCase()}`, s: '+0.2 national.', go: fx => { fx.n(0.2); fx.sal(x.theme, 1); return 'You could not beat the news, so you made your own.'; } },
       ] : [
-        { t: `Tie ${x.theirL} to the President`, s: '+0.6 national.', go: fx => { fx.n(0.6); return `"${x.theirL} and ${lastName(S.president)}: a team" said the ad, with the two of them side by side.`; } },
+        x.iWH ? { t: 'Run against the White House\'s record', s: `+0.4 national${x.iInc ? '; the President\'s share −1' : ''}.`, go: fx => { fx.n(0.4); if (x.iInc) fx.tp(-1); return `"Four years of ${lastName(S.president)} and nothing to show for it," said the ad. Both parties ran it, in different colors.`; } }
+        : { t: `Tie ${x.theirL} to the President`, s: '+0.6 national.', go: fx => { fx.n(0.6); return `"${x.theirL} and ${lastName(S.president)}: a team" said the ad, with the two of them side by side.`; } },
         { t: 'Stay positive', s: '+0.2 national; party mood +0.3.', go: fx => { fx.n(0.2); fx.mood(0.3); return 'You let the President sink alone and talked about tomorrow.'; } },
       ]) };
   } },
@@ -1005,7 +1026,7 @@ function campRecapHTML(C) {
     C.theme && TAG[C.theme] ? `<b>Message:</b> ${TAG[C.theme][0]} ${TAG[C.theme][1]}${C.themeHot ? ' — a top issue with voters (+1)' : ''}` : '',
     C.strategy ? `<b>Map:</b> ${CAMP_MAPS[C.strategy].name}${C.focus && C.focus.length ? ` (${C.focus.join(', ')})` : ''}` : '',
     C.opp && C.opp.strategy && TAG[C.opp.theme] ? `<b>Their campaign:</b> ran on ${TAG[C.opp.theme][1]}${C.opp.themeHot ? ' (a top issue, −1)' : ''} with ${CAMP_MAPS[C.opp.strategy].prose}${C.opp.focus.length ? ` (${C.opp.focus.join(', ')})` : ''}` : '',
-    C.thirdParty ? `<b>On the ballot too:</b> ${C.thirdParty.name} (${C.thirdParty.label || 'Independent'}), ${C.thirdParty.share.toFixed(1)}% in the last poll${C.thirdParty.major ? ', a real contender' : ''}` : '',
+    C.thirdParty ? `<b>On the ballot too:</b> ${C.thirdParty.name} (${C.thirdParty.label || 'Independent'}), ${C.thirdParty.share.toFixed(1)}% in the last poll${C.thirdParty.inc ? ', the sitting President' : C.thirdParty.major ? ', a real contender' : ''}` : '',
     ...deb.map(dline),
     ...deb.filter(d => d.ind).map(d => `<b>The third podium:</b> ${d.ind.name} went after ${campLast(campNoms()[d.ind.target])} (${campNum(d.ind.swing)} for you; ${d.ind.d >= 0 ? '+' : '−'}${Math.abs(d.ind.d).toFixed(1)} for ${campLast(d.ind)})`),
     vp ? `<b>Running mates' debate:</b> ${vp.winner === mine ? 'won' : vp.winner ? 'lost' : 'a wash'}${vp.gaffeMine ? ', your running mate gaffed' : ''}${vp.gaffeTheirs ? ', theirs gaffed' : ''} (${campNum(vp.result)})` : '',
