@@ -437,12 +437,13 @@ function indFinish(R, state, n, year) {
     // presSetup owns a running independent President's strength; the primary leaves its bruise in adj (16: the old fallback)
     N.adj = R ? -1.5 : 0; N.strength = 16;
     line = !R ? `<b>Independents:</b> ${presTitle()} was renominated without opposition and carries the Alliance line again.`
-      : `<b>Independents:</b> ${presTitle()} beat back an Alliance revolt, ${N.contested ? `but heads to the convention short of the ${primN(N.need)} delegates needed` : `${primN(N.del)} delegates to ${N.runnerUp ? `${N.runnerUp.name}'s ${primN(N.runnerUp.del)}` : 'none'}`}.`;
+      : N.contested ? `<b>Independents:</b> ${presTitle()} leads the Alliance revolt's count with ${primN(N.del)} delegates${N.runnerUp ? ` to ${N.runnerUp.name}'s ${primN(N.runnerUp.del)}` : ''}, short of the ${primN(N.need)} needed: the at-large officers will decide on the convention floor.`
+      : `<b>Independents:</b> ${presTitle()} beat back an Alliance revolt, ${primN(N.del)} delegates to ${N.runnerUp ? `${N.runnerUp.name}'s ${primN(N.runnerUp.del)}` : 'none'}.`;
   } else {
     const f = R.field.find(x => x.name === N.name);
     N.strength = indNomStrength(N, R, f);
     if (IND()) N.strength = +(N.strength + 1 + seats('I') * 0.5 + Math.max(0, S.mood) * 0.2).toFixed(1);
-    line = `<b>Independents:</b> ${N.name} (${N.label}, ${N.office}) ${N.contested ? `leads the Alliance with ${primN(N.del)} delegates, short of the ${primN(N.need)} needed: the convention floor will settle it` : `clinched the Alliance line with ${primN(N.del)} delegates`}${incF ? `, ending ${presTitle()}'s bid for a second term` : ''}; the line polls around ${indSh(N.strength)}% nationally.`;
+    line = `<b>Independents:</b> ${N.name} (${N.label}, ${N.office}) ${N.contested ? `leads the Alliance with ${primN(N.del)} delegates, short of the ${primN(N.need)} needed: the convention floor will settle it` : `clinched the Alliance line with ${primN(N.del)} delegates`}${incF ? N.contested && incF.active ? `, with ${presTitle()} still fighting for the line on the floor` : `, ending ${presTitle()}'s bid for a second term` : ''}; the line polls around ${indSh(N.strength)}% nationally.`;
     // only a major-party runner-up can still bolt (the heavyweight now runs in the primary itself)
     if (!R.field.some(x => x.big)) major = indMajor(state, n, N, true);
     if (major) { major.engine = 'prim'; n.I = major; if (IND()) major.strength = +(major.strength + 1 + seats('I') * 0.5 + Math.max(0, S.mood) * 0.2).toFixed(1); }
@@ -515,11 +516,11 @@ function indConvDrop(C) {
 function indConvMoves(C) {
   const N = C.N, rk = indConvRank(C), lead = rk[0] && rk[0].x, mine = N.endorsed ? indConvAct(C).find(x => x.name === N.endorsed) : null;
   // the deal goes to a power broker: the runner-up when you back the leader, otherwise the best of the rest (not the leader)
-  const target = mine || lead, partner = rk.map(r => r.x).find(x => x !== target && (target === lead || x !== lead));
+  const target = mine || lead, partner = rk.map(r => r.x).find(x => x !== target && !x.incumbent && (target === lead || x !== lead));
   const bloc = partner ? C.blocs.filter(b => b.to === partner.name).reduce((a, b) => a + b.del, 0) : 0;
   return {
     release: mine && mine !== lead && !C.released ? { mine, lead } : null,
-    vp: partner && target && !C.vpDeal && !N.incumbent && bloc > 0 ? { target, partner, bloc } : null,
+    vp: partner && target && !target.incumbent && !C.vpDeal && !N.incumbent && bloc > 0 ? { target, partner, bloc } : null,
   };
 }
 function indConvApply(C, k) {
@@ -532,7 +533,7 @@ function indConvApply(C, k) {
   } else if (k === 'vp' && mv.vp) {
     const { target, partner, bloc } = mv.vp;
     C.blocs.filter(b => b.to === partner.name).forEach(b => b.to = target.name);
-    C.vpDeal = partner.name; C.unityAdj = (C.unityAdj || 0) + 0.05;
+    C.vpDeal = partner.name; C.vpFor = target.name; C.unityAdj = (C.unityAdj || 0) + 0.05;
     C.moves.push(`${partner.name} took the running-mate slot and sent ${primN(bloc)} at-large delegates to ${target.name}`);
   } else return false;
   C.moved = true; return true;
@@ -555,8 +556,14 @@ function indConvSettle(C, year) {
     Object.assign(N, { p: w.p, name: w.name, state: w.state, home: w.state, office: w.office, charisma: +(+w.charisma || 1).toFixed(2), label: w.label, color: L.color, faction: L.group, kind: w.kind, ref: w.ref, heavy: !!w.heavy, big: !!w.big, major: !!w.big, incumbent: false,
       lean: +clamp(L.lean, -1, 1).toFixed(2), del: indConvTotal(C, w), runnerUp: { name: old.name, label: old.label, faction: old.faction, del: old.del, p: old.p, office: old.office, state: old.state, charisma: old.charisma }, upset: true });
     delete N.adj;
-    N.strength = indNomStrength(N, { incumbentRace: wasInc || C.roll.some(x => x.incumbent) }, w);
-    if (IND()) N.strength = +(N.strength + 1 + seats('I') * 0.5 + Math.max(0, S.mood) * 0.2).toFixed(1);
+    if (w.incumbent) {
+      // the sitting President trailed in the primaries and won the line back on the floor: still the incumbent (presSetup owns
+      // the strength; the bruising race stays in adj)
+      Object.assign(N, { p: w.p || P, kind: 'incumbent', ref: { type: 'pres' }, incumbent: true, lean: +(P.lean != null ? P.lean : L.lean), adj: -1.5, strength: 16 });
+    } else {
+      N.strength = indNomStrength(N, { incumbentRace: wasInc || C.roll.some(x => x.incumbent) }, w);
+      if (IND()) N.strength = +(N.strength + 1 + seats('I') * 0.5 + Math.max(0, S.mood) * 0.2).toFixed(1);
+    }
     if (w.p) { hist(w.p, `Won the ${year} Alliance nomination on the convention floor, ${indOrd(C.ballots.length)} ballot`); w.p.label = w.label; }
     if (old.p) hist(old.p, wasInc ? `Denied renomination on the floor of the ${year} Ballot Alliance convention` : `Led the ${year} Alliance primaries but lost the nomination on the convention floor`);
     if (IND() && N.endorsed) {
@@ -584,11 +591,12 @@ function indConvPlank(C, k) {
 function indAutoVP(C) {
   const N = C.N;
   if (N.incumbent) return S.vp ? { name: S.vp.name, state: S.vp.state, faction: S.vp.faction || 'Independents' } : null;
-  const deal = C.vpDeal && C.roll.find(x => x.name === C.vpDeal);
+  // a floor deal binds only the candidate it was struck for (void if someone else took the line)
+  const deal = C.vpDeal && C.vpFor === N.name && C.roll.find(x => x.name === C.vpDeal);
   if (deal) return { name: deal.name, state: deal.state, faction: indLabelInfo(deal.label).group, deal: true };
   const sen = S.members.filter(m => m.party === 'I' && m.name !== N.name && m.label === N.label)[0];
   if (sen) return { name: sen.name, state: sen.state, faction: 'Independents' };
-  const ru = N.runnerUp; if (ru && ru.state) return { name: ru.name, state: ru.state, faction: ru.label ? indLabelInfo(ru.label).group : 'Independents' };
+  const ru = N.runnerUp; if (ru && ru.state && ru.name !== S.president.name) return { name: ru.name, state: ru.state, faction: ru.label ? indLabelInfo(ru.label).group : 'Independents' };
   const st = pick(STATES)[0], p = newPerson('I', st, { age: ri(50, 68) }); hist(p, 'Retired from the Army as a lieutenant general', currentYear() - ri(2, 6));
   return { name: p.name, state: st, faction: 'Independents' };
 }
@@ -611,7 +619,7 @@ function indConvStore(C) {
 }
 function indConvFront(C, year, month) {
   const N = C.N, nm = lastName(N.p || { name: N.name }).toUpperCase(), city = C.city.toUpperCase(), d = 0.5 * C.bounce - (N.brokered ? 0.5 : 0) + (C.strAdj || 0);
-  const headline = N.upset ? `FLOOR REVOLT: ${nm} SEIZES THE ALLIANCE LINE` : N.brokered ? `${nm} WINS THE ALLIANCE ON THE ${indOrd(C.ballots.length).toUpperCase()} BALLOT` : N.incumbent ? `THE ALLIANCE RENOMINATES PRESIDENT ${nm}` : `${nm} ACCEPTS THE ALLIANCE LINE IN ${city}`;
+  const headline = N.upset && N.incumbent ? `PRESIDENT ${nm} WINS THE ALLIANCE LINE BACK ON THE FLOOR` : N.upset ? `FLOOR REVOLT: ${nm} SEIZES THE ALLIANCE LINE` : N.brokered ? `${nm} WINS THE ALLIANCE ON THE ${indOrd(C.ballots.length).toUpperCase()} BALLOT` : N.incumbent ? `THE ALLIANCE RENOMINATES PRESIDENT ${nm}` : `${nm} ACCEPTS THE ALLIANCE LINE IN ${city}`;
   const ballots = C.ballots.length > 1 ? `It took ${C.ballots.length} roll calls${C.plurality ? ', and in the end the rules committee\'s sixth-ballot plurality rule' : ''} to settle it.` : C.clinched ? `${N.name} arrived with a majority won in the primaries and was nominated by acclamation.` : 'The at-large officers broke for the delegate leader and settled it on the first ballot.';
   return frontPage({ headline, sub: `${N.name} (${N.label}) leaves ${C.city} with ${N.vp ? `${N.vp.name} as running mate` : 'the ticket set'} and a convention bounce of ${C.bounce >= 0 ? '+' : ''}${indSh(C.bounce)} points.`, mood: 'dawn', date: `${month.replace(/^./, c => c.toUpperCase())} ${year} · ${C.city}`,
     body: [`Delegates of the Independent Ballot Alliance packed ${C.hall}. ${ballots}`, C.plankLine ? `The platform: ${C.plankLine}.` : '', C.tone ? `The acceptance speech: "${IND_TONES[C.tone][0]}." ${indToneFit(C, C.tone) >= 0.5 ? 'The hall loved it.' : indToneFit(C, C.tone) > 0 ? 'It played well enough.' : 'It fell flat in places.'}` : '', `Party unity leaves the hall at ${Math.round(clamp(C.unity, 0.5, 1) * 100)}%; the ticket ${d >= 0 ? 'gains' : 'loses'} about ${indSh(Math.abs(d))} points nationally.`, C.yourLine || ''].filter(Boolean) });
@@ -665,7 +673,7 @@ function indConventionFlow(month, next) {
   };
   // 3. the running mate: the caucus's pick (caucus.js), a floor deal, or the sitting Vice President
   const mate = () => {
-    if (!N.vp && !N.incumbent && !C.vpDeal && N.yours && typeof cauRunningMate === 'function') return cauRunningMate(speech);
+    if (!N.vp && !N.incumbent && !(C.vpDeal && C.vpFor === N.name) && N.yours && typeof cauRunningMate === 'function') return cauRunningMate(speech);
     if (!N.vp) N.vp = indAutoVP(C);
     speech();
   };
