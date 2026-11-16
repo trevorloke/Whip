@@ -30,6 +30,8 @@ const orgCode = p => p === 'D' ? 1 : p === 'R' ? 2 : p === 'I' ? 3 : 0;
 // one number per control change (Congress, before, after): S.org.shownK holds the last one printed
 const orgStamp = () => S.org ? orgK() * 100 + orgCode(S.org.prevFloor) * 10 + orgCode(S.org.floor) : -1;
 const orgWho = f => f === 'I' ? 'the Independent-led coalition' : `the ${PARTY[f].name} majority`;
+// a score with one decimal (the partner scores move in halves)
+const orgF1 = v => (v > 0 ? '+' : '') + (Math.round(v * 10) / 10);
 
 /* ---------------- the NPC independents ---------------- */
 function indsMembers() { return S.members.filter(m => m.party === 'I'); }
@@ -48,10 +50,13 @@ function indsLabel() {
   for (const m of indsMembers()) if (m.label && typeof IND_LABELS !== 'undefined' && IND_LABELS[m.label]) { n[m.label] = (n[m.label] || 0) + 1; if (!best || n[m.label] > n[best]) best = m.label; }
   return best || 'Common Ground';
 }
-// create S.inds (no-op when it exists). Called when the independents are pivotal, at the first election's interlude, or by the wing.js deal
-function indsEnsure() {
+// create S.inds (no-op when it exists). Called when the independents are pivotal, at the first election's interlude, or by the wing.js deal.
+// k0: the Congress S.inds counts as organized for. The interlude hook passes −1 (it organizes them next); every other caller
+// (the wing.js deal, an independent bill mid-Congress) gets the current Congress, so a mid-Congress creation never reads as a
+// new Congress at the next interlude (no Price and no re-frozen partner in the middle of a Congress)
+function indsEnsure(k0) {
   if (!S || IND() || !PARITY()) return null;
-  if (!S.inds) S.inds = { chair: null, label: indsLabel(), partner: indsRulePartner(), lead: false, k: -1, courted: { D: 0, R: 0 }, trust: { D: 0, R: 0 }, savedRival: null, led: 0 };
+  if (!S.inds) S.inds = { chair: null, label: indsLabel(), partner: indsRulePartner(), lead: false, k: k0 === undefined ? (S.career ? orgK() : -1) : k0, courted: { D: 0, R: 0 }, trust: { D: 0, R: 0 }, savedRival: null, led: 0 };
   return S.inds;
 }
 // the independents' floor leader, drawn on first display
@@ -135,7 +140,7 @@ function indsPriceModal(next) {
       <p>The new Senate is <b>${blocLine()}</b>. Neither party can organize it alone${seats('I') > 1 ? `, and the ${seats('I')} independents know it` : ', and the independent knows it'}. Sen. ${ch.name}, who chairs their caucus${I.label ? ` (${indPill(I.label)})` : ''}, is taking calls from both leaders.</p>
       <div class="org-sens">${indsMembers().map(indsSenHTML).join('')}</div>
       <div class="org-proj"><b>If the Senate organized today:</b> ${orgOutcomeLine(o)}.<br>
-        <small>The independents lean ${d.partner === 'D' ? 'Democratic' : 'Republican'} · their score: ${PARTY.D.short} ${fmt(d.score.D)}, ${PARTY.R.short} ${fmt(d.score.R)} (where they sit, what each side offered, trust, and +1 for their current partner)${d.lead ? ` · they would demand the gavel (bargain score ${fmt(lead)})` : ''}</small>
+        <small>The independents lean ${d.partner === 'D' ? 'Democratic' : 'Republican'} · their score: ${PARTY.D.short} ${orgF1(d.score.D)}, ${PARTY.R.short} ${orgF1(d.score.R)} (where they sit, what each side offered, trust, and +1 for their current partner)${d.lead ? ` · they would demand the gavel (bargain score ${fmt(lead)})` : ''}</small>
         <br><small>Path to the Gavel: ${gp.why}.</small></div>
       <p>The ${mine.short} can court them before the vote on the organizing resolution. Each offer can be made once.</p>
       <div class="shop org-shop">${courtBtn(1, 'Court them: dinner with the leader', 'Your party\'s offer counts for +1 when they choose.')}
@@ -187,11 +192,12 @@ function orgControlPage(next) {
     <div class="choices"><button class="btn primary big adv" id="org-ok">Back to work</button></div>`);
   $('#org-ok').onclick = () => next();
 }
-// a control change worth a front page: to or from the independents, or a D↔R switch the independents decided
-function orgChangeShown() {
+// a control change worth a front page: to or from the independents, or a D↔R switch because the independents changed partners
+// (p0: the frozen partner before this interlude; a D↔R change from seat moves alone is not the independents switching sides)
+function orgChangeShown(p0) {
   const o = S.org; if (!o || !o.prevFloor || o.prevFloor === o.floor || o.shownK === orgStamp()) return false;
   if (o.prevFloor === 'I' || o.floor === 'I') return true;
-  return seats('I') > 0 && orgOutcome('D', false).floor !== orgOutcome('R', false).floor;
+  return seats('I') > 0 && !!o.partner && o.partner !== p0 && orgOutcome('D', false).floor !== orgOutcome('R', false).floor;
 }
 
 /* ---------------- between bills (D/R careers, PARITY, from the second Congress on) ---------------- */
@@ -199,7 +205,9 @@ HOOKS.interlude.push(() => {
   if (!orgOn()) return [];
   const k = orgK(); if (k < 1) return [];
   const steps = [];
-  const newCong = !S.inds || S.inds.k !== k;
+  // a new Congress: S.inds not yet organized for it (created at the Congress's first interlude, right after the election)
+  const newCong = S.inds ? S.inds.k !== k : S.career.bills % 6 === 0;
+  const p0 = S.org ? S.org.partner : null;
   // the election night already printed this Congress's control headline: mark it as shown
   if (newCong && S.org && S.org.k === k) S.org.shownK = orgStamp();
   // the gavel is checked against the seats at every interlude (deaths, switches, the election)
@@ -207,9 +215,9 @@ HOOKS.interlude.push(() => {
   if (S.inds && !seats('I')) { S.inds.k = k; S.inds.lead = false; }
   let price = false;
   if (seats('I') > 0 && newCong) {
-    if (indPivotal()) { indsEnsure(); price = true; steps.push(next => indsPriceModal(next)); }
-    else { indsEnsure(); indsOrganizeAI(); }
+    if (indPivotal()) { indsEnsure(-1); price = true; steps.push(next => indsPriceModal(next)); }
+    else { indsEnsure(-1); indsOrganizeAI(); }
   } else orgRefresh();
-  if (!price && orgChangeShown()) steps.push(next => orgControlPage(next));
+  if (!price && orgChangeShown(p0)) steps.push(next => orgControlPage(next));
   return steps;
 });

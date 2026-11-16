@@ -19,8 +19,9 @@ function aimBadge(aim) { return `<span class="fl-aim ${aim === 'kill' ? 'kill' :
 // who put this bill on the floor, and what it takes
 function floorByline() {
   const B = S.bill, them = IND() || PARITY() ? floorWho() : `${PARTY[other(S.side)].name} majority`;
-  const who = B.budget ? (B.by === 'them' ? `Written by the ${them}` : '') : B.by === 'them' ? `Scheduled by the ${them}` : B.note ? '' : isMajority() ? 'Your pick for the floor' : '';
-  const bits = [who, B.note, B.cloture ? (killing() ? 'needs 60 for cloture: 41 nays kill it' : 'needs 60 to beat the filibuster') : ''].filter(Boolean);
+  const wh = B.note === 'The White House bill'; // the independent President's bill (parity only): the White House sent it up
+  const who = B.budget ? (B.by === 'them' ? `Written by the ${them}` : '') : wh ? `Sent up by ${presTitle()}` : B.by === 'them' ? `Scheduled by the ${them}` : B.note ? '' : isMajority() ? 'Your pick for the floor' : '';
+  const bits = [who, wh ? '' : B.note, B.cloture ? (killing() ? 'needs 60 for cloture: 41 nays kill it' : 'needs 60 to beat the filibuster') : ''].filter(Boolean);
   return bits.length ? `<small class="fl-by">${bits.join(' · ')}</small>` : '';
 }
 
@@ -148,7 +149,7 @@ function flNomination() {
   const N = S.nominee, p = N.party || S.side, pr = p === 'I' && (IND() || PARITY()) && S.president.party === 'I' ? presVec() : PARTY[p === 'I' ? other(S.side) : p].prior, fx = {}, mod = 1 / (1 + (N.tries || 0)), mine = p === S.side;
   TAGS.slice().sort((a, b) => Math.abs(pr[b] || 0) - Math.abs(pr[a] || 0)).slice(0, 3).forEach(t => fx[t] = Math.round((pr[t] || 0) * 2 * mod) || Math.sign(pr[t] || 0));
   return { tpl: [`Confirmation of Judge ${N.name}`, mine ? `${presTitle()}'s nominee for the Supreme Court. No filibuster: a simple majority confirms. The other side calls the nominee an extremist.`
-    : IND() ? `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARTY[floorParty()].name} majority. No filibuster for judges: a simple majority confirms. Both parties will bid for your caucus's votes.`
+    : IND() ? `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${floorWho()}. No filibuster for judges: a simple majority confirms. Both parties will bid for your caucus's votes.`
     : `${presTitle()}'s nominee for the Supreme Court, rushed to the floor by the ${PARITY() ? floorWho() : `${PARTY[other(S.side)].name} majority`}. No filibuster for judges: a simple majority confirms. Your caucus calls the nominee an extremist; peel off enough of theirs and the seat stays open.`, fx],
     nomination: true, aim: IND() ? flAimI(fx, p) : (mine ? 'pass' : 'kill'), by: mine ? 'you' : 'them', note: N.tries ? `Nominee #${N.tries + 1} for this seat` : '' };
 }
@@ -319,7 +320,7 @@ function flTool(k, pay, done) {
   }
   if (k === 'uc') {
     if (!pk || !pay(k, 1)) return;
-    if (Math.random() > 0.3) return done(`"Objection." The ${them} whip was not, in fact, at lunch.`, false);
+    if (Math.random() > 0.3) return done(`"Objection." The ${!IND() && PARITY() && floorParty() === 'I' ? 'independents\'' : them} whip was not, in fact, at lunch.`, false);
     q.splice(1, 0, { ...mine(), note: 'Unanimous-consent ambush' }); unlock('discharge');
     return done(`Nobody objected! The ${pk.name} goes on the schedule right after this week's bill.`, true);
   }
