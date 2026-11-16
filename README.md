@@ -319,7 +319,7 @@ blocs ("D 46 · R 47 · I 7") and who organizes.
 
 - **The Gavel Bargain** (independent career). The Organizing Resolution always
   shows two lead cards, "Lead the Senate, with the Democrats" and "with the
-  Republicans". They unlock at 6 caucus seats, when neither party can organize
+  Republicans". They unlock at 5 caucus seats, when neither party can organize
   alone and your partner plus your caucus reach 51 (50 with the Vice
   President). Until then the card shows the **Path to the Gavel**: how many
   seats you still need. The caucus status, the Pulse and the election verdict

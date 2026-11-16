@@ -39,7 +39,7 @@ const MODERATE = { D: 'Blue Dogs', R: 'GOP Moderates' };
 const CROSS = { D: 'Conservative Democrats', R: 'Progressive Republicans' };
 MODERATE.I = 'Independents'; // events.js / convention fallbacks find independent members, not nobody
 CROSS.I = null;
-const IND_LEAD_MIN = 6;      // caucus seats needed before a Gavel Bargain is legal (the first balance knob: 5)
+const IND_LEAD_MIN = 5;      // caucus seats needed before a Gavel Bargain is legal (a §9 knob: the contract starts at 6; 5 brings the gavel into the 30-bill band)
 const IND_START_IPRES = 0.12; // the independent career: the chance the starting President is an independent
 
 /* ---------------- states ---------------- */

@@ -343,10 +343,11 @@ function indPower() {
 const IND_ATLARGE = 0.2;
 function indDelegates() { const pledged = primTotalDel(), atLarge = Math.round(IND_ATLARGE * pledged), totalDel = pledged + atLarge; return { pledged, atLarge, totalDel, need: Math.floor(totalDel / 2) + 1 }; }
 // an open year's field: none at all (never for an independent caucus), one member party's contest, or a field of labels
+const IND_NOFIELD_WEAK = 0.27;   // P(no Alliance field) in a weak independent year (indPower < 4); the contract's 0.30 measured 33% (§9 band 20–30%)
 function indFieldPlan(withIncumbent) {
   if (withIncumbent) return { none: false, size: 0, oneLabel: false };
   const pw = indPower(), iwh = S.president.party === 'I';
-  const [sizes, pNone, pOne] = pw >= 10 || iwh ? [null, 0.03, 0] : pw >= 4 ? [[2, 3, 3, 4, 4, 5, 6], 0.15, 0.1] : [[2, 2, 3, 3, 4], 0.3, 0.2];
+  const [sizes, pNone, pOne] = pw >= 10 || iwh ? [null, 0.03, 0] : pw >= 4 ? [[2, 3, 3, 4, 4, 5, 6], 0.15, 0.1] : [[2, 2, 3, 3, 4], IND_NOFIELD_WEAK, 0.2];
   if (!IND() && Math.random() < pNone) return { none: true, size: 0, oneLabel: false };
   const oneLabel = pOne > 0 && Math.random() < pOne;
   return { none: false, size: sizes ? pick(sizes) : ri(2, 9), oneLabel };
@@ -413,7 +414,9 @@ function primaryFieldI(withIncumbent, plan) {
   return field;
 }
 // the heir of an independent White House starts here (balance knob, CONTRACT §9: the I-WH open-year successor target)
-const IND_HEIR_BASE = 23;
+const IND_HEIR_BASE = 21;
+// how much of the Alliance convention's bounce a non-incumbent nominee keeps (the contract's 0.5 left the I career's nominee at 3% wins; §9 band 5–12%)
+const IND_BOUNCE_K = 1;
 // a non-incumbent Alliance nominee's national share (the single owner of it; the incumbent's is presSetup's)
 function indNomStrength(N, R, f) {
   const P = S.president, beat = !!(R && R.incumbentRace && !N.incumbent);
@@ -611,14 +614,14 @@ function indToneFit(C, t) {
 function indConvSpeech(C, t) { C.tone = t; C.bounce = +(rnd(0.5, 2.5) + indToneFit(C, t)).toFixed(1); }
 // bank the convention on S.nominees.I: the bounce moves a non-incumbent's strength, an incumbent's adj (presSetup owns the rest)
 function indConvStore(C) {
-  const N = C.N, d = 0.5 * C.bounce - (N.brokered ? 0.5 : 0) + (C.strAdj || 0);
+  const N = C.N, d = (N.incumbent ? 0.5 : IND_BOUNCE_K) * C.bounce - (N.brokered ? 0.5 : 0) + (C.strAdj || 0);
   Object.assign(N, { bounce: C.bounce, unity: Math.round(clamp(C.unity, 0.5, 1) * 100) / 100, planks: C.planks || [], theme: C.theme || null, city: C.city, tone: C.tone });
   if (!N.vp) N.vp = indAutoVP(C);
   if (N.incumbent) N.adj = +((N.adj || 0) + d).toFixed(1); else N.strength = +((+N.strength || 0) + d).toFixed(1);
   if (N.roll) N.roll.forEach(x => delete x.p);   // the roll call stays in the record; the people don't need to be saved twice
 }
 function indConvFront(C, year, month) {
-  const N = C.N, nm = lastName(N.p || { name: N.name }).toUpperCase(), city = C.city.toUpperCase(), d = 0.5 * C.bounce - (N.brokered ? 0.5 : 0) + (C.strAdj || 0);
+  const N = C.N, nm = lastName(N.p || { name: N.name }).toUpperCase(), city = C.city.toUpperCase(), d = (N.incumbent ? 0.5 : IND_BOUNCE_K) * C.bounce - (N.brokered ? 0.5 : 0) + (C.strAdj || 0);
   const headline = N.upset && N.incumbent ? `PRESIDENT ${nm} WINS THE ALLIANCE LINE BACK ON THE FLOOR` : N.upset ? `FLOOR REVOLT: ${nm} SEIZES THE ALLIANCE LINE` : N.brokered ? `${nm} WINS THE ALLIANCE ON THE ${indOrd(C.ballots.length).toUpperCase()} BALLOT` : N.incumbent ? `THE ALLIANCE RENOMINATES PRESIDENT ${nm}` : `${nm} ACCEPTS THE ALLIANCE LINE IN ${city}`;
   const ballots = C.ballots.length > 1 ? `It took ${C.ballots.length} roll calls${C.plurality ? ', and in the end the rules committee\'s sixth-ballot plurality rule' : ''} to settle it.` : C.clinched ? `${N.name} arrived with a majority won in the primaries and was nominated by acclamation.` : 'The at-large officers broke for the delegate leader and settled it on the first ballot.';
   return frontPage({ headline, sub: `${N.name} (${N.label}) leaves ${C.city} with ${N.vp ? `${N.vp.name} as running mate` : 'the ticket set'} and a convention bounce of ${C.bounce >= 0 ? '+' : ''}${indSh(C.bounce)} points.`, mood: 'dawn', date: `${month.replace(/^./, c => c.toUpperCase())} ${year} · ${C.city}`,

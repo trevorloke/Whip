@@ -752,8 +752,8 @@ HOOKS.interlude.push(() => {
 });
 
 /* ---------------- the independent gavel: losing it, and The Coalition Cracks ---------------- */
-const CAU_REVOLT = 0.15;   // the junior partner's base revolts: the chance per interlude while you lead (a §9 knob)
-// the Gavel Bargain still stands: the independents organize, and the bargain is still legal (6 caucus seats, nobody alone)
+const CAU_REVOLT = 0.07;   // the junior partner's base revolts: the chance per interlude while you lead (a §9 knob)
+// the Gavel Bargain still stands: the independents organize, and the bargain is still legal (IND_LEAD_MIN caucus seats, nobody alone)
 function cauGavelHolds() { const C = S.cau; return !!C && !!C.lead && orgOutcome().floor === 'I' && (C.partner === 'D' || C.partner === 'R') && indLeadLegal(C.partner); }
 function cauPaper(fp, btn, next) { showModal(`${frontPage(fp)}<div class="choices"><button class="btn primary big adv" id="cau-ok">${btn}</button></div>`); $('#cau-ok').onclick = () => next(); }
 function cauGavelCheck(next) {
