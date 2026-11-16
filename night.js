@@ -66,7 +66,7 @@ function presSetup() {
 }
 // the parity path for an independent White House (CONTRACT §5.7): every career but a D/R one with the switch off, and only for a
 // new-path Alliance nominee (engine 'prim') or none at all, so an old-path nominee keeps the old formula end to end
-const PRES_INC_I_BASE = 32;   // the contract's base is 30 (≤ 34); 32 puts re-election at 50% approval inside the 30–50% band
+const PRES_INC_I_BASE = 31;   // the contract's base is 30 (≤ 34); 31 puts re-election inside both bands (≈ 39% at 50% approval, ≈ 60% at 56%)
 function presNewI() { const N = S.nominees || {}; return S.president.party === 'I' && (IND() || PARITY()) && (!N.I || N.I.engine === 'prim'); }
 // a running independent President, as a top-two candidate: PRES_INC_I_BASE at 50% approval, 0.8 a point, the White House streak, the war,
 // and the primary's and the convention's marks (N.I.adj). presThirdShare then takes the share from both majors by state lean
@@ -205,11 +205,12 @@ function runPres() {
     const govCode = Object.keys(S.governors || {}).find(c => S.governors[c].name === person.name);
     if (govCode) { governorSucceeded(govCode, 'was elected President'); extra.push(`${ST[govCode].name} gets a new governor.`); }
     hist(person, `Elected President of the United States${winner === 'I' ? ' as an independent' : ''}${evTxt}`, year);
-    // an independent President always carries a label (an IND_LABELS key or 'Independent') and a lean (parity path)
+    // an independent President always carries a label (an IND_LABELS key or 'Independent') and a lean (parity path): the nominee's own
+  // lean (presThird's copy zeroes a missing one), else the label's
     const iLab = winner === 'I' && NEWI ? (typeof IND_LABELS !== 'undefined' && IND_LABELS[T.label] ? T.label : 'Independent') : null;
-    S.president = { ...person, name: person.name, party: winner, faction: winner === 'I' ? FACTIONS.I[0][0] : NW.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1, ...(iLab ? { label: iLab, lean: T.lean != null ? +T.lean : indLabelInfo(iLab).lean } : winner === 'I' && T.label ? { label: T.label } : {}) };
+    S.president = { ...person, name: person.name, party: winner, faction: winner === 'I' ? FACTIONS.I[0][0] : NW.faction || pick(FACTIONS[winner])[0], approval: ri(52, 58), terms: 1, ...(iLab ? { label: iLab, lean: noms.I && noms.I.lean != null && isFinite(+noms.I.lean) ? clamp(+noms.I.lean, -1, 1) : indLabelInfo(iLab).lean } : winner === 'I' && T.label ? { label: T.label } : {}) };
     if (NW.vp && NW.vp.name) seatVP(NW);
-    else if (iLab && typeof indPerson === 'function') { S.vp = indPerson(iLab, 'gov').p; S.vp.faction = FACTIONS.I[0][0]; hist(S.vp, 'Elected Vice President', year); }
+    else if (iLab && typeof indPerson === 'function') { S.vp = indPerson(iLab, 'gov').p; S.vp.faction = FACTIONS.I[0][0]; if (S.vp.history && S.vp.history.length) S.vp.history.pop(); hist(S.vp, 'Elected Vice President', year); }   // drop indPerson's "Sought the … line" entry: the VP never ran
     else { S.vp = newPerson(winner, pick(STATES)[0]); S.vp.faction = FACTIONS[winner][0][0]; hist(S.vp, 'Elected Vice President', year); }
     tidy();
     S.pendingCabinet = true;

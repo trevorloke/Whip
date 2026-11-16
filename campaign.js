@@ -245,7 +245,9 @@ function campTicketsHTML(noms) {
 }
 // the third card: the independent nominee (or October's surging independent), smaller, with where its votes come from
 function campIndCardHTML() {
-  const C = campC(), I = S.nominees && S.nominees.I, tp = C && C.thirdParty ? C.thirdParty : I && I.name ? campTPFrom(I) : null;
+  // before the fall campaign a running independent President's record has no strength of its own (presSetup owns it): show presIncI's
+  const C = campC(), I = S.nominees && S.nominees.I, incI = I && I.name && I.incumbent && S.president.party === 'I' && I.name === S.president.name && S.president.terms < 2 && typeof presNewI === 'function' && presNewI();
+  const tp = C && C.thirdParty ? C.thirdParty : I && I.name ? campTPFrom(incI ? presIncI(S.president, I) : I) : null;
   if (!tp) return '';
   const person = I && I.name === tp.name ? campPersonOf(I) : null, from = tp.lean == null ? null : tp.lean < -0.12 ? 'D' : tp.lean > 0.12 ? 'R' : 0;
   return `<span class="vs">vs</span><div class="camp-tk ind-tk" style="border-color:${campTPColor(tp)}">${person && person.seed != null ? portrait(person) : '<span class="camp-noport">🗳️</span>'}<div>
