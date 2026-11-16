@@ -15,7 +15,8 @@ const RS_RUNOFF = ['AL', 'AR', 'GA', 'MS', 'OK', 'SC', 'TX'];
 const RS_COLORS = ['#f59e0b', '#22d3ee', '#a78bfa', '#f472b6', '#34d399', '#fb7185', '#facc15'];
 const RS_SD = 0.3; // per-candidate election-day noise (log scale)
 const RS_FLANKS = ['Progressives', 'Freedom Caucus'];
-const RS_I_CAL = 1.3; // an independent incumbent's challenger: P(win) before networks and campaigns = rc.primary.odds × this (balance knob)
+const RS_I_SPREAD = 30; // an open Independent primary winner's strength spreads with their quality (12–30, mean ~19: CONTRACT §9; balance knob)
+const RS_I_CAL = 1.5; // an independent incumbent's challenger: P(win) before networks and campaigns = rc.primary.odds × this (balance knob)
 // [office, quality 0..1, extra $M, elected?, background]
 const RS_OFFICES = [
   [s => `${s.name} Attorney General`, 0.8, 0, 1], [s => `Lieutenant Governor of ${s.name}`, 0.75, 0, 1], [s => `${s.name} Secretary of State`, 0.6, 0, 1],
@@ -439,7 +440,7 @@ function rsApplyI(rc, P, yr, news) {
   }
   // an open independent seat, a filed recruit's lane, or a lane that drew independents on its own
   const c = P.field.find(x => x === w);
-  rc.ind = { name: w.name, label: lead, cause: w.p.cause || null, str: clamp(12 + 6 * w.ch + (c.recruited ? 4 : 0) + (contested ? 2 : 0) - bruise, 10, 30), incumbent: false, primaryWon: true, ...(c.recruited ? { recruited: true } : {}), ...(c.filed ? { filed: true } : {}) };
+  rc.ind = { name: w.name, label: lead, cause: w.p.cause || null, str: clamp(12 + 6 * w.ch + RS_I_SPREAD * (w.ch - 1.03) + (c.recruited ? 4 : 0) + (contested ? 2 : 0) - bruise, 10, 30), incumbent: false, primaryWon: true, ...(c.recruited ? { recruited: true } : {}), ...(c.filed ? { filed: true } : {}) };
   hist(w.p, `Won the ${yr} Independent primary for the U.S. Senate in ${st}${contested ? ` with ${rsP(fin[0].pct)}${rsRoW(r, 'a')}` : ', unopposed'}`, yr);
 }
 

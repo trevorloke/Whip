@@ -413,7 +413,7 @@ function primaryFieldI(withIncumbent, plan) {
   return field;
 }
 // the heir of an independent White House starts here (balance knob, CONTRACT §9: the I-WH open-year successor target)
-const IND_HEIR_BASE = 14;
+const IND_HEIR_BASE = 23;
 // a non-incumbent Alliance nominee's national share (the single owner of it; the incumbent's is presSetup's)
 function indNomStrength(N, R, f) {
   const P = S.president, beat = !!(R && R.incumbentRace && !N.incumbent);

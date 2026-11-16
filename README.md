@@ -294,16 +294,117 @@ neither party can organize without you.
   defector, banking recruits, a reach-out tour, changing banner, or **the
   Jeffords** (switching partner mid-Congress). Parties will try to poach your
   members, and party senators sometimes want in.
-- **Elections.** The party primaries are theirs (you can only meddle). Then
-  comes the **Independent Slate**: recruit independents into open lanes, ask a
-  party to **stand aside**, pick the slate's message. Maine and Alaska count
-  ranked ballots. In presidential years you run the Ballot Alliance primary,
-  pick a running mate and fight a **Third Force** fall campaign for the 15%
-  debate line, with a possible cabinet offer to withdraw and an **Elector
-  Gambit** if nobody reaches 270. With your caucus in the room, voters turn
-  harder on whichever party gets within reach of running the Senate alone. The
-  verdict is about caucus size and the balance of power. Lose every seat (unless the President is yours) and the
-  career is over.
+- **Elections.** The party primaries are theirs (you can only meddle). Your
+  own seats go through **Filing Day** and real Independent primaries (see
+  [Filing Day and Independent Senate primaries](#filing-day-and-independent-senate-primaries)).
+  Then comes the **Independent Slate**: ask a party to **stand aside**, add one
+  late recruit where no primary ran, pick the slate's message. Maine and Alaska
+  count ranked ballots. In presidential years you run the Alliance's primary
+  and convention (see [Independent primaries](#independent-primaries)) and
+  fight a **Third Force** fall campaign for the 15% debate line, with a
+  possible cabinet offer to withdraw and an **Elector Gambit** if nobody
+  reaches 270. With your caucus in the room, voters turn harder on whichever
+  party gets within reach of running the Senate alone. The verdict is about
+  caucus size and the balance of power. Lose every seat (unless the President
+  is yours) and the career is over.
+
+## The Independent Senate
+
+Independents count toward control of the Senate in every career. One fixed
+rule decides who organizes: a party (or the independents) with 51 seats, or 50
+and the Vice President, organizes alone; otherwise the independents' partner
+leads the coalition, unless the independents out-seat their partner or strike
+a deal to lead it. The status bar, the Pulse and Election Night show all three
+blocs ("D 46 · R 47 · I 7") and who organizes.
+
+- **The Gavel Bargain** (independent career). The Organizing Resolution always
+  shows two lead cards, "Lead the Senate, with the Democrats" and "with the
+  Republicans". They unlock at 6 caucus seats, when neither party can organize
+  alone and your partner plus your caucus reach 51 (50 with the Vice
+  President). Until then the card shows the **Path to the Gavel**: how many
+  seats you still need. The caucus status, the Pulse and the election verdict
+  show the same line. Once a card is unlocked it shows the partner's score,
+  term by term (your seats, trust, how far they are from a majority, the Vice
+  President, who led last Congress, who just lost the Senate). They accept at
+  0 or better. Taking the gavel costs 2 capital and makes you the majority:
+  the docket, the budget and every majority tool are yours.
+- **The Contract.** Your junior partner gets every third docket slot, marked
+  with a gold Contract tag. Skipping one costs trust. When you owe them two
+  favors, their next Contract bill jumps the queue.
+- **The Coalition Table.** Your own bills on your own floor need a whip.
+  **Lean on your partner** (it always has a price: one more favor owed),
+  **cross the aisle** to the opposition for a concession (a docket slot, a
+  rider, pork or a committee gavel; your partner's trust drops), or **go it
+  alone** (no help, but a bonus to legacy and confidence if it passes).
+- **The Coalition Cracks.** Skipped slots, low trust, a Contract bill your
+  caucus helped kill, or a revolt in your partner's base can bring the
+  partner to your door, at most once per Congress. Pay them, call their bluff
+  (the outcome is shown in advance), switch partners, or give up the gavel.
+  Seat losses or an election can take the gavel away too: **THE INDEPENDENT
+  GAVEL FALLS**.
+- **The Independents' Price** (party careers). When the independents decide
+  who runs the Senate, or could take the gavel themselves, a new Congress opens
+  with their price: court them for 1 to 3 capital, offer them the gavel
+  (your base hates it, but the other party stays out of power), or pass. They
+  then pick a partner by a fixed rule (their lean, who courted them, trust).
+  An Independent-led Senate is rare; in one you play the junior partner (a
+  Contract slot every third bill, +1 action) or the opposition. Bills the
+  independents bring to the floor have their own whip, the independents'
+  chair.
+
+## Independent primaries
+
+- **One engine.** The Independent Ballot Alliance runs a full primary on the
+  national calendar in every career: the map, state-by-state results,
+  delegates and the 15% threshold, debates once three candidates are left,
+  dropouts by label lane, and a national heavyweight now and then. Field size
+  grows with the independents' strength; a weak year can have no Alliance
+  field at all. In the independent career you **endorse and run their
+  campaign** in Campaign HQ, as party players do. In party careers the Alliance
+  tab is watch only.
+- **Renomination.** A sitting independent President faces the same challenge
+  odds as a party President, a heavyweight challenger when weak, and can
+  withdraw when battered. In the independent career you can **Undermine** the
+  President or **Recruit a challenger** from the Executive Office.
+- **The Alliance convention** (independent career, at most six screens). A
+  roll call (by acclamation, or a brokered floor with one move per ballot:
+  release your delegates, or offer the running-mate slot to a rival lane), the
+  platform plank, the running mate, the acceptance speech and the bounce.
+  Party careers see it as one front page.
+
+## Filing Day and Independent Senate primaries
+
+- **Filing Day** (independent career, before the primaries). File recruits
+  into open lanes (2 capital or a banked recruit, up to three) and shield a
+  challenged incumbent. Filed recruits run in real Independent primaries.
+- **Independent Senate primaries.** Independent incumbents can retire and can
+  be challenged; open independent seats and some competitive races draw an
+  Independent primary of their own, with runoffs where the state uses them and
+  ranked-choice rounds in Maine and Alaska. In the independent career the I
+  tab comes first: up to three endorsements and campaign plans, and race rooms
+  for your nominees on the trail. In party careers the I tab is watch only, and
+  quiet money works there too.
+
+## Independent Presidents
+
+- **Like the other parties.** An independent President has a label and a
+  lean, and governs by them: vetoes follow the bill's fit with the President's
+  issues, approval moves with the bills it wants or opposes, executive orders
+  follow its label, its Vice President breaks ties by stance, and once per
+  Congress the White House sends up **the President's bill**.
+- **A unity cabinet** of independents and both parties, and confirmations
+  where each party whips its own nominees.
+- **Seen from a party career.** Wing battles add **Cut a deal with the
+  independent White House** (fewer vetoes on your bills this Congress, and the
+  independents trust you more). The midterm penalty lands on independent
+  candidates, while both parties gain. Impeachment, the Pulse and the news
+  name "the independent President".
+- **Re-election.** A sitting independent President runs as a top-two
+  candidate, and in the fall campaign it is the incumbent, not a spoiler: the
+  economy and approval move its share, and it is always on the debate stage.
+  An open year with an independent White House gives its Vice President or a
+  cabinet member a head start. The independent career starts with an
+  independent President about one time in eight.
 
 ## Look and feel
 
@@ -332,7 +433,7 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | `local.js` | Mayors, state legislatures and the Off-Year Election Night |
 | `races.js` | Senate primaries for every seat, and the race rooms |
 | `house.js` | All 435 House districts and their representatives |
-| `indie.js` | Third-party labels, the independent presidential primary, the rare major independent |
+| `indie.js` | Third-party labels, the Alliance's field and primary helpers, the Alliance convention, the label bills, the rare major independent |
 | `primaries.js` | Presidential primaries, state by state, with ranked endorsements |
 | `convention.js` | The two national conventions: running mates, platforms, speeches, brokered conventions, the bounce |
 | `campaign.js` | The fall campaign: five rounds, debates, October surprises, strategy, surrogates, the battleground |
@@ -341,7 +442,8 @@ rostrum, and a Hall of Legacy tracks your achievements and best legacy score.
 | `wing.js` | Your wing of the party and the feud with the White House |
 | `night.js` | Election Night: the Electoral College, House results by state, the projection banner, ticker and tables |
 | `results.js` | The election archive, the full-results explorer and the Almanac |
-| `caucus.js` | The independent career: the banner, the Organizing Resolution, the Bidding, the Caucus Room, the slate, the Third Force campaign; `caucus.css` styles it |
+| `org.js` | Independents in a party career: The Independents' Price, their chair, their bills; `org.css` styles it |
+| `caucus.js` | The independent career: the banner, the Organizing Resolution and the Gavel Bargain, the Bidding, the Coalition Table, the Cracks, the Caucus Room, Filing Day, the slate, the Third Force campaign; `caucus.css` styles it |
 
 ## Testing a shortcut
 
@@ -360,3 +462,7 @@ Independents**), or with a headless harness pass `--party I` (it clicks
 `#btn-new-i`, the first banner and an organizing choice). The same
 `S.career.bills = 6; electionPrep();` reaches the Independent Slate, and
 `cauAsk(() => {})` replays the current bill's Bidding.
+
+The independent-parity changes to party careers sit behind one switch: run
+`window.FF_PARITY_OFF = 1` before the page loads (the test tools take `--off`)
+and a Democratic or Republican career plays exactly as it did before them.

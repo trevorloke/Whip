@@ -1507,10 +1507,11 @@ const FLANK = { D: f => f === 'Progressives' ? 'New Democrats' : 'Progressives',
 function holderAdv(m) { if (m.party === 'I' && (IND() || PARITY())) return 0.4 * Math.abs(ST[m.state].lean); return (m.party === 'R' ? 1 : -1) * ST[m.state].lean; } // an independent seat sits in both kinds of state
 // an independent senator who is up draws a challenger in the Independent primary: senators who defied the caucus, whose
 // label is far from their state, or (I career) who are cold to you; a hostile independent President recruits challengers
+const IND_CHAL_BASE = 0.13;   // an independent incumbent's base chance of a primary challenger (the contract's 0.08 gave 8–9% a cycle; §9 asks 12–20%)
 function indChallengeRoll(rc) {
   const m = rc.m, stL = clamp(ST[m.state].lean / 15, -1, 1), L = typeof indLabelInfo === 'function' ? indLabelInfo(m.label) : { lean: 0, group: 'Independents' };
   const hostileWH = IND() && S.president.party === 'I' && typeof whRel === 'function' && whRel() <= -4;
-  const chance = clamp((0.08 + 0.08 * (m.defy || 0) + (Math.abs(L.lean - stL) > 0.9 ? 0.08 : 0) + (IND() && (m.rel || 0) < 0 ? 0.08 : 0)) * (IND() && (m.rel || 0) >= 3 ? 0.6 : 1) + (hostileWH ? 0.12 : 0), 0.04, 0.5);
+  const chance = clamp((IND_CHAL_BASE + 0.08 * (m.defy || 0) + (Math.abs(L.lean - stL) > 0.9 ? 0.08 : 0) + (IND() && (m.rel || 0) < 0 ? 0.08 : 0)) * (IND() && (m.rel || 0) >= 3 ? 0.6 : 1) + (hostileWH ? 0.12 : 0), 0.04, 0.5);
   if (Math.random() < chance) {
     const label = hostileWH && typeof IND_LABELS !== 'undefined' && IND_LABELS[S.president.label] ? S.president.label : typeof indPickLabel === 'function' ? indPickLabel(null, m.state, null, Math.sign(stL - L.lean) * 0.8) : 'Common Ground';
     rc.primary = { name: fullName(), label, faction: typeof indLabelInfo === 'function' ? indLabelInfo(label).group : 'Independents', odds: clamp(0.18 + 0.06 * (m.defy || 0) + (IND() && (m.rel || 0) < 0 ? 0.08 : 0) + (hostileWH ? 0.06 : 0), 0.05, 0.6), backed: 0, ind: true, wh: hostileWH };

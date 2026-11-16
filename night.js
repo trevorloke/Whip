@@ -50,7 +50,7 @@ function presSetup() {
   // nominee, engine 'prim', or no Alliance record at all) the President runs as a top-two candidate whose strength presSetup owns
   const newI = presNewI();
   if (inc === 'I' && running) noms.I = newI ? presIncI(P, third) : { label: 'Independent', lean: 0, ...(third || {}), name: P.name, p: P, state: P.state, home: (third && third.home) || P.state, faction: P.faction, major: true, incumbent: true, strength: clamp((third ? third.strength : 16) + (P.approval - 45) * 0.6, 6, 42) };
-  else if (third) noms.I = third;
+  else if (third) noms.I = inc === 'I' && newI && presHeirI(third) ? { ...third, major: true } : third;   // the heir of an independent White House runs a national campaign, as a party's would
   S.whStreak = S.whStreak || 1;
   const q = p => (noms[p].charisma - 1) * 3 + (MODERATES.includes(noms[p].faction) ? 1 : FLANKS.includes(noms[p].faction) ? -1 : 0);
   const indWH = inc === 'I';
@@ -67,6 +67,8 @@ function presSetup() {
 // the parity path for an independent White House (CONTRACT §5.7): every career but a D/R one with the switch off, and only for a
 // new-path Alliance nominee (engine 'prim') or none at all, so an old-path nominee keeps the old formula end to end
 const PRES_INC_I_BASE = 31;   // the contract's base is 30 (≤ 34); 31 puts re-election inside both bands (≈ 39% at 50% approval, ≈ 60% at 56%)
+// an open year with an independent White House: the Alliance nominee is the Vice President or a cabinet member (indie.js ref)
+function presHeirI(T) { return !!(T && T.ref && (T.ref.type === 'vp' || T.ref.type === 'cab') && !T.incumbent); }
 function presNewI() { const N = S.nominees || {}; return S.president.party === 'I' && (IND() || PARITY()) && (!N.I || N.I.engine === 'prim'); }
 // a running independent President, as a top-two candidate: PRES_INC_I_BASE at 50% approval, 0.8 a point, the White House streak, the war,
 // and the primary's and the convention's marks (N.I.adj). presThirdShare then takes the share from both majors by state lean
