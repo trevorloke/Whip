@@ -267,7 +267,7 @@ function cauOrganize(next, opts = {}) {
       c.capital -= cost;
       if (sw && old && old !== lp) cauTrust(old, -3);
       C.partner = lp; C.lead = true; C.leadK = k;
-      C.pact = { p: lp, skipped: 0, paid: 0, owed: 0, k, crackedK: -1, burned: false };
+      C.pact = { p: lp, skipped: 0, paid: 0, owed: 0, k, crackedK: -1, burned: false, at: c.bills };
       if (!keep) { cauTrust(lp, 0.5); if (!(sw && old === other2(lp))) cauTrust(other2(lp), -1); cauLean(3 * cauToward(lp)); }   // a Jeffords already cost the old partner 3
       C.gavels = 0; C.orgK = k; if (sw) C.jeffK = k;
     } else if (sw) {
@@ -764,11 +764,12 @@ function cauGavelCheck(next) {
   cauOrgRefresh();
   const fp = floorParty();
   cauPaper({ headline: 'THE INDEPENDENT GAVEL FALLS', sub: `The caucus no longer has the votes to lead (${blocLine()}). ${fp === 'I' ? 'The independents still out-seat everyone, but the bargain is dead.' : `The ${PARTY[fp].short} take back the floor.`}`, mood: 'storm', date: `${season(c.bills + 1)} ${billYear(c.bills + 1)} · Extra`,
-    body: [`WASHINGTON — The arithmetic that made an independent Majority Leader possible is gone. ${was ? `The ${PARTY[was].short}, junior partners until this morning, ` : 'The parties '}moved the committee nameplates back before lunch.`, 'Inside the caucus, the mood is grim (−1 confidence). "We ran the place," one senator said. "Now we have to win it back."'] }, 'The gavel is gone', next);
+    body: [`WASHINGTON — The arithmetic that made an independent Majority Leader possible is gone. ${fp === 'I' ? `The caucus keeps the calendar as the biggest bloc, but the Contract${was ? ` with the ${PARTY[was].short}` : ''} is dead.` : `${was ? `The ${PARTY[was].short}, junior partners until this morning, ` : 'The parties '}moved the committee nameplates back before lunch.`}`, 'Inside the caucus, the mood is grim (−1 confidence). "We ran the place," one senator said. "Now we have to win it back."'] }, 'The gavel is gone', next);
 }
 function cauCracksMaybe(next) {
   const C = S.cau, P = C && C.pact, k = cauK();
   if (!C || !C.lead || !P || P.crackedK === k || floorParty() !== 'I') return next();
+  if (P.at === S.career.bills) return next();   // the bargain was struck at this very interlude: nobody revolts before the first bill
   let why = P.skipped >= 2 ? 'skip' : (C.trust[P.p] || 0) <= -2 ? 'trust' : P.burned ? 'burned' : null;
   if (!why) { const f = cauForce('revolt'); if (f != null ? !!f : Math.random() < CAU_REVOLT) why = 'revolt'; }
   if (!why) return next();
@@ -813,7 +814,7 @@ function cauCracks(next, why) {
     if (x === 'switch') {
       if (!swOK) return;
       cauTrust(p, -2); C.partner = q; C.leadK = k; C.jeffK = k;
-      C.pact = { p: q, skipped: 0, paid: 0, owed: 0, k, crackedK: k, burned: false };
+      C.pact = { p: q, skipped: 0, paid: 0, owed: 0, k, crackedK: k, burned: false, at: c.bills };
       cauOrgRefresh(); sfx.gavel();
       return after(`The ${PARTY[q].short} take the junior seat`, `You keep the gavel. The ${PARTY[q].short} get the Contract slots; the ${Pn} get nothing but the memory (trust −2).`);
     }
@@ -825,15 +826,16 @@ function cauCracks(next, why) {
 // what you can give the opposition for its votes: key → [label (p), timing]. You pay, they deliver ('settle' is paid only if the bill passes)
 const CAU_GIVE = {
   slot: [p => `One of their bills gets the next docket slot`, 'settle'],
-  rider: [p => { const t = cauTopTag(p); return `Their top issue written into your bill: ${TAG[t][0]} ${TAG[t][1]} +1`; }, 'now'],
-  pork: [p => '$40M of this bill\'s earmarks go to their projects', 'now'],
+  rider: [(p, w = 'bill') => { const t = cauTopTag(p); return `Their top issue written into your ${w}: ${TAG[t][0]} ${TAG[t][1]} +1`; }, 'now'],
+  pork: [(p, w = 'bill') => `$40M of this ${w}'s earmarks go to their projects`, 'now'],
   chair: [p => 'A committee gavel of yours for the rest of the Congress (−1 action a bill · their trust +1)', 'settle'],
 };
 function cauTopTag(p) { return TAGS.slice().sort((a, b) => (PARTY[p].prior[b] || 0) - (PARTY[p].prior[a] || 0))[0]; }
 // a CAU_GIVE 'slot': the opposition's bill goes to the front of the schedule (floor.js's queue)
 function cauGiveSlot(p) {
   if (typeof flQueue !== 'function' || typeof flGen !== 'function' || typeof flSlotBills !== 'function') return;
-  const q = flQueue(); q.unshift({ ...flGen(p, flSlotBills(1)[0]), note: 'Owed at the Coalition Table' }); if (q.length > 3) q.pop();
+  const q = flQueue(); q.unshift({ ...flGen(p, flSlotBills(1)[0]), note: 'Owed at the Coalition Table' });
+  if (q.length > 3) { let i = q.length - 1; while (i > 0 && q[i].own === 'pact') i--; q.splice(i > 0 ? i : q.length - 1, 1); }   // bump a bill of yours, never your partner's Contract slot
 }
 function cauCoalition(next) {
   const B = S.bill, C = S.cau, c = S.career; if (!B || !C) return next();
@@ -842,18 +844,20 @@ function cauCoalition(next) {
   const partner = (C.pact && C.pact.p) || C.partner || null, opp = oppParty(), nI = seats('I'), need = cauPassNeed(B);
   const yes = p => S.members.filter(m => m.party === p && support(m) > 0).length, yP = partner ? yes(partner) : 0, yO = yes(opp), tot = nI + yP + yO;
   const owed = C.pact ? C.pact.owed || 0 : 0, ask = partner && (C.trust[partner] || 0) < 0 && dotPrior(partner, B.fx) <= -0.5;
+  const pCost = (ask ? 1 : 0) + (C.pact ? 0 : 1);   // the partner's help always has a price: a favor owed under the Contract, else 1 capital
+  const what = B.nomination ? 'nominee' : B.aumf ? 'war resolution' : 'bill', plain = !B.nomination && !B.aumf;
   const pW = partner ? C.whips[partner] : null, oW = C.whips[opp];
   const seg = (n, col, t) => n > 0 ? `<i style="width:${n}%;background:${col}" title="${t}"></i>` : '';
   const lines = [50, 51, 60].concat(B.super === 67 ? [67] : []).map(v => `<b class="cau-line${v === need ? ' need' : ''}${v === 50 ? ' lo' : v === 51 ? ' hi' : ''}" style="left:${v}%"><span>${v}</span></b>`).join('');
   const bar = `<div class="cau-coal"><div class="cau-coalbar">${seg(nI, PARTY.I.color, `your caucus ${nI}`)}${partner ? seg(yP, PARTY[partner].color, `${PARTY[partner].short} ${yP}`) : ''}${seg(yO, PARTY[opp].color, `${PARTY[opp].short} ${yO}`)}${lines}</div>
     <small>Without anyone whipping: your <b>${nI}</b>${partner ? ` + <b style="color:${PARTY[partner].color}">${yP}</b> ${PARTY[partner].short}` : ''} + <b style="color:${PARTY[opp].color}">${yO}</b> ${PARTY[opp].short} = <b>${tot}</b> for it · it needs <b>${need}</b>${B.cloture ? ' (cloture: the minority filibusters your bills too)' : ''} · ${tot >= need ? 'it would pass today' : `${need - tot} short`}</small></div>`;
   const body = `<p class="blurb">${B.blurb}</p><div class="fx">${fxChips(B.fx)}</div>
-    <p>Your caucus's own bill, on the floor <b>you</b> run. The gavel gets it a vote; it does not get it the votes.</p>${bar}
+    <p>${B.nomination ? 'The independent President\'s nominee' : B.aumf ? 'The independent President\'s war resolution' : B.cauOwn === 'wh' ? 'The independent President\'s bill' : 'Your caucus\'s own bill'}, on the floor <b>you</b> run. The gavel gets it a vote; it does not get it the votes.</p>${bar}
     ${C.pact ? `<p class="cau-dim"><span class="cau-pact">Contract</span> with the ${PARTY[C.pact.p].short}: kept ${C.pact.paid || 0}, skipped ${C.pact.skipped || 0}, favors owed ${owed}${owed >= 1 ? ' · at 2 their next bill jumps your queue' : ''}</p>` : ''}`;
   const crossOK = (C.trust[opp] || 0) >= -1;
-  const giveOK = g => crossOK && (g !== 'pork' || B.pork >= 40) && (g !== 'slot' || typeof flQueue === 'function');
-  const choices = (partner ? `<button class="btn ${partner === 'D' ? 'dem' : 'rep'}" data-choice="coal:partner" ${ask && c.capital < 1 ? 'disabled' : ''}>Lean on your partner, the ${PARTY[partner].short}<small>Sen. ${pW.name} whips ${PARTY[partner].name} senators for it every night · it always has a price: they are owed one more favor (${owed + 1}${owed + 1 >= 2 ? ': their next bill jumps your queue' : ''})${ask ? ' · and they make you ask: 1 capital' : ''} · the ${PARTY[opp].short} whip works against you</small></button>` : '')
-    + Object.keys(CAU_GIVE).map(g => `<button class="btn ${opp === 'D' ? 'dem' : 'rep'}" data-choice="coal:cross:${g}" ${giveOK(g) ? '' : 'disabled'}>Cross the aisle to the ${PARTY[opp].short}: ${CAU_GIVE[g][0](opp).replace(/^./, x => x.toLowerCase())}<small>Sen. ${oW.name} whips for it instead${partner ? ` · your partner sulks (${PARTY[partner].short} trust −0.5) and its whip works against you` : ''}${crossOK ? '' : ` · the ${PARTY[opp].short} won't deal (trust ${cauSigned(C.trust[opp])})`}</small></button>`).join('');
+  const giveOK = g => crossOK && (plain || (g !== 'rider' && g !== 'pork')) && (g !== 'pork' || B.pork >= 40) && (g !== 'slot' || typeof flQueue === 'function');
+  const choices = (partner ? `<button class="btn ${partner === 'D' ? 'dem' : 'rep'}" data-choice="coal:partner" ${c.capital < pCost ? 'disabled' : ''}>Lean on your partner, the ${PARTY[partner].short}<small>Sen. ${pW.name} whips ${PARTY[partner].name} senators for it every night · it always has a price: ${C.pact ? `they are owed one more favor (${owed + 1}${owed + 1 >= 2 ? ': their next bill jumps your queue' : ''})${ask ? ' · and they make you ask: 1 capital' : ''}` : `1 capital (no Contract keeps count of favors)${ask ? ' · and they make you ask: 1 more' : ''}`} · the ${PARTY[opp].name} whip works against you</small></button>` : '')
+    + Object.keys(CAU_GIVE).map(g => `<button class="btn ${opp === 'D' ? 'dem' : 'rep'}" data-choice="coal:cross:${g}" ${giveOK(g) ? '' : 'disabled'}>Cross the aisle to the ${PARTY[opp].short}: ${CAU_GIVE[g][0](opp, what).replace(/^./, x => x.toLowerCase())}<small>Sen. ${oW.name} whips for it instead${partner ? ` · your partner sulks (${PARTY[partner].short} trust −0.5) and its whip works against you` : ''}${crossOK ? '' : ` · the ${PARTY[opp].short} won't deal (trust ${cauSigned(C.trust[opp])})`}</small></button>`).join('');
   cauScreen(`The Coalition Table · ${season(B.n)} ${billYear(B.n)}`, `${B.name}${B.landmark ? '<span class="cau-lm">LANDMARK</span>' : ''}`, body, choices,
     `<button class="btn primary big adv" id="cau-coal-go">Go it alone<small>No deal, no ally whip · pass it and the caucus stands taller (+1 legacy, +0.5 confidence)</small></button>`);
   const finish = () => {
@@ -861,7 +865,7 @@ function cauCoalition(next) {
     B.short = cauShortFor(B); calibrate(B.short); cauSetRival();
     const P = B.patron;
     if (B.coal === 'alone') log(`No deal: your caucus takes the ${B.name} to the floor on its own terms. You need ${needText()}.`, 'sys');
-    else log(`${PARTY[P].name} votes for the ${B.name}${B.coal === 'cross' ? `, for a price (${CAU_GIVE[B.coalGive][0](P).replace(/^./, x => x.toLowerCase())})` : ': your partner whips it'}. You need ${needText()}.`, 'sys');
+    else log(`${PARTY[P].name} votes for the ${B.name}${B.coal === 'cross' ? `, for a price (${CAU_GIVE[B.coalGive][0](P, what).replace(/^./, x => x.toLowerCase())})` : ': your partner whips it'}. You need ${needText()}.`, 'sys');
     if (B.cloture) log(`It needs 60 for cloture: the ${PARTY[opp].short} filibuster your bills like anyone's.`, 'sys');
     if (P) log(`🤝 Sen. ${C.whips[P].name}, the ${PARTY[P].name} whip, will work ${PARTY[P].name} senators your way every night. Sen. ${S.rival} works against you.`, 'good');
     else log(`Sen. ${S.rival}, the ${PARTY[B.foe].name} whip, works against you. Nobody works for you.`, 'sys');
@@ -870,8 +874,8 @@ function cauCoalition(next) {
   $('#modal-card').querySelectorAll('[data-choice^="coal:"]').forEach(b => b.onclick = () => {
     const k = b.dataset.choice.split(':');
     if (k[1] === 'partner') {
-      if (!partner || (ask && c.capital < 1)) return;
-      if (ask) c.capital -= 1;
+      if (!partner || c.capital < pCost) return;
+      c.capital -= pCost;
       if (C.pact) C.pact.owed = owed + 1;
       B.patron = partner; B.foe = opp; B.coal = 'partner';
     } else if (k[1] === 'cross') {
@@ -1074,7 +1078,7 @@ function cauFiling(E, next) {
   const pc = p => `${Math.round(p * 100)}%`;
   const inc = rc => {
     const m = rc.m, ch = rc.primary && rc.primary.ind ? rc.primary : null;
-    return `<div class="cau-lane"><span><b>${ST[m.state].name}</b> · Sen. ${m.name} ${indPill(m.label)}${rc.retiring ? ' <small class="cau-dim">retiring: an open independent seat</small>' : ch ? ` <small class="cau-bad">challenged by ${ch.name} ${indPill(ch.label)}${ch.wh ? ' (the President\'s people)' : ''} · ${pc(ch.odds)} to win the primary${rc.cauShield ? ' · shielded' : ''}</small>` : ' <small class="cau-dim">renominated unopposed, so far</small>'}</span>${ch && !rc.retiring ? `<button class="btn" data-choice="file:shield:${idx(rc)}" ${!rc.cauShield && c.capital >= 1 ? '' : 'disabled'}>Shield<small>1 cap · halves their odds</small></button>` : ''}</div>`;
+    return `<div class="cau-lane"><span><b>${ST[m.state].name}</b> · Sen. ${m.name} ${indPill(m.label)}${rc.retiring ? ' <small class="cau-dim">retiring: an open independent seat</small>' : ch ? ` <small class="cau-bad">challenged by ${ch.name} ${indPill(ch.label)}${ch.wh ? ' (the President\'s people)' : ''} · ~${pc(typeof RS_I_CAL === 'number' ? clamp(ch.odds * RS_I_CAL, 0.06, 0.5) : ch.odds)} to win the primary${rc.cauShield ? ' · shielded' : ''}</small>` : ' <small class="cau-dim">renominated unopposed, so far</small>'}</span>${ch && !rc.retiring ? `<button class="btn" data-choice="file:shield:${idx(rc)}" ${!rc.cauShield && c.capital >= 1 ? '' : 'disabled'}>Shield<small>1 cap · halves their odds</small></button>` : ''}</div>`;
   };
   const lane = rc => {
     const f = C.filed.find(x => x.key === cauRsKey(rc)), m = rc.m;
@@ -1124,7 +1128,12 @@ function cauSlate(E, next) {
     // filed recruits whose race ran no Independent primary (races.js without the I primaries) run as plain recruits
     for (const f of Array.isArray(C.filed) ? C.filed : []) {
       const rc = E.races.find(r => cauRsKey(r) === f.key);
-      if (!rc || rc.ind || rc.indPrim) continue;
+      if (!rc || rc.indPrim || (rc.ind && (rc.ind.filed || rc.ind.recruited))) continue;
+      if (rc.ind) {   // another independent already holds the line: the filing is bounced and paid back
+        if (f.banked) C.recruits++; else c.capital += 2;
+        E.cauSlateNews.push(`✍ ${f.name}'s filing in ${ST[rc.m.state].name} is bounced: ${rc.ind.name} already holds the independent line (${f.banked ? 'the recruit goes back to the bank' : '2 capital back'}).`);
+        continue;
+      }
       const lean = ST[rc.m.state].lean;
       rc.ind = { name: f.name, label: IND_LABELS[f.label] ? f.label : C.label, cause: f.cause, str: rnd(20, 27) + (rc.primaried ? 6 : 0) + (Math.abs(lean) <= 8 ? 3 : 0) + (f.banked ? 4 : 0), recruited: true, filed: true };
       E.cauSlateNews.push(`✍ ${f.name} runs in ${ST[rc.m.state].name} under the ${rc.ind.label} banner.`);
@@ -1413,6 +1422,7 @@ function cauElectors(evD, evR, evI) {
 function cauPathLine() {
   const C = S.cau, g = indGavelPath(), say = ['D', 'R'].map(p => `${p} ${cauSigned(cauLeadScore(p))}`).join(', ');
   if (C.lead && floorParty() === 'I') return `You hold the gavel, with the ${PARTY[C.partner].short} as junior partner`;
+  if (floorParty() === 'I') return `You run the floor: your caucus out-seats ${C.partner ? `the ${PARTY[C.partner].short}` : 'both parties'}${g.legalWith.length ? ` · a Gavel Bargain (the Contract) is on the table with ${g.legalWith.map(p => `the ${PARTY[p].short} (${cauSigned(cauLeadScore(p))})`).join(' and ')}` : ''}`;
   if (g.seatsNeeded) return `Path to the Gavel: ${g.seatsNeeded} more seat${g.seatsNeeded === 1 ? '' : 's'} · today ${say}`;
   if (g.legalWith.length) return `Path to the Gavel: on the table now with ${g.legalWith.map(p => `the ${PARTY[p].short} (${cauSigned(cauLeadScore(p))})`).join(' and ')}; take it at the next Organizing Resolution`;
   return `Path to the Gavel: ${g.why} · today ${say}`;
@@ -1441,8 +1451,8 @@ function cauPulseChyron() { const o = cauOutlook(); return `${floorParty() === '
 function cauSenateStatus() {
   if (!S.cau) return `Senate ${blocLine()}`;
   const fp = floorParty(), withYou = S.cau.partner === fp && !aloneOK(fp);
-  const who = fp === 'I' ? `Your caucus runs the floor${S.cau.lead ? ` (the Gavel Bargain, with the ${PARTY[S.cau.partner].short})` : ''}.` : `The ${fp} organize ${withYou ? 'with your votes' : 'on their own'}.`;
-  return `Senate ${blocLine()}. ${who}${kingmakerNow() ? ' You are the kingmakers.' : ''}${fp === 'I' && S.cau.lead ? '' : ` ${cauPathLine()}.`}`;
+  const who = fp === 'I' ? (S.cau.lead ? `Your caucus runs the floor (the Gavel Bargain, with the ${PARTY[S.cau.partner].short}).` : `${cauPathLine()}.`) : `The ${fp} organize ${withYou ? 'with your votes' : 'on their own'}.`;
+  return `Senate ${blocLine()}. ${who}${kingmakerNow() ? ' You are the kingmakers.' : ''}${fp === 'I' ? '' : ` ${cauPathLine()}.`}`;
 }
 function cauStatusShort() {
   if (!S.cau) return `Caucus of ${seats('I')}`;
