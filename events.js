@@ -96,7 +96,7 @@ function evtIndFlipK() { return IND() || PARITY() ? 1 + seats('I') / 10 : 1; }
 EVENTS.push(
   // a faction leader's ultimatum: change the bill or we walk
   { id: 'evt_ultimatum', w: 0.9, cond: () => !S.bill.nomination, make: () => {
-    const B = S.bill, leaders = S.members.filter(m => side(m) === 'you' && T(m, 'leader') && !isLockedYes(m) && !m.b.absent && factionOf(m).length >= 2);
+    const B = S.bill, leaders = S.members.filter(m => side(m) === 'you' && m.party !== 'I' && T(m, 'leader') && !isLockedYes(m) && !m.b.absent && factionOf(m).length >= 2);
     const L = pick(leaders.filter(l => support(l) < 25)) || pick(leaders); if (!L) return null;
     const fx = (FACTIONS[L.party].find(f => f[0] === L.faction) || [0, {}])[1];
     const t = Object.entries(fx).sort((a, b) => b[1] - a[1])[0][0], n = factionOf(L).length;

@@ -88,7 +88,7 @@ function indPerson(label, kind) {
   if (kind === 'celeb') { office = pick(IND_CELEBS); hist(p, `Became a household name as a ${office.toLowerCase().replace(/^former /, '')}`, y - ri(6, 15)); }
   else if (kind === 'biz') { office = pick(IND_BIZ); hist(p, `Built a fortune as ${p.background}-turned-executive`, y - ri(8, 20)); }
   else if (kind === 'general') { office = pick(['Retired Army general', 'Retired Marine general', 'Retired admiral']); p.background = 'a career officer'; hist(p, 'Commanded U.S. forces overseas', y - ri(4, 10)); hist(p, 'Retired from the military and began speaking out on politics', y - ri(1, 3)); }
-  else if (kind === 'gov') { const ex = lean < 0 ? 'D' : lean > 0.3 ? 'R' : pick(['D', 'R']); office = `Former Governor of ${ST[st].name}`; hist(p, `Elected Governor of ${ST[st].name} as a ${PARTY[ex].name}`, y - ri(10, 16)); hist(p, `Left the ${PARTY[ex].name} Party, calling it "a racket with a logo"`, y - ri(1, 4)); p.exParty = ex; }
+  else if (kind === 'gov') { const ex = lean < 0 ? 'D' : lean > 0.3 ? 'R' : pick(['D', 'R']); office = `Former Governor of ${ST[st].name}`; hist(p, `Elected Governor of ${ST[st].name} as a ${IND() || PARITY() ? (ex === 'D' ? 'Democrat' : 'Republican') : PARTY[ex].name}`, y - ri(10, 16)); hist(p, `Left the ${PARTY[ex].name} Party, calling it "a racket with a logo"`, y - ri(1, 4)); p.exParty = ex; }
   else { office = pick([`Chair of the ${L.group}`, `${label} Party co-founder`, `Mayor of ${town}`, `State legislator from ${ST[st].name}`, `${label} organizer from ${town}`]); hist(p, `Joined the ${L.group} as ${p.background}`, y - ri(8, 20)); }
   hist(p, `Sought the ${label} line on the ${y} presidential ballot`, y);
   return { p, office, kind };

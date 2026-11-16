@@ -293,7 +293,7 @@ function indLeadScore(p, trustP, ledBefore) { return indLeadTerms(p, trustP, led
 // the terms of indLeadScore as [label, value] rows (zero terms included, so the card can show them all)
 function indLeadTerms(p, trustP, ledBefore) {
   const s = seats(p), need = s <= 46 ? 3 : s <= 48 ? 2 : s === 49 ? 1 : 0, nI = seats('I'), vp = vpParty(), P = PARTY[p].short;
-  return [[`${nI} caucus seats`, nI - 7], [`trust with the ${P} ${fmt(trustP || 0)}`, 2 * (trustP || 0)], [`the ${P} are ${51 - s} seat${51 - s === 1 ? '' : 's'} from a majority`, need],
+  return [[`${nI} caucus seats`, nI - 7], [`trust with the ${P} ${(trustP || 0) > 0 ? '+' : (trustP || 0) < 0 ? '−' : ''}${Math.abs(trustP || 0)}`, 2 * (trustP || 0)], [`the ${P} are ${51 - s} seat${51 - s === 1 ? '' : 's'} from a majority`, need],
     [vp === 'I' ? 'an independent Vice President' : vp === p ? `the ${P} hold the Vice Presidency` : 'the Vice President', (vp === 'I' ? 2 : 0) - (vp === p ? 2 : 0)],
     [`the ${P} led last Congress`, -(S.org && S.org.prevFloor === p ? 1 : 0)], [`the ${P} just lost the Senate`, S.org && S.org.lostBy === p ? 1 : 0],
     ['the independents have led before', ledBefore ? 1 : 0]];
@@ -577,12 +577,13 @@ function startBill() {
   S.log = [];
   ui.sel = null; ui.pitchOpen = false; ui.lastQuote = '';
   const them = PARTY[other(S.side)].name, filib = spon === 'I' ? PARTY[indOpp()].name : them;
-  log(`${season(n)} ${billYear(n)}: the ${B.name} comes to the floor${B.by === 'them' && !budget ? `, scheduled by the ${floorWho()}` : ''}. ${IND() && B.owner !== 'I' ? '' : killing() ? `Your caucus wants it dead: you need ${needText()}.` : `You need ${needText()}.`}`, 'sys');
+  log(`${season(n)} ${billYear(n)}: the ${B.name} comes to the floor${B.by === 'them' && !budget ? (B.note === 'The White House bill' ? `, sent up by ${presTitle()}` : `, scheduled by the ${floorWho()}`) : ''}. ${IND() && B.owner !== 'I' ? '' : killing() ? `Your caucus wants it dead: you need ${needText()}.` : `You need ${needText()}.`}`, 'sys');
   if (cloture && !IND()) log(killing() ? `It's ${PARTY[spon].name} partisan legislation, so it needs 60 votes for cloture: hold ${101 - cloture} nays and your filibuster kills it.` : `It's partisan legislation: the ${filib} will filibuster, so you need 60 for cloture.`, 'sys');
   if (landmark) log(`A LANDMARK bill. ${sup} votes required. ${killing() ? 'Kill it and the whole town notices.' : 'Double rewards.'}`, 'sys');
   if (shut) log('🚨 The government is shut down. No money for earmarks.', 'bad');
   if (approps) log('The budget passed, so appropriations are flowing: +$20M earmarks.', 'good');
   log(`${S.members.filter(isUp).length} senators are up for re-election in ${electionYear(nextElectionK())} and are watching how this plays back home.`, 'sys');
+  if (!IND() && PARITY() && B.owner === 'I' && typeof orgBillLog === 'function') orgBillLog(B); // org.js: who brought the independent bill, and who whips it
   if (budget) return openBudget();
   if (IND() && B.owner === 'I' && floorParty() === 'I' && typeof cauCoalition === 'function') return cauCoalition(() => startDay(true)); // The Coalition Table (caucus.js)
   if (IND() && B.owner !== 'I' && typeof cauAsk === 'function') return cauAsk(() => startDay(true)); // The Bidding (caucus.js)
@@ -1659,7 +1660,7 @@ function electionPrep() {
 function trailProjHTML(exp) {
   const old = `Projected Senate for the ${PARTY[S.side].short}: <b style="color:${exp >= 50 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b>`;
   if (!PARITY() || typeof pulseSenate !== 'function') return old;
-  const O = pulseSenate(), pc = O && typeof O.pCtrl === 'number' ? O.pCtrl : null;
+  const O = pulseSenate(S.election && S.election.races), pc = O && typeof O.pCtrl === 'number' ? O.pCtrl : null;
   if (pc == null) return old;
   return `Projected Senate for the ${PARTY[S.side].short}: <b style="color:${pc >= 0.5 ? 'var(--yes)' : 'var(--no)'}">~${exp.toFixed(1)} seats</b> <small style="color:var(--dim)">· ${seats('I') && indPartner() === S.side ? 'with the independents' : 'control'}: ${Math.round(pc * 100)}%</small>`;
 }
@@ -1703,8 +1704,8 @@ function raceRow(rc) {
   const p = raceChance(rc), g = cashGain(rc);
   const pc = PARTY[m.party].color;
   const rec = m.rec <= -4 ? ' · <span style="color:var(--no)">bad record at home</span>' : m.rec >= 4 ? ' · <span style="color:var(--yes)">popular record</span>' : '';
-  const who = rc.retiring ? `<i>Open seat (${m.party} retiring)</i>` : rc.primaried ? `<i>${rc.nominee.name} (${rc.nominee.faction}), after beating Sen. ${lastName(m)} in the primary</i>` : sen(m);
-  const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ ${rc.ind.label ? `${rc.ind.label} candidate` : 'Independent'} ${rc.ind.name}${rc.ind.cause ? ` (${rc.ind.cause[0]})` : ''}, polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">Independent incumbent vs a Democrat and a Republican</small>` : '';
+  const who = rc.retiring ? `<i>Open seat (${m.party} retiring)</i>` : rc.primaried ? `<i>${rc.nominee.name} (${rc.nominee.faction}), after beating Sen. ${lastName(m)} in the primary</i>` : rc.iPrimaried && rc.ind ? `<i>${rc.ind.name} (${rc.ind.label || 'I'}), after beating Sen. ${lastName(m)} in the Independent primary</i>` : sen(m);
+  const ind = rc.ind && m.party !== 'I' ? `<br><small style="color:${PARTY.I.color}">+ ${rc.ind.label ? `${rc.ind.label} candidate` : 'Independent'} ${rc.ind.name}${rc.ind.cause ? ` (${rc.ind.cause[0]})` : ''}, polling ~${Math.round(rc.ind.str)}%</small>` : rc.ind ? `<br><small style="color:${PARTY.I.color}">${rc.ind.incumbent ? 'Independent incumbent' : 'Independent nominee'} vs a Democrat and a Republican</small>` : '';
   return `<div class="race"><span><b style="color:${pc}">${ST[m.state].name}</b> · ${who}${typeof raceDetailBtn === 'function' ? raceDetailBtn(rc, i) : ''}${rec}${ind}</span>
     <span class="cashctl"><span class="chance"><b style="color:${chanceColor(p)}">${Math.round(p * 100)}%</b><span class="mbar"><i style="width:${p * 100}%;background:${chanceColor(p)}"></i></span><small>your chance${rc.ind ? ' · 3-way' : ''}</small></span>
       <button class="btn" data-cash="${i}" data-d="-1" ${rc.cash ? '' : 'disabled'}>−</button><span class="dots">${money(rc.cash)}</span><button class="btn" data-cash="${i}" data-d="1" ${S.election.cash < 1 || (IND() && !rc.ind) ? 'disabled' : ''}>+${g > 0.005 ? `<small>+${Math.round(g * 100)}%</small>` : ''}</button></span></div>`;
@@ -1744,7 +1745,7 @@ function countBallots() {
       if (NEWI && np === 'I' && rc.ind && typeof IND_LABELS !== 'undefined' && IND_LABELS[rc.ind.label]) winner.label = rc.ind.label;
       if (pre) { for (const k of ['gender', 'born', 'background', 'hometown', 'seed']) if (pre[k] != null) winner[k] = pre[k]; winner.history = (pre.history || []).slice(-12); hist(winner, 'Elected to the U.S. Senate', E.year); }
       else senatorBackstory(winner, E.year);
-      winner.history[winner.history.length - 1].t = `Elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${flip && !rc.retiring ? `, unseating Sen. ${m.name}` : ' (open seat)'}`;
+      winner.history[winner.history.length - 1].t = `Elected to the U.S. Senate, ${w.pct.toFixed(0)}–${l.pct.toFixed(0)}${flip && !rc.retiring && !iPrim ? `, unseating Sen. ${m.name}` : ' (open seat)'}`;
       if (rc.primaried) hist(winner, `Won the ${PARTY[np].name} primary over Sen. ${m.name}`, E.year);
       if (NEWI && np === 'I' && !(rc.ind && rc.ind.incumbent) && (rc.indPrim || (rc.ind && rc.ind.primaryWon))) hist(winner, 'Won the Independent primary, then the seat', E.year);
       if (!iPrim) hist(m, rc.retiring ? 'Retired from the Senate' : rc.primaried ? `Lost the primary to ${rc.nominee.name}` : `Lost re-election to ${winner.name}`, E.year); // an Independent primary loss is already on the record (races.js)

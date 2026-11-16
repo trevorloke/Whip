@@ -654,7 +654,7 @@ function cauHeadline(won, headline, y, n) {
 }
 
 /* ---------------- 7.5 between bills: the Caucus Room ---------------- */
-function cauDefectOdds(m) { return clamp(0.35 + 0.08 * (m.rel || 0) + 0.05 * (m.defy || 0) + (Math.abs(ST[m.state].lean) <= 6 ? 0.1 : 0), 0.1, 0.6); }
+function cauDefectOdds(m) { return clamp((0.35 + 0.08 * (m.rel || 0) + 0.05 * (m.defy || 0) + (Math.abs(ST[m.state].lean) <= 6 ? 0.1 : 0)) * (typeof evtIndFlipK === 'function' ? evtIndFlipK() : 1), 0.1, 0.6); }
 function cauDefectTarget() {
   const pool = S.members.filter(m => (m.party === 'D' || m.party === 'R') && !T(m, 'leader') && !(typeof evtOnTicket === 'function' && evtOnTicket(m))
     && (m.faction === MODERATE[m.party] || m.faction === CROSS[m.party]) && ((m.rel || 0) >= 1 || (m.defy || 0) >= 1));
